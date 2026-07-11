@@ -8,6 +8,11 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- add feature-focused example suite with readmes
+- emit procedure bodies from HIR
+- track stable local refs across nested flow
+- introduce lowering stage and HIR-based codegen
+- add declarations, params, and arity checks
 - add IF/WHILE parsing, semantics, and codegen
 - add CONST/VAR declarations with semantic checks
 - add project compile wrapper scripts
@@ -20,11 +25,16 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-- mark A3 as done
-- mark A2 as done
+- update roadmap status notes: mark A2, A3, and A6 as done
+
+### Tests
+
+- add scan coverage and '=' regression
+- expand unit coverage for manifest, symbols, semantic, codegen, and CLI
 
 ### Chores
 
+- configure markdownlint duplicate-heading handling
 - enforce markdownlint and format changelog output
 
 ## v0.1.1 - 2026-07-11

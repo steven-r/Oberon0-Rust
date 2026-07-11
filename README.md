@@ -32,8 +32,6 @@ For development checks:
 
     cargo check
 
-Run tests/checks later as they are added.
-
 Run all tests:
 
     cargo test
@@ -41,6 +39,18 @@ Run all tests:
 Run parser corpus tests:
 
     cargo test parser::tests
+
+Run scanner tests:
+
+    cargo test scanner::tests
+
+Run code generation tests:
+
+    cargo test codegen::tests
+
+Run CLI argument parsing tests:
+
+    cargo test tests::cli_
 
 ## Git workflow and commit policy
 
@@ -181,17 +191,21 @@ Notes:
 
 ## Current language subset
 
-The parser currently supports a small MVP subset:
+The current compiler supports the Milestone A subset:
 
 - `MODULE ... END ... .`
 - Optional `IMPORT` section
+- Declarations:
+  - `CONST` declarations
+  - `VAR` declarations
+  - `PROCEDURE` declarations with parameter lists
 - Statements:
   - assignment: `x := expr`
   - call: `Proc(...)` or `Proc`
-- Expressions with integer literals, variables, parentheses
+  - `IF ... THEN ... [ELSE ...] END`
+  - `WHILE ... DO ... END`
+- Expressions with integer literals, identifiers, and parentheses
 - Operators: `+`, `-`, `*`, `/`
-
-More Oberon0 features (such as declarations, procedures, control flow) can be added incrementally.
 
 Detailed subset and planning documents:
 
