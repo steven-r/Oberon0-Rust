@@ -85,11 +85,12 @@ declare -a CI=()
 declare -a REVERT=()
 declare -a BREAKING=()
 declare -a OTHER=()
+CONVENTIONAL_RE='^([a-z]+)(\([^)]*\))?(!)?:[[:space:]](.+)$'
 
 while IFS=$'\t' read -r subject body; do
   [[ -z "${subject}" ]] && continue
 
-  if [[ "$subject" =~ ^([a-z]+)(\([^)]*\))?(!)?:[[:space:]](.+)$ ]]; then
+  if [[ "$subject" =~ $CONVENTIONAL_RE ]]; then
     type="${BASH_REMATCH[1]}"
     bang="${BASH_REMATCH[3]}"
     text="${BASH_REMATCH[4]}"

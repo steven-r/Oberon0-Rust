@@ -120,7 +120,7 @@ sed -i -E "s/^Current value: \`[0-9]+\.[0-9]+\.[0-9]+\`$/Current value: \`${new_
 
 cargo check
 
-git add Cargo.toml VERSIONING.md CHANGELOG.md
+git add Cargo.toml Cargo.lock VERSIONING.md CHANGELOG.md
 git commit -m "chore(release): ${new_tag}"
 git tag -a "$new_tag" -m "$new_tag"
 

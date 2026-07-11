@@ -16,7 +16,7 @@ The authoritative compiler version is defined in [Cargo.toml](Cargo.toml) under:
 
 `[package].version`
 
-Current value: `0.1.0`
+Current value: `0.1.1`
 
 ## Commit Convention and Versioning
 
