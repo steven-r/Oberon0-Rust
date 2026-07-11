@@ -1,0 +1,22 @@
+WHITESPACE = _{ " " | "\t" | NEWLINE }
+COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
+
+keyword = { "MODULE" | "IMPORT" | "BEGIN" | "END" }
+ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+integer = @{ ASCII_DIGIT+ }
+
+module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ "." ~ EOI }
+import_section = { "IMPORT" ~ import_item ~ ("," ~ import_item)* ~ ";" }
+import_item = { ident ~ (":=" ~ ident)? }
+
+stmt_list = { (statement ~ ";")* ~ statement? }
+statement = _{ assign_stmt | call_stmt }
+assign_stmt = { ident ~ ":=" ~ expr }
+call_stmt = { ident ~ ("(" ~ arg_list? ~ ")")? }
+arg_list = { expr ~ ("," ~ expr)* }
+
+expr = { term ~ (add_op ~ term)* }
+add_op = { "+" | "-" }
+term = { factor ~ (mul_op ~ factor)* }
+mul_op = { "*" | "/" }
+factor = { integer | ident | "(" ~ expr ~ ")" }
