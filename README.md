@@ -34,6 +34,14 @@ For development checks:
 
 Run tests/checks later as they are added.
 
+Run all tests:
+
+    cargo test
+
+Run parser corpus tests:
+
+    cargo test parser::tests
+
 ## Git workflow and commit policy
 
 This repository uses:
@@ -168,6 +176,11 @@ The parser currently supports a small MVP subset:
 - Operators: `+`, `-`, `*`, `/`
 
 More Oberon0 features (such as declarations, procedures, control flow) can be added incrementally.
+
+Detailed subset and planning documents:
+
+- docs/oberon0-v1-subset.md
+- docs/milestone-a-backlog.md
 
 ## Troubleshooting
 

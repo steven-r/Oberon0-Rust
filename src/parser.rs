@@ -186,3 +186,79 @@ fn take_ident(pair: Option<Pair<Rule>>, label: &str) -> Result<String> {
     }
     Ok(pair.as_str().to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::Path;
+
+    use super::parse_module;
+    use crate::semantic::analyze;
+
+    fn read_dir_sources(dir: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
+
+        for entry in fs::read_dir(&base).expect("failed to read parser corpus directory") {
+            let entry = entry.expect("failed to read parser corpus entry");
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("ob0") {
+                continue;
+            }
+
+            let name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .expect("invalid filename")
+                .to_string();
+            let source = fs::read_to_string(&path).expect("failed to read parser corpus file");
+            out.push((name, source));
+        }
+
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
+
+    #[test]
+    fn valid_corpus_parses() {
+        for (name, source) in read_dir_sources("tests/parser_cases/valid") {
+            parse_module(&source)
+                .unwrap_or_else(|err| panic!("expected valid parse for {name}, got error: {err}"));
+        }
+    }
+
+    #[test]
+    fn invalid_corpus_fails() {
+        for (name, source) in read_dir_sources("tests/parser_cases/invalid") {
+            let result = parse_module(&source);
+            assert!(
+                result.is_err(),
+                "expected invalid parse for {name}, but parsing succeeded"
+            );
+        }
+    }
+
+    #[test]
+    fn semantic_valid_corpus_passes() {
+        for (name, source) in read_dir_sources("tests/semantic_cases/valid") {
+            let module = parse_module(&source)
+                .unwrap_or_else(|err| panic!("expected parse for semantic case {name}, got: {err}"));
+            analyze(&module, None).unwrap_or_else(|err| {
+                panic!("expected semantic success for {name}, got error: {err}")
+            });
+        }
+    }
+
+    #[test]
+    fn semantic_invalid_corpus_fails() {
+        for (name, source) in read_dir_sources("tests/semantic_cases/invalid") {
+            let module = parse_module(&source)
+                .unwrap_or_else(|err| panic!("expected parse for semantic case {name}, got: {err}"));
+            let result = analyze(&module, None);
+            assert!(
+                result.is_err(),
+                "expected semantic failure for {name}, but analysis succeeded"
+            );
+        }
+    }
+}

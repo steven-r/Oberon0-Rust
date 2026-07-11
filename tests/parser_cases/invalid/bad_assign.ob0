@@ -1,0 +1,4 @@
+MODULE Main;
+BEGIN
+  x = 1;
+END Main.

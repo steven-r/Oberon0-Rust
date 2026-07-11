@@ -1,0 +1,5 @@
+MODULE Main;
+BEGIN
+  x := 1 + 2 * 3;
+  WriteInt(x);
+END Main.

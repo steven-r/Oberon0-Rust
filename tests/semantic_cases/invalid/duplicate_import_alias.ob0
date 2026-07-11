@@ -1,0 +1,4 @@
+MODULE Main;
+IMPORT IO, IO;
+BEGIN
+END Main.

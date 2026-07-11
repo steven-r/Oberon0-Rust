@@ -1,0 +1,5 @@
+MODULE Main;
+IMPORT IO, LocalMath := Math;
+BEGIN
+  WriteInt(42);
+END Main.
