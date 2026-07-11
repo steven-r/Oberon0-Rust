@@ -72,8 +72,56 @@ fn parse_declaration_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     match inner.as_rule() {
         Rule::const_section => parse_const_section(inner),
         Rule::var_section => parse_var_section(inner),
+        Rule::procedure_decl => Ok(vec![parse_procedure_decl(inner)?]),
         _ => bail!("Unknown declaration section: {:?}", inner.as_rule()),
     }
+}
+
+fn parse_procedure_decl(decl: Pair<Rule>) -> Result<Declaration> {
+    let mut parts = decl.into_inner();
+    let name = take_ident(parts.next(), "procedure declaration name")?;
+
+    let mut params = Vec::new();
+    let mut next = parts
+        .next()
+        .context("Missing data in procedure declaration")?;
+
+    if next.as_rule() == Rule::formal_params {
+        params = parse_formal_params(next)?;
+        next = parts
+            .next()
+            .context("Missing procedure body or END name")?;
+    }
+
+    let (body, end_name_pair) = if next.as_rule() == Rule::stmt_list {
+        let body = parse_stmt_list(next)?;
+        let end_name_pair = parts.next().context("Missing END procedure name")?;
+        (body, end_name_pair)
+    } else {
+        (Vec::new(), next)
+    };
+
+    let end_name = take_ident(Some(end_name_pair), "END procedure name")?;
+
+    Ok(Declaration::Procedure {
+        name,
+        params,
+        body,
+        end_name,
+    })
+}
+
+fn parse_formal_params(params: Pair<Rule>) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    if let Some(ident_list) = params.into_inner().next() {
+        for ident in ident_list.into_inner() {
+            if ident.as_rule() != Rule::ident {
+                bail!("Procedure parameter is not an identifier");
+            }
+            out.push(ident.as_str().to_string());
+        }
+    }
+    Ok(out)
 }
 
 fn parse_const_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {

@@ -1,0 +1,9 @@
+MODULE Main;
+PROCEDURE PrintTwice(x);
+BEGIN
+  WriteInt(x);
+  WriteInt(x)
+END PrintTwice;
+BEGIN
+  PrintTwice(7)
+END Main.

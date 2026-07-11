@@ -1,0 +1,7 @@
+MODULE Main;
+PROCEDURE P(x)
+BEGIN
+  WriteInt(x)
+END P;
+BEGIN
+END Main.

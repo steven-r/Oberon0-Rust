@@ -34,7 +34,12 @@ pub enum Statement {
 pub enum Declaration {
     Const { name: String, value: i64 },
     Var { name: String },
-    Procedure { name: String, params: Vec<String> },
+    Procedure {
+        name: String,
+        params: Vec<String>,
+        body: Vec<Statement>,
+        end_name: String,
+    },
 }
 
 #[derive(Debug, Clone)]

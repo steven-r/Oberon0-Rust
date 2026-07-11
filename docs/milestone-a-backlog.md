@@ -60,7 +60,7 @@ Definition of done:
 
 ## A5. Procedure declarations and calls
 
-Status: Planned.
+Status: Done.
 
 Tasks:
 

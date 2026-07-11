@@ -1,0 +1,7 @@
+MODULE Main;
+PROCEDURE Echo(x);
+BEGIN
+  WriteInt(x)
+END WrongName;
+BEGIN
+END Main.

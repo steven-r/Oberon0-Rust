@@ -47,11 +47,12 @@ Supported in Milestone A:
 2. Procedure-style call: `Proc` and `Proc(arg1, arg2)`
 3. Conditional: `IF expr THEN [statement-list] [ELSE [statement-list]] END`
 4. Loop: `WHILE expr DO [statement-list] END`
+5. Procedure declaration: `PROCEDURE Name([param1, ...]); BEGIN [statement-list] END Name;`
 
 Not yet in Milestone A:
 
 1. Type declarations (`TYPE`)
-2. User-defined procedure declarations
+2. Return values from procedures and functions
 
 ## Expressions
 
@@ -76,6 +77,8 @@ The compiler must produce user-facing errors for:
 3. Module name mismatch (`MODULE` name vs `END` name)
 4. Duplicate import aliases
 5. Missing import-to-crate mapping when manifest validation is enabled
+6. Procedure END name mismatch
+7. Procedure call arity mismatch
 
 ## Test acceptance criteria
 
