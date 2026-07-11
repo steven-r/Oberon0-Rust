@@ -264,3 +264,81 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{SemanticError, analyze};
+    use crate::parser::parse_module;
+
+    fn semantic_error(source: &str) -> SemanticError {
+        let module = parse_module(source).expect("source should parse for semantic test");
+        let err = analyze(&module, None).expect_err("semantic analysis should fail");
+        err.downcast::<SemanticError>()
+            .expect("error should downcast to SemanticError")
+    }
+
+    #[test]
+    fn reports_not_callable_for_variable_call() {
+        let source = r#"
+MODULE Main;
+VAR x;
+BEGIN
+  x := 1;
+  x()
+END Main.
+"#;
+        let err = semantic_error(source);
+        match err {
+            SemanticError::NotCallable { name } => assert_eq!(name, "x"),
+            other => panic!("expected NotCallable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reports_arity_mismatch_for_procedure_call() {
+        let source = r#"
+MODULE Main;
+PROCEDURE P(a, b);
+BEGIN
+  WriteInt(a + b)
+END P;
+BEGIN
+  P(1)
+END Main.
+"#;
+        let err = semantic_error(source);
+        match err {
+            SemanticError::ArityMismatch {
+                name,
+                expected,
+                got,
+            } => {
+                assert_eq!(name, "P");
+                assert_eq!(expected, 2);
+                assert_eq!(got, 1);
+            }
+            other => panic!("expected ArityMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reports_procedure_end_name_mismatch() {
+        let source = r#"
+MODULE Main;
+PROCEDURE P(a);
+BEGIN
+  WriteInt(a)
+END Wrong;
+BEGIN
+END Main.
+"#;
+        let err = semantic_error(source);
+        match err {
+            SemanticError::ProcedureNameMismatch { expected, got } => {
+                assert_eq!(expected, "P");
+                assert_eq!(got, "Wrong");
+            }
+            other => panic!("expected ProcedureNameMismatch, got {other:?}"),
+        }
+    }
+}

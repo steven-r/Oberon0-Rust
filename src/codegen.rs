@@ -333,3 +333,120 @@ fn _validate_import_mapping(module: &HModule, manifest: &ExternalManifest) -> Re
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::ast::BinaryOp;
+    use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
+    use crate::manifest::{CrateBinding, ExternalManifest};
+    use crate::symbols::SymbolKind;
+
+    use super::{generate_cargo_toml, generate_main_rs};
+
+    fn ident(id: usize, name: &str, kind: SymbolKind) -> HResolvedIdent {
+        HResolvedIdent {
+            id,
+            name: name.to_string(),
+            kind,
+        }
+    }
+
+    #[test]
+    fn emits_procedure_function_and_call_from_main() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![HDeclaration::Procedure {
+                id: 1,
+                name: "AddAndPrint".to_string(),
+                params: vec![HParam {
+                    id: 2,
+                    name: "a".to_string(),
+                }],
+                local_vars: vec![ident(3, "x", SymbolKind::Variable)],
+                body: vec![
+                    HStatement::Assign {
+                        target: ident(3, "x", SymbolKind::Variable),
+                        value: HExpr::Name(ident(2, "a", SymbolKind::Parameter)),
+                    },
+                    HStatement::Call {
+                        name: ident(4, "WriteInt", SymbolKind::Procedure),
+                        args: vec![HExpr::Name(ident(3, "x", SymbolKind::Variable))],
+                    },
+                ],
+                end_name: "AddAndPrint".to_string(),
+            }],
+            statements: vec![HStatement::Call {
+                name: ident(1, "AddAndPrint", SymbolKind::Procedure),
+                args: vec![HExpr::Integer(7)],
+            }],
+        };
+
+        let generated = generate_main_rs(&module);
+
+        assert!(generated.contains("fn AddAndPrint(vars: &mut HashMap<String, i64>, param_2: i64)"));
+        assert!(generated.contains("let mut local_3: i64 = 0;"));
+        assert!(generated.contains("local_3 = param_2;"));
+        assert!(generated.contains("println!(\"{}\", local_3);"));
+        assert!(generated.contains("AddAndPrint(&mut vars, 7);"));
+    }
+
+    #[test]
+    fn emits_dependency_entries_with_package_and_features() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![HImportDecl {
+                local_name: "IO".to_string(),
+                external_name: "IO".to_string(),
+            }],
+            declarations: vec![],
+            statements: vec![],
+        };
+
+        let mut dependencies = BTreeMap::new();
+        dependencies.insert(
+            "IO".to_string(),
+            CrateBinding {
+                crate_name: "termcolor".to_string(),
+                version: "1.4".to_string(),
+                package: Some("termcolor".to_string()),
+                features: vec!["std".to_string()],
+            },
+        );
+        let manifest = ExternalManifest { dependencies };
+
+        let cargo_toml = generate_cargo_toml(&module, Some(&manifest))
+            .expect("cargo toml generation should succeed");
+
+        assert!(cargo_toml.contains("io = { version = \"1.4\", package = \"termcolor\", features = [\"std\"] }"));
+    }
+
+    #[test]
+    fn binary_top_level_expr_is_not_wrapped_with_outer_parentheses() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![HStatement::Assign {
+                target: ident(10, "x", SymbolKind::Variable),
+                value: HExpr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(HExpr::Integer(1)),
+                    right: Box::new(HExpr::Binary {
+                        op: BinaryOp::Mul,
+                        left: Box::new(HExpr::Integer(2)),
+                        right: Box::new(HExpr::Integer(3)),
+                    }),
+                },
+            }],
+        };
+
+        let generated = generate_main_rs(&module);
+        assert!(generated.contains("vars.insert(\"x\".to_string(), 1 + (2 * 3));"));
+    }
+}

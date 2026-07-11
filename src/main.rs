@@ -82,3 +82,53 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use clap::Parser;
+
+    use super::Cli;
+
+    #[test]
+    fn cli_requires_input_path() {
+        let parsed = Cli::try_parse_from(["oberon0c"]);
+        assert!(parsed.is_err(), "CLI should reject missing input path");
+    }
+
+    #[test]
+    fn cli_uses_default_out_dir() {
+        let parsed = Cli::try_parse_from(["oberon0c", "src/Main.ob0"])
+            .expect("CLI parse should succeed");
+        assert_eq!(parsed.input, PathBuf::from("src/Main.ob0"));
+        assert_eq!(parsed.out_dir, PathBuf::from("target/generated"));
+        assert!(parsed.manifest.is_none());
+        assert!(!parsed.build);
+    }
+
+    #[test]
+    fn cli_accepts_manifest_out_dir_and_build_flag() {
+        let parsed = Cli::try_parse_from([
+            "oberon0c",
+            "examples/hello-app/src/Main.ob0",
+            "--manifest",
+            "examples/hello-app/oberon.toml",
+            "--out-dir",
+            "target/generated-a",
+            "--build",
+        ])
+        .expect("CLI parse should succeed");
+
+        assert_eq!(
+            parsed.input,
+            PathBuf::from("examples/hello-app/src/Main.ob0")
+        );
+        assert_eq!(
+            parsed.manifest,
+            Some(PathBuf::from("examples/hello-app/oberon.toml"))
+        );
+        assert_eq!(parsed.out_dir, PathBuf::from("target/generated-a"));
+        assert!(parsed.build);
+    }
+}
