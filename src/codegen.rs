@@ -3,11 +3,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::ast::{BinaryOp, Expr, Module, Statement};
+use crate::ast::BinaryOp;
+use crate::hir::{HExpr, HModule, HStatement};
 use crate::manifest::{CrateBinding, ExternalManifest};
 
 pub fn generate_rust_project(
-    module: &Module,
+    module: &HModule,
     manifest: Option<&ExternalManifest>,
     out_root: &Path,
 ) -> Result<PathBuf> {
@@ -27,7 +28,7 @@ pub fn generate_rust_project(
     Ok(project_dir)
 }
 
-fn generate_cargo_toml(module: &Module, manifest: Option<&ExternalManifest>) -> Result<String> {
+fn generate_cargo_toml(module: &HModule, manifest: Option<&ExternalManifest>) -> Result<String> {
     let mut out = String::new();
     out.push_str("[package]\n");
     out.push_str(&format!("name = \"{}\"\n", module.name.to_lowercase()));
@@ -78,7 +79,7 @@ fn dependency_line(local_name: &str, binding: &CrateBinding) -> String {
     format!("{} = {{ {} }}", dep_name, fields.join(", "))
 }
 
-fn generate_main_rs(module: &Module) -> String {
+fn generate_main_rs(module: &HModule) -> String {
     let mut out = String::new();
 
     out.push_str("use std::collections::HashMap;\n\n");
@@ -99,18 +100,18 @@ fn generate_main_rs(module: &Module) -> String {
     out
 }
 
-fn format_statement(stmt: &Statement, indent: &str) -> String {
+fn format_statement(stmt: &HStatement, indent: &str) -> String {
     match stmt {
-        Statement::Assign { target, value } => {
+        HStatement::Assign { target, value } => {
             format!(
                 "{}vars.insert(\"{}\".to_string(), {});\n",
                 indent,
-                target,
+                target.name,
                 format_top_level_expr(value)
             )
         }
-        Statement::Call { name, args } => {
-            if name == "WriteInt" {
+        HStatement::Call { name, args } => {
+            if name.name == "WriteInt" {
                 match args.first() {
                     Some(first) => {
                         format!("{}println!(\"{{}}\", {});\n", indent, format_top_level_expr(first))
@@ -120,11 +121,11 @@ fn format_statement(stmt: &Statement, indent: &str) -> String {
             } else {
                 format!(
                     "{}eprintln!(\"Note: call '{}' is not implemented in the MVP.\");\n",
-                    indent, name
+                    indent, name.name
                 )
             }
         }
-        Statement::If {
+        HStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -148,7 +149,7 @@ fn format_statement(stmt: &Statement, indent: &str) -> String {
 
             out
         }
-        Statement::While { condition, body } => {
+        HStatement::While { condition, body } => {
             let mut out = String::new();
             out.push_str(&format!(
                 "{}while {} != 0 {{\n",
@@ -162,9 +163,9 @@ fn format_statement(stmt: &Statement, indent: &str) -> String {
     }
 }
 
-fn format_top_level_expr(expr: &Expr) -> String {
+fn format_top_level_expr(expr: &HExpr) -> String {
     match expr {
-        Expr::Binary { op, left, right } => {
+        HExpr::Binary { op, left, right } => {
             let op_s = match op {
                 BinaryOp::Add => "+",
                 BinaryOp::Sub => "-",
@@ -177,7 +178,7 @@ fn format_top_level_expr(expr: &Expr) -> String {
     }
 }
 
-fn format_block(stmts: &[Statement], indent: &str) -> String {
+fn format_block(stmts: &[HStatement], indent: &str) -> String {
     let mut out = String::new();
     for stmt in stmts {
         out.push_str(&format_statement(stmt, indent));
@@ -185,11 +186,11 @@ fn format_block(stmts: &[Statement], indent: &str) -> String {
     out
 }
 
-fn format_expr(expr: &Expr) -> String {
+fn format_expr(expr: &HExpr) -> String {
     match expr {
-        Expr::Integer(v) => v.to_string(),
-        Expr::Variable(name) => format!("get_var(&vars, \"{}\")", name),
-        Expr::Binary { op, left, right } => {
+        HExpr::Integer(v) => v.to_string(),
+        HExpr::Name(ident) => format!("get_var(&vars, \"{}\")", ident.name),
+        HExpr::Binary { op, left, right } => {
             let op_s = match op {
                 BinaryOp::Add => "+",
                 BinaryOp::Sub => "-",
@@ -202,7 +203,7 @@ fn format_expr(expr: &Expr) -> String {
 }
 
 #[allow(dead_code)]
-fn _validate_import_mapping(module: &Module, manifest: &ExternalManifest) -> Result<()> {
+fn _validate_import_mapping(module: &HModule, manifest: &ExternalManifest) -> Result<()> {
     for import in &module.imports {
         if manifest.resolve(&import.external_name).is_none() {
             bail!(

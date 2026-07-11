@@ -75,7 +75,7 @@ Definition of done:
 
 ## A6. HIR preparation
 
-Status: Planned.
+Status: In progress.
 
 Tasks:
 

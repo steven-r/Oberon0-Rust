@@ -1,5 +1,7 @@
 mod ast;
 mod codegen;
+mod hir;
+mod lower;
 mod manifest;
 mod parser;
 mod scanner;
@@ -14,6 +16,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 
 use codegen::generate_rust_project;
+use lower::lower_module;
 use manifest::ExternalManifest;
 use parser::parse_module;
 use scanner::scan;
@@ -55,7 +58,9 @@ fn main() -> Result<()> {
 
     analyze(&module, manifest.as_ref()).context("Semantic analysis failed")?;
 
-    let generated_dir = generate_rust_project(&module, manifest.as_ref(), &cli.out_dir)
+    let hir = lower_module(&module).context("HIR lowering failed")?;
+
+    let generated_dir = generate_rust_project(&hir, manifest.as_ref(), &cli.out_dir)
         .context("Code generation failed")?;
 
     println!("Scan: {} Tokens", tokens.len());
