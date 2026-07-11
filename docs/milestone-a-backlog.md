@@ -30,7 +30,7 @@ Definition of done:
 
 ## A3. Grammar extension (declarations)
 
-Status: In progress.
+Status: Done.
 
 Tasks:
 
