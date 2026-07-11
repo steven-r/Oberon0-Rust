@@ -3,6 +3,7 @@ name = "oberon0c"
 version = "0.2.0"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/steven-r/Oberon0-Rust"
 
 [dependencies]
 anyhow = "1.0"

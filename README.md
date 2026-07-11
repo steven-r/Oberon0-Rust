@@ -1,6 +1,8 @@
-# oberon0c
+# Oberon0-Rust
 
 A minimal Oberon0 compiler prototype written in Rust.
+
+Compiler binary name: `oberon0c`.
 
 ## AI-assisted development
 
