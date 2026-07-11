@@ -6,7 +6,22 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-_No unreleased changes yet._
+### Features
+
+- enforce declarative symbol resolution for assignment targets in semantic analysis
+- enforce lowering invariant: assignment targets must already be resolved symbols
+
+### Documentation
+
+- add declarative semantics roadmap (D1-D6)
+- define declaration/scope/shadowing rules in language subset specification
+
+### Tests
+
+- add semantic regression for undeclared assignment target
+- add semantic invalid corpus case for undeclared assignment target
+- adapt semantic valid corpus to explicit declaration model
+- add lowering regression for unresolved assignment target invariant
 
 ## v0.2.0 - 2026-07-11
 

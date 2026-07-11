@@ -193,7 +193,10 @@ fn analyze_statement(
         Statement::Assign { target, value } => {
             analyze_expr(value, symbols)?;
             if symbols.resolve(target).is_none() {
-                symbols.declare(target, SymbolKind::Variable)?;
+                return Err(SemanticError::UndefinedSymbol {
+                    name: target.clone(),
+                }
+                .into());
             }
             Ok(())
         }
@@ -339,6 +342,21 @@ END Main.
                 assert_eq!(got, "Wrong");
             }
             other => panic!("expected ProcedureNameMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reports_undefined_symbol_for_undeclared_assignment_target() {
+        let source = r#"
+MODULE Main;
+BEGIN
+  y := 1
+END Main.
+"#;
+        let err = semantic_error(source);
+        match err {
+            SemanticError::UndefinedSymbol { name } => assert_eq!(name, "y"),
+            other => panic!("expected UndefinedSymbol, got {other:?}"),
         }
     }
 }

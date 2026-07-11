@@ -56,13 +56,6 @@ impl Resolver {
             .cloned()
     }
 
-    fn resolve_or_declare_var(&mut self, name: &str) -> Result<HResolvedIdent> {
-        match self.resolve(name) {
-            Some(resolved) => Ok(resolved),
-            None => self.declare(name, SymbolKind::Variable),
-        }
-    }
-
     fn current_scope_symbols(&self) -> Vec<HResolvedIdent> {
         let scope = self
             .scopes
@@ -193,10 +186,19 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
 
 fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HStatement> {
     match statement {
-        Statement::Assign { target, value } => Ok(HStatement::Assign {
-            target: resolver.resolve_or_declare_var(target)?,
-            value: lower_expr(value, resolver)?,
-        }),
+        Statement::Assign { target, value } => {
+            let resolved_target = resolver.resolve(target).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Lowering invariant violated: unresolved assignment target '{}'.",
+                    target
+                )
+            })?;
+
+            Ok(HStatement::Assign {
+                target: resolved_target,
+                value: lower_expr(value, resolver)?,
+            })
+        }
         Statement::Call { name, args } => {
             let resolved = resolver
                 .resolve(name)
@@ -302,6 +304,7 @@ mod tests {
     fn procedure_locals_and_params_have_stable_ids_in_nested_flow() {
         let source = r#"
 MODULE Main;
+VAR x;
 PROCEDURE P(p);
 BEGIN
   IF p THEN
@@ -317,6 +320,15 @@ END Main.
 "#;
 
         let hir = lower_from_source(source).expect("lowering should succeed");
+
+        let module_x_id = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Var { id, name } if name == "x" => Some(*id),
+                _ => None,
+            })
+            .expect("module variable x must exist");
 
         let proc = hir
             .declarations
@@ -334,19 +346,18 @@ END Main.
             .expect("procedure P must exist");
 
         assert_eq!(proc.0.len(), 1, "expected exactly one parameter");
-        assert_eq!(proc.1.len(), 1, "expected exactly one lowered local variable");
-        assert_eq!(proc.1[0].name, "x");
+        assert_eq!(proc.1.len(), 0, "expected no implicit procedure local variable");
 
         let mut assign_ids = Vec::new();
         collect_assign_target_ids(proc.2, &mut assign_ids);
         assert_eq!(assign_ids.len(), 2, "expected two assignments to x");
         assert_eq!(
-            assign_ids[0], proc.1[0].id,
-            "first assignment must target lowered local var x"
+            assign_ids[0], module_x_id,
+            "first assignment must target declared module var x"
         );
         assert_eq!(
-            assign_ids[1], proc.1[0].id,
-            "nested assignment must reuse same local var id"
+            assign_ids[1], module_x_id,
+            "nested assignment must reuse declared module var id"
         );
 
         if let HStatement::If { condition, .. } = &proc.2[0] {
@@ -357,5 +368,23 @@ END Main.
         } else {
             panic!("expected IF as first procedure statement");
         }
+    }
+
+    #[test]
+    fn lowering_fails_when_assignment_target_is_unresolved() {
+        let source = r#"
+MODULE Main;
+BEGIN
+  y := 1
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let err = lower_module(&module).expect_err("lowering should fail on unresolved assignment target");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Lowering invariant violated: unresolved assignment target 'y'."),
+            "unexpected lowering error message: {msg}"
+        );
     }
 }

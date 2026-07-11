@@ -39,6 +39,59 @@ Semantics in Milestone A:
 1. Duplicate local aliases are rejected.
 2. If a manifest is provided, each imported external name must be mapped.
 
+## Declaration and scope rules
+
+The language model is declarative (Wirth-style): symbols must be declared before they are used.
+Implicit declarations are not allowed.
+
+Scope validation in Milestone A:
+
+1. Module scope contains imported aliases, `CONST`, `VAR`, and `PROCEDURE` names.
+2. Procedure scope contains procedure parameters and can reference module-scope symbols.
+3. Assignment targets and expression identifiers must resolve in the current scope chain.
+4. Assigning to an undeclared identifier is a semantic error.
+
+Shadowing and redeclaration:
+
+1. Redeclaration in the same scope is rejected.
+2. Shadowing across nested scopes is allowed (for example, a procedure parameter may shadow a module variable).
+3. Duplicate parameter names in a procedure declaration are rejected.
+
+Examples:
+
+Valid shadowing:
+
+```oberon
+MODULE Main;
+VAR x;
+PROCEDURE P(x);
+BEGIN
+  x := x + 1
+END P;
+BEGIN
+  x := 0;
+  P(41)
+END Main.
+```
+
+Invalid undeclared assignment target:
+
+```oberon
+MODULE Main;
+BEGIN
+  y := 1
+END Main.
+```
+
+Invalid redeclaration in same scope:
+
+```oberon
+MODULE Main;
+VAR x, x;
+BEGIN
+END Main.
+```
+
 ## Statements
 
 Supported in Milestone A:
@@ -79,6 +132,8 @@ The compiler must produce user-facing errors for:
 5. Missing import-to-crate mapping when manifest validation is enabled
 6. Procedure END name mismatch
 7. Procedure call arity mismatch
+8. Assignment to undeclared identifiers
+9. Duplicate declarations within the same scope
 
 ## Test acceptance criteria
 
