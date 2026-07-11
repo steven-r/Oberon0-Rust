@@ -106,13 +106,15 @@ fn format_statement(stmt: &Statement, indent: &str) -> String {
                 "{}vars.insert(\"{}\".to_string(), {});\n",
                 indent,
                 target,
-                format_expr(value)
+                format_top_level_expr(value)
             )
         }
         Statement::Call { name, args } => {
             if name == "WriteInt" {
                 match args.first() {
-                    Some(first) => format!("{}println!(\"{{}}\", {});\n", indent, format_expr(first)),
+                    Some(first) => {
+                        format!("{}println!(\"{{}}\", {});\n", indent, format_top_level_expr(first))
+                    }
                     None => format!("{}println!();\n", indent),
                 }
             } else {
@@ -157,6 +159,21 @@ fn format_statement(stmt: &Statement, indent: &str) -> String {
             out.push_str(&format!("{}}}\n", indent));
             out
         }
+    }
+}
+
+fn format_top_level_expr(expr: &Expr) -> String {
+    match expr {
+        Expr::Binary { op, left, right } => {
+            let op_s = match op {
+                BinaryOp::Add => "+",
+                BinaryOp::Sub => "-",
+                BinaryOp::Mul => "*",
+                BinaryOp::Div => "/",
+            };
+            format!("{} {} {}", format_expr(left), op_s, format_expr(right))
+        }
+        _ => format_expr(expr),
     }
 }
 
