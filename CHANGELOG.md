@@ -4,7 +4,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased - 2026-07-11
+## Unreleased
+
+_No unreleased changes yet._
+
+## v0.2.0 - 2026-07-11
 
 ### Features
 
@@ -25,12 +29,15 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-- update roadmap status notes: mark A2, A3, and A6 as done
+- refresh language subset and unreleased notes
+- mark A6 as done
+- mark A3 as done
+- mark A2 as done
 
 ### Tests
 
 - add scan coverage and '=' regression
-- expand unit coverage for manifest, symbols, semantic, codegen, and CLI
+- add unit tests for codegen, cli, manifest, symbols, semantic
 
 ### Chores
 
