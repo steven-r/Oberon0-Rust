@@ -1,10 +1,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, bail};
 
 use crate::ast::BinaryOp;
-use crate::hir::{HExpr, HModule, HStatement};
+use crate::hir::{HDeclaration, HExpr, HModule, HParam, HResolvedIdent, HStatement};
 use crate::manifest::{CrateBinding, ExternalManifest};
 
 pub fn generate_rust_project(
@@ -81,17 +82,45 @@ fn dependency_line(local_name: &str, binding: &CrateBinding) -> String {
 
 fn generate_main_rs(module: &HModule) -> String {
     let mut out = String::new();
+    let procedure_names = collect_procedure_names(module);
 
     out.push_str("use std::collections::HashMap;\n\n");
+    out.push_str("#[allow(dead_code)]\n");
     out.push_str("fn get_var(vars: &HashMap<String, i64>, name: &str) -> i64 {\n");
     out.push_str("    *vars.get(name).unwrap_or(&0)\n");
     out.push_str("}\n\n");
 
+    for declaration in &module.declarations {
+        if let HDeclaration::Procedure {
+            name,
+            params,
+            local_vars,
+            body,
+            ..
+        } = declaration
+        {
+            out.push_str(&format_procedure(
+                name,
+                params,
+                local_vars,
+                body,
+                &procedure_names,
+            ));
+            out.push('\n');
+        }
+    }
+
     out.push_str("fn main() {\n");
     out.push_str("    let mut vars: HashMap<String, i64> = HashMap::new();\n");
 
+    let main_ctx = FormatContext {
+        locals: HashMap::new(),
+        procedures: &procedure_names,
+        vars_arg: "&mut vars",
+    };
+
     for stmt in &module.statements {
-        out.push_str(&format_statement(stmt, "    "));
+        out.push_str(&format_statement(stmt, "    ", &main_ctx));
     }
 
     out.push_str("    println!(\"State: {:?}\", vars);\n");
@@ -100,24 +129,111 @@ fn generate_main_rs(module: &HModule) -> String {
     out
 }
 
-fn format_statement(stmt: &HStatement, indent: &str) -> String {
+struct FormatContext<'a> {
+    locals: HashMap<usize, String>,
+    procedures: &'a HashSet<String>,
+    vars_arg: &'a str,
+}
+
+fn collect_procedure_names(module: &HModule) -> HashSet<String> {
+    module
+        .declarations
+        .iter()
+        .filter_map(|decl| match decl {
+            HDeclaration::Procedure { name, .. } => Some(name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn format_procedure(
+    name: &str,
+    params: &[HParam],
+    local_vars: &[HResolvedIdent],
+    body: &[HStatement],
+    procedure_names: &HashSet<String>,
+) -> String {
+    let mut out = String::new();
+    let mut locals = HashMap::new();
+
+    let mut signature_args = Vec::new();
+    signature_args.push("vars: &mut HashMap<String, i64>".to_string());
+
+    for param in params {
+        let binding = format!("param_{}", param.id);
+        locals.insert(param.id, binding.clone());
+        signature_args.push(format!("{}: i64", binding));
+    }
+
+    let ctx = FormatContext {
+        locals,
+        procedures: procedure_names,
+        vars_arg: "vars",
+    };
+
+    out.push_str("#[allow(non_snake_case)]\n");
+    out.push_str("#[allow(unused_variables)]\n");
+    out.push_str(&format!("fn {}({}) {{\n", name, signature_args.join(", ")));
+
+    for local in local_vars {
+        out.push_str(&format!("    let mut local_{}: i64 = 0;\n", local.id));
+    }
+
+    let mut procedure_ctx = ctx;
+    for local in local_vars {
+        procedure_ctx
+            .locals
+            .insert(local.id, format!("local_{}", local.id));
+    }
+
+    for stmt in body {
+        out.push_str(&format_statement(stmt, "    ", &procedure_ctx));
+    }
+
+    out.push_str("}\n");
+    out
+}
+
+fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) -> String {
     match stmt {
         HStatement::Assign { target, value } => {
-            format!(
-                "{}vars.insert(\"{}\".to_string(), {});\n",
-                indent,
-                target.name,
-                format_top_level_expr(value)
-            )
+            if let Some(binding) = ctx.locals.get(&target.id) {
+                format!(
+                    "{}{} = {};\n",
+                    indent,
+                    binding,
+                    format_top_level_expr(value, ctx)
+                )
+            } else {
+                format!(
+                    "{}vars.insert(\"{}\".to_string(), {});\n",
+                    indent,
+                    target.name,
+                    format_top_level_expr(value, ctx)
+                )
+            }
         }
         HStatement::Call { name, args } => {
             if name.name == "WriteInt" {
                 match args.first() {
-                    Some(first) => {
-                        format!("{}println!(\"{{}}\", {});\n", indent, format_top_level_expr(first))
-                    }
+                    Some(first) => format!(
+                        "{}println!(\"{{}}\", {});\n",
+                        indent,
+                        format_top_level_expr(first, ctx)
+                    ),
                     None => format!("{}println!();\n", indent),
                 }
+            } else if ctx.procedures.contains(&name.name) {
+                let rendered_args = args
+                    .iter()
+                    .map(|arg| format_top_level_expr(arg, ctx))
+                    .collect::<Vec<_>>();
+                let joined_args = if rendered_args.is_empty() {
+                    ctx.vars_arg.to_string()
+                } else {
+                    format!("{}, {}", ctx.vars_arg, rendered_args.join(", "))
+                };
+                format!("{}{}({});\n", indent, name.name, joined_args)
             } else {
                 format!(
                     "{}eprintln!(\"Note: call '{}' is not implemented in the MVP.\");\n",
@@ -134,14 +250,14 @@ fn format_statement(stmt: &HStatement, indent: &str) -> String {
             out.push_str(&format!(
                 "{}if {} != 0 {{\n",
                 indent,
-                format_expr(condition)
+                format_expr(condition, ctx)
             ));
-            out.push_str(&format_block(then_branch, &format!("{}    ", indent)));
+            out.push_str(&format_block(then_branch, &format!("{}    ", indent), ctx));
             out.push_str(&format!("{}}}", indent));
 
             if let Some(else_branch) = else_branch {
                 out.push_str(" else {\n");
-                out.push_str(&format_block(else_branch, &format!("{}    ", indent)));
+                out.push_str(&format_block(else_branch, &format!("{}    ", indent), ctx));
                 out.push_str(&format!("{}}}\n", indent));
             } else {
                 out.push('\n');
@@ -154,16 +270,16 @@ fn format_statement(stmt: &HStatement, indent: &str) -> String {
             out.push_str(&format!(
                 "{}while {} != 0 {{\n",
                 indent,
-                format_expr(condition)
+                format_expr(condition, ctx)
             ));
-            out.push_str(&format_block(body, &format!("{}    ", indent)));
+            out.push_str(&format_block(body, &format!("{}    ", indent), ctx));
             out.push_str(&format!("{}}}\n", indent));
             out
         }
     }
 }
 
-fn format_top_level_expr(expr: &HExpr) -> String {
+fn format_top_level_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
     match expr {
         HExpr::Binary { op, left, right } => {
             let op_s = match op {
@@ -172,24 +288,27 @@ fn format_top_level_expr(expr: &HExpr) -> String {
                 BinaryOp::Mul => "*",
                 BinaryOp::Div => "/",
             };
-            format!("{} {} {}", format_expr(left), op_s, format_expr(right))
+            format!("{} {} {}", format_expr(left, ctx), op_s, format_expr(right, ctx))
         }
-        _ => format_expr(expr),
+        _ => format_expr(expr, ctx),
     }
 }
 
-fn format_block(stmts: &[HStatement], indent: &str) -> String {
+fn format_block(stmts: &[HStatement], indent: &str, ctx: &FormatContext<'_>) -> String {
     let mut out = String::new();
     for stmt in stmts {
-        out.push_str(&format_statement(stmt, indent));
+        out.push_str(&format_statement(stmt, indent, ctx));
     }
     out
 }
 
-fn format_expr(expr: &HExpr) -> String {
+fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
     match expr {
         HExpr::Integer(v) => v.to_string(),
-        HExpr::Name(ident) => format!("get_var(&vars, \"{}\")", ident.name),
+        HExpr::Name(ident) => match ctx.locals.get(&ident.id) {
+            Some(binding) => binding.clone(),
+            None => format!("get_var(&vars, \"{}\")", ident.name),
+        },
         HExpr::Binary { op, left, right } => {
             let op_s = match op {
                 BinaryOp::Add => "+",
@@ -197,7 +316,7 @@ fn format_expr(expr: &HExpr) -> String {
                 BinaryOp::Mul => "*",
                 BinaryOp::Div => "/",
             };
-            format!("({} {} {})", format_expr(left), op_s, format_expr(right))
+            format!("({} {} {})", format_expr(left, ctx), op_s, format_expr(right, ctx))
         }
     }
 }
