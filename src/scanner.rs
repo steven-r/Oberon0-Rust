@@ -15,6 +15,8 @@ pub enum Token {
 
     #[token(":=")]
     Assign,
+    #[token("=")]
+    Equal,
     #[token(";")]
     Semicolon,
     #[token(",")]
@@ -69,4 +71,33 @@ pub fn scan(source: &str) -> Result<Vec<SpannedToken>> {
     }
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Token, scan};
+
+    #[test]
+    fn scans_const_declaration_with_equal_token() {
+        let source = "MODULE Main; CONST BASE = 10; BEGIN END Main.";
+        let tokens = scan(source).expect("scanner should accept CONST declaration syntax");
+
+        let has_equal = tokens.iter().any(|t| matches!(t.token, Token::Equal));
+        assert!(has_equal, "scanner output should contain '=' token");
+    }
+
+    #[test]
+    fn scans_control_flow_and_procedure_keywords() {
+        let source = "PROCEDURE P(x); BEGIN IF x THEN WHILE x DO x := x - 1 END END END P;";
+        let tokens = scan(source).expect("scanner should accept procedure and control-flow syntax");
+
+        let has_if = tokens.iter().any(|t| matches!(t.token, Token::Ident(ref s) if s == "IF"));
+        let has_while = tokens
+            .iter()
+            .any(|t| matches!(t.token, Token::Ident(ref s) if s == "WHILE"));
+
+        // Scanner treats unknown keywords as identifiers; this test protects accepted lexical surface.
+        assert!(has_if, "scanner should preserve IF token text");
+        assert!(has_while, "scanner should preserve WHILE token text");
+    }
 }

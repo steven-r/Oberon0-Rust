@@ -346,6 +346,7 @@ mod tests {
     use std::path::Path;
 
     use super::parse_module;
+    use crate::scanner::scan;
     use crate::semantic::analyze;
 
     fn read_dir_sources(dir: &str) -> Vec<(String, String)> {
@@ -375,6 +376,8 @@ mod tests {
     #[test]
     fn valid_corpus_parses() {
         for (name, source) in read_dir_sources("tests/parser_cases/valid") {
+            scan(&source)
+                .unwrap_or_else(|err| panic!("expected valid scan for {name}, got error: {err}"));
             parse_module(&source)
                 .unwrap_or_else(|err| panic!("expected valid parse for {name}, got error: {err}"));
         }
@@ -394,6 +397,8 @@ mod tests {
     #[test]
     fn semantic_valid_corpus_passes() {
         for (name, source) in read_dir_sources("tests/semantic_cases/valid") {
+            scan(&source)
+                .unwrap_or_else(|err| panic!("expected valid scan for semantic case {name}, got: {err}"));
             let module = parse_module(&source)
                 .unwrap_or_else(|err| panic!("expected parse for semantic case {name}, got: {err}"));
             analyze(&module, None).unwrap_or_else(|err| {
