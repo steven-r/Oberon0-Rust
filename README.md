@@ -102,6 +102,18 @@ Compile example source:
 
     cargo run -- examples/hello-app/src/Main.ob0 --manifest examples/hello-app/oberon.toml --out-dir target/generated
 
+Short wrapper command (project directory instead of full file arguments):
+
+    scripts/oberon0 examples/hello-app
+
+Build and run generated project in one step:
+
+    scripts/oberon0 examples/hello-app --run
+
+Optional Cargo-style entry point (after adding `scripts/` to `PATH`):
+
+    cargo oberon0 examples/hello-app
+
 Run the generated project:
 
     cd target/generated/Main

@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  oberon0 <project-path> [--run]
+  oberon0 <project-path> --source <module.ob0> [--run]
+
+Examples:
+  oberon0 examples/hello-app
+  oberon0 examples/hello-app --run
+  oberon0 . --source src/Main.ob0
+
+Behavior:
+  - Resolves source file automatically as <project>/src/Main.ob0 unless --source is set.
+  - Uses <project>/oberon.toml as manifest if present.
+  - Generates output under target/generated.
+  - If --run is provided, builds generated project and runs it.
+EOF
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 1
+fi
+
+PROJECT_PATH=""
+SOURCE_REL="src/Main.ob0"
+RUN_GENERATED=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --source)
+      shift
+      if [[ $# -eq 0 ]]; then
+        echo "error: --source requires a value" >&2
+        exit 1
+      fi
+      SOURCE_REL="$1"
+      ;;
+    --run)
+      RUN_GENERATED=true
+      ;;
+    -* )
+      echo "error: unknown option '$1'" >&2
+      usage
+      exit 1
+      ;;
+    * )
+      if [[ -n "$PROJECT_PATH" ]]; then
+        echo "error: project path specified multiple times" >&2
+        usage
+        exit 1
+      fi
+      PROJECT_PATH="$1"
+      ;;
+  esac
+  shift
+done
+
+if [[ -z "$PROJECT_PATH" ]]; then
+  echo "error: missing project path" >&2
+  usage
+  exit 1
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ABS="$(cd "$PROJECT_PATH" && pwd)"
+SOURCE_PATH="$PROJECT_ABS/$SOURCE_REL"
+MANIFEST_PATH="$PROJECT_ABS/oberon.toml"
+
+if [[ ! -f "$SOURCE_PATH" ]]; then
+  echo "error: source file not found: $SOURCE_PATH" >&2
+  exit 1
+fi
+
+CMD=(cargo run -- "$SOURCE_PATH" --out-dir "$REPO_ROOT/target/generated")
+if [[ -f "$MANIFEST_PATH" ]]; then
+  CMD+=(--manifest "$MANIFEST_PATH")
+fi
+if [[ "$RUN_GENERATED" == true ]]; then
+  CMD+=(--build)
+fi
+
+(
+  cd "$REPO_ROOT"
+  "${CMD[@]}"
+)
+
+if [[ "$RUN_GENERATED" == true ]]; then
+  MODULE_NAME="$(basename "$SOURCE_PATH" .ob0)"
+  GENERATED_DIR="$REPO_ROOT/target/generated/$MODULE_NAME"
+  if [[ ! -d "$GENERATED_DIR" ]]; then
+    echo "error: generated project not found: $GENERATED_DIR" >&2
+    exit 1
+  fi
+  (
+    cd "$GENERATED_DIR"
+    cargo run
+  )
+fi
