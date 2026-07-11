@@ -4,6 +4,7 @@ mod manifest;
 mod parser;
 mod scanner;
 mod semantic;
+mod symbols;
 
 use std::fs;
 use std::path::PathBuf;

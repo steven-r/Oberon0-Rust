@@ -3,6 +3,8 @@ pub struct Module {
     pub name: String,
     pub end_name: String,
     pub imports: Vec<ImportDecl>,
+    #[allow(dead_code)]
+    pub declarations: Vec<Declaration>,
     pub statements: Vec<Statement>,
 }
 
@@ -16,6 +18,14 @@ pub struct ImportDecl {
 pub enum Statement {
     Assign { target: String, value: Expr },
     Call { name: String, args: Vec<Expr> },
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum Declaration {
+    Const { name: String },
+    Var { name: String },
+    Procedure { name: String, params: Vec<String> },
 }
 
 #[derive(Debug, Clone)]

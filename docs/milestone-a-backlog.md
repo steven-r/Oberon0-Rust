@@ -14,7 +14,7 @@ Tasks:
 
 ## A2. Semantic model foundation
 
-Status: Planned.
+Status: In progress.
 
 Tasks:
 

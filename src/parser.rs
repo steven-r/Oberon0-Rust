@@ -48,6 +48,7 @@ fn build_module(module_pair: Pair<Rule>) -> Result<Module> {
         name,
         end_name,
         imports,
+        declarations: Vec::new(),
         statements,
     })
 }
