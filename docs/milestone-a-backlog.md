@@ -14,7 +14,7 @@ Tasks:
 
 ## A2. Semantic model foundation
 
-Status: In progress.
+Status: Done.
 
 Tasks:
 
@@ -30,7 +30,7 @@ Definition of done:
 
 ## A3. Grammar extension (declarations)
 
-Status: Planned.
+Status: In progress.
 
 Tasks:
 
