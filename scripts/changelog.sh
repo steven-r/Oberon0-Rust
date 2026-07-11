@@ -127,6 +127,7 @@ emit_section() {
   local -a items=("$@")
   if [[ ${#items[@]} -gt 0 ]]; then
     printf "### %s\n" "$heading"
+    printf "\n"
     printf "%s\n" "${items[@]}"
     printf "\n"
   fi
