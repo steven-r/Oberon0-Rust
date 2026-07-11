@@ -46,6 +46,7 @@ pub enum HDeclaration {
         id: usize,
         name: String,
         params: Vec<HParam>,
+        local_vars: Vec<HResolvedIdent>,
         body: Vec<HStatement>,
         end_name: String,
     },

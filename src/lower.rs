@@ -62,6 +62,14 @@ impl Resolver {
             None => self.declare(name, SymbolKind::Variable),
         }
     }
+
+    fn current_scope_symbols(&self) -> Vec<HResolvedIdent> {
+        let scope = self
+            .scopes
+            .last()
+            .expect("resolver must always have an active scope");
+        scope.values().cloned().collect()
+    }
 }
 
 pub fn lower_module(module: &Module) -> Result<HModule> {
@@ -160,12 +168,22 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
                 .iter()
                 .map(|statement| lower_statement(statement, resolver))
                 .collect::<Result<Vec<_>>>()?;
+
+            let mut local_vars = resolver
+                .current_scope_symbols()
+                .iter()
+                .filter(|symbol| symbol.kind == SymbolKind::Variable)
+                .cloned()
+                .collect::<Vec<_>>();
+            local_vars.sort_by_key(|v| v.id);
+
             resolver.exit_scope();
 
             Ok(HDeclaration::Procedure {
                 id: resolved_proc.id,
                 name: name.clone(),
                 params: lowered_params,
+                local_vars,
                 body: lowered_body,
                 end_name: end_name.clone(),
             })
@@ -242,5 +260,102 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
             left: Box::new(lower_expr(left, resolver)?),
             right: Box::new(lower_expr(right, resolver)?),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+
+    use super::lower_module;
+    use crate::hir::{HDeclaration, HExpr, HStatement};
+    use crate::parser::parse_module;
+    use crate::semantic::analyze;
+
+    fn lower_from_source(source: &str) -> Result<crate::hir::HModule> {
+        let module = parse_module(source)?;
+        analyze(&module, None)?;
+        lower_module(&module)
+    }
+
+    fn collect_assign_target_ids(stmts: &[HStatement], out: &mut Vec<usize>) {
+        for stmt in stmts {
+            match stmt {
+                HStatement::Assign { target, .. } => out.push(target.id),
+                HStatement::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    collect_assign_target_ids(then_branch, out);
+                    if let Some(else_branch) = else_branch {
+                        collect_assign_target_ids(else_branch, out);
+                    }
+                }
+                HStatement::While { body, .. } => collect_assign_target_ids(body, out),
+                HStatement::Call { .. } => {}
+            }
+        }
+    }
+
+    #[test]
+    fn procedure_locals_and_params_have_stable_ids_in_nested_flow() {
+        let source = r#"
+MODULE Main;
+PROCEDURE P(p);
+BEGIN
+  IF p THEN
+    x := p;
+    WHILE p DO
+      x := x + 1
+    END
+  END
+END P;
+BEGIN
+  P(1)
+END Main.
+"#;
+
+        let hir = lower_from_source(source).expect("lowering should succeed");
+
+        let proc = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Procedure {
+                    name,
+                    params,
+                    local_vars,
+                    body,
+                    ..
+                } if name == "P" => Some((params, local_vars, body)),
+                _ => None,
+            })
+            .expect("procedure P must exist");
+
+        assert_eq!(proc.0.len(), 1, "expected exactly one parameter");
+        assert_eq!(proc.1.len(), 1, "expected exactly one lowered local variable");
+        assert_eq!(proc.1[0].name, "x");
+
+        let mut assign_ids = Vec::new();
+        collect_assign_target_ids(proc.2, &mut assign_ids);
+        assert_eq!(assign_ids.len(), 2, "expected two assignments to x");
+        assert_eq!(
+            assign_ids[0], proc.1[0].id,
+            "first assignment must target lowered local var x"
+        );
+        assert_eq!(
+            assign_ids[1], proc.1[0].id,
+            "nested assignment must reuse same local var id"
+        );
+
+        if let HStatement::If { condition, .. } = &proc.2[0] {
+            match condition {
+                HExpr::Name(ident) => assert_eq!(ident.id, proc.0[0].id),
+                _ => panic!("IF condition must resolve to parameter identifier"),
+            }
+        } else {
+            panic!("expected IF as first procedure statement");
+        }
     }
 }
