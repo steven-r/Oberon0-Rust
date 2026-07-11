@@ -1,0 +1,8 @@
+MODULE Main;
+PROCEDURE AddAndPrint(a, b);
+BEGIN
+  WriteInt(a + b)
+END AddAndPrint;
+BEGIN
+  AddAndPrint(2, 5)
+END Main.

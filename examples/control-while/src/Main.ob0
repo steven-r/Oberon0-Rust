@@ -1,0 +1,9 @@
+MODULE Main;
+VAR x;
+BEGIN
+  x := 3;
+  WHILE x DO
+    WriteInt(x);
+    x := x - 1
+  END
+END Main.

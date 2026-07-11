@@ -1,0 +1,10 @@
+MODULE Main;
+VAR x;
+BEGIN
+  x := 4;
+  IF x - 4 THEN
+    WriteInt(1)
+  ELSE
+    WriteInt(0)
+  END
+END Main.

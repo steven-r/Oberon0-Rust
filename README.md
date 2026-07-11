@@ -136,6 +136,10 @@ This repository includes the same layout as a runnable example at:
 
     examples/hello-app/
 
+Additional focused feature examples are listed in:
+
+    examples/README.md
+
 This creates a generated Rust project at:
 
     target/generated/<ModuleName>

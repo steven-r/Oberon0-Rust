@@ -1,0 +1,16 @@
+MODULE Main;
+PROCEDURE Countdown(start);
+BEGIN
+  current := start;
+  WHILE current DO
+    IF current - 1 THEN
+      WriteInt(current)
+    ELSE
+      WriteInt(100)
+    END;
+    current := current - 1
+  END
+END Countdown;
+BEGIN
+  Countdown(3)
+END Main.
