@@ -18,6 +18,15 @@ pub struct ImportDecl {
 pub enum Statement {
     Assign { target: String, value: Expr },
     Call { name: String, args: Vec<Expr> },
+    If {
+        condition: Expr,
+        then_branch: Vec<Statement>,
+        else_branch: Option<Vec<Statement>>,
+    },
+    While {
+        condition: Expr,
+        body: Vec<Statement>,
+    },
 }
 
 #[derive(Debug, Clone)]

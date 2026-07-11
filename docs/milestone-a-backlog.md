@@ -45,7 +45,7 @@ Definition of done:
 
 ## A4. Control-flow extension
 
-Status: Planned.
+Status: Done.
 
 Tasks:
 

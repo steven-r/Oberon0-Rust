@@ -137,6 +137,29 @@ fn analyze_statement(stmt: &Statement, symbols: &mut SymbolTable) -> Result<()> 
 
             Ok(())
         }
+        Statement::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            analyze_expr(condition, symbols)?;
+            for stmt in then_branch {
+                analyze_statement(stmt, symbols)?;
+            }
+            if let Some(else_branch) = else_branch {
+                for stmt in else_branch {
+                    analyze_statement(stmt, symbols)?;
+                }
+            }
+            Ok(())
+        }
+        Statement::While { condition, body } => {
+            analyze_expr(condition, symbols)?;
+            for stmt in body {
+                analyze_statement(stmt, symbols)?;
+            }
+            Ok(())
+        }
     }
 }
 

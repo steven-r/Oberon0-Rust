@@ -1,0 +1,8 @@
+MODULE Main;
+VAR x;
+BEGIN
+  x := 1;
+  WHILE x DO
+    x := y - 1
+  END
+END Main.

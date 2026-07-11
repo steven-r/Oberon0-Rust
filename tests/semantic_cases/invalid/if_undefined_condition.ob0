@@ -1,0 +1,6 @@
+MODULE Main;
+BEGIN
+  IF unknown THEN
+    WriteInt(1)
+  END
+END Main.

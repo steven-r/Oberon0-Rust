@@ -122,7 +122,50 @@ fn format_statement(stmt: &Statement, indent: &str) -> String {
                 )
             }
         }
+        Statement::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            let mut out = String::new();
+            out.push_str(&format!(
+                "{}if {} != 0 {{\n",
+                indent,
+                format_expr(condition)
+            ));
+            out.push_str(&format_block(then_branch, &format!("{}    ", indent)));
+            out.push_str(&format!("{}}}", indent));
+
+            if let Some(else_branch) = else_branch {
+                out.push_str(" else {\n");
+                out.push_str(&format_block(else_branch, &format!("{}    ", indent)));
+                out.push_str(&format!("{}}}\n", indent));
+            } else {
+                out.push('\n');
+            }
+
+            out
+        }
+        Statement::While { condition, body } => {
+            let mut out = String::new();
+            out.push_str(&format!(
+                "{}while {} != 0 {{\n",
+                indent,
+                format_expr(condition)
+            ));
+            out.push_str(&format_block(body, &format!("{}    ", indent)));
+            out.push_str(&format!("{}}}\n", indent));
+            out
+        }
     }
+}
+
+fn format_block(stmts: &[Statement], indent: &str) -> String {
+    let mut out = String::new();
+    for stmt in stmts {
+        out.push_str(&format_statement(stmt, indent));
+    }
+    out
 }
 
 fn format_expr(expr: &Expr) -> String {

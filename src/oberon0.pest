@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-keyword = { "MODULE" | "IMPORT" | "CONST" | "VAR" | "BEGIN" | "END" }
+keyword = { "MODULE" | "IMPORT" | "CONST" | "VAR" | "BEGIN" | "END" | "IF" | "THEN" | "ELSE" | "WHILE" | "DO" }
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 integer = @{ ASCII_DIGIT+ }
 
@@ -16,9 +16,12 @@ var_section = { "VAR" ~ ident_list ~ ";" }
 ident_list = { ident ~ ("," ~ ident)* }
 
 stmt_list = { (statement ~ ";")* ~ statement? }
-statement = _{ assign_stmt | call_stmt }
+statement = _{ assign_stmt | call_stmt | if_stmt | while_stmt }
 assign_stmt = { ident ~ ":=" ~ expr }
 call_stmt = { ident ~ ("(" ~ arg_list? ~ ")")? }
+if_stmt = { "IF" ~ expr ~ "THEN" ~ stmt_list? ~ else_section? ~ "END" }
+else_section = { "ELSE" ~ stmt_list? }
+while_stmt = { "WHILE" ~ expr ~ "DO" ~ stmt_list? ~ "END" }
 arg_list = { expr ~ ("," ~ expr)* }
 
 expr = { term ~ (add_op ~ term)* }

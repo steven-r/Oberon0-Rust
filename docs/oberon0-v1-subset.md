@@ -45,13 +45,13 @@ Supported in Milestone A:
 
 1. Assignment: `x := expr`
 2. Procedure-style call: `Proc` and `Proc(arg1, arg2)`
+3. Conditional: `IF expr THEN [statement-list] [ELSE [statement-list]] END`
+4. Loop: `WHILE expr DO [statement-list] END`
 
 Not yet in Milestone A:
 
-1. `IF ... THEN ... [ELSE ...] END`
-2. `WHILE ... DO ... END`
-3. Declarations (`CONST`, `VAR`, `TYPE`)
-4. User-defined procedure declarations
+1. Type declarations (`TYPE`)
+2. User-defined procedure declarations
 
 ## Expressions
 

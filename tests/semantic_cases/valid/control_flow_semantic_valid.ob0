@@ -1,0 +1,12 @@
+MODULE Main;
+VAR x;
+BEGIN
+  x := 2;
+  IF x THEN
+    WriteInt(x)
+  ELSE
+    WHILE x DO
+      x := x - 1
+    END
+  END
+END Main.

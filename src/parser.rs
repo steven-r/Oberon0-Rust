@@ -158,11 +158,56 @@ fn parse_statement(stmt: Pair<Rule>) -> Result<Statement> {
             };
             Ok(Statement::Call { name, args })
         }
+        Rule::if_stmt => {
+            let mut parts = stmt.into_inner();
+            let condition = parse_expr(parts.next().context("Missing IF condition")?)?;
+
+            let mut then_branch = Vec::new();
+            let mut else_branch = None;
+
+            if let Some(next) = parts.next() {
+                match next.as_rule() {
+                    Rule::stmt_list => {
+                        then_branch = parse_stmt_list(next)?;
+                        if let Some(else_section) = parts.next() {
+                            else_branch = Some(parse_else_section(else_section)?);
+                        }
+                    }
+                    Rule::else_section => {
+                        else_branch = Some(parse_else_section(next)?);
+                    }
+                    _ => bail!("Unknown IF branch: {:?}", next.as_rule()),
+                }
+            }
+
+            Ok(Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+            })
+        }
+        Rule::while_stmt => {
+            let mut parts = stmt.into_inner();
+            let condition = parse_expr(parts.next().context("Missing WHILE condition")?)?;
+            let body = match parts.next() {
+                Some(stmt_list) => parse_stmt_list(stmt_list)?,
+                None => Vec::new(),
+            };
+
+            Ok(Statement::While { condition, body })
+        }
         Rule::statement => {
             let inner = stmt.into_inner().next().context("Empty statement")?;
             parse_statement(inner)
         }
         _ => bail!("Unknown statement: {:?}", stmt.as_rule()),
+    }
+}
+
+fn parse_else_section(section: Pair<Rule>) -> Result<Vec<Statement>> {
+    match section.into_inner().next() {
+        Some(stmt_list) => parse_stmt_list(stmt_list),
+        None => Ok(Vec::new()),
     }
 }
 
