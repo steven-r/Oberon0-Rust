@@ -3,7 +3,7 @@ use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
 
-use crate::ast::{BinaryOp, Expr, ImportDecl, Module, Statement};
+use crate::ast::{BinaryOp, Declaration, Expr, ImportDecl, Module, Statement};
 
 #[derive(Parser)]
 #[grammar = "oberon0.pest"]
@@ -20,17 +20,27 @@ fn build_module(module_pair: Pair<Rule>) -> Result<Module> {
 
     let name = take_ident(inner.next(), "module name")?;
 
-    let maybe_next = inner.next().context("Unexpected end after module name")?;
+    let mut next = inner.next().context("Unexpected end after module name")?;
 
-    let (imports, begin_pair) = if maybe_next.as_rule() == Rule::import_section {
-        let imports = parse_import_section(maybe_next)?;
-        let begin_pair = inner
+    let imports = if next.as_rule() == Rule::import_section {
+        let imports = parse_import_section(next)?;
+        next = inner
+            .next()
+            .context("Unexpected end before declarations or BEGIN block")?;
+        imports
+    } else {
+        Vec::new()
+    };
+
+    let mut declarations = Vec::new();
+    while next.as_rule() == Rule::declaration_section {
+        declarations.extend(parse_declaration_section(next)?);
+        next = inner
             .next()
             .context("Unexpected end before BEGIN block")?;
-        (imports, begin_pair)
-    } else {
-        (Vec::new(), maybe_next)
-    };
+    }
+
+    let begin_pair = next;
 
     let (statements, end_name_pair) = if begin_pair.as_rule() == Rule::stmt_list {
         let stmts = parse_stmt_list(begin_pair)?;
@@ -48,9 +58,58 @@ fn build_module(module_pair: Pair<Rule>) -> Result<Module> {
         name,
         end_name,
         imports,
-        declarations: Vec::new(),
+        declarations,
         statements,
     })
+}
+
+fn parse_declaration_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
+    let inner = section
+        .into_inner()
+        .next()
+        .context("Empty declaration section")?;
+
+    match inner.as_rule() {
+        Rule::const_section => parse_const_section(inner),
+        Rule::var_section => parse_var_section(inner),
+        _ => bail!("Unknown declaration section: {:?}", inner.as_rule()),
+    }
+}
+
+fn parse_const_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
+    let mut out = Vec::new();
+
+    for item in section.into_inner() {
+        let mut parts = item.into_inner();
+        let name = take_ident(parts.next(), "constant name")?;
+        let value_pair = parts.next().context("Missing constant value")?;
+        let value = value_pair
+            .as_str()
+            .parse::<i64>()
+            .with_context(|| format!("Invalid integer: {}", value_pair.as_str()))?;
+        out.push(Declaration::Const { name, value });
+    }
+
+    Ok(out)
+}
+
+fn parse_var_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
+    let ident_list = section
+        .into_inner()
+        .next()
+        .context("Missing variable names")?;
+
+    let mut out = Vec::new();
+    for ident in ident_list.into_inner() {
+        if ident.as_rule() != Rule::ident {
+            bail!("Variable name is not an identifier");
+        }
+        out.push(Declaration::Var {
+            name: ident.as_str().to_string(),
+        });
+    }
+
+    Ok(out)
 }
 
 fn parse_import_section(section: Pair<Rule>) -> Result<Vec<ImportDecl>> {

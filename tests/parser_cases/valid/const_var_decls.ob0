@@ -1,0 +1,8 @@
+MODULE Main;
+CONST answer = 42;
+VAR x, y;
+BEGIN
+  x := answer;
+  y := x + 1;
+  WriteInt(y);
+END Main.

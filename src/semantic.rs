@@ -3,7 +3,7 @@ use std::fmt;
 
 use anyhow::Result;
 
-use crate::ast::{Expr, Module, Statement};
+use crate::ast::{Declaration, Expr, Module, Statement};
 use crate::manifest::ExternalManifest;
 use crate::symbols::{SymbolKind, SymbolTable};
 
@@ -93,6 +93,20 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                 import: import.external_name.clone(),
             }
             .into());
+        }
+    }
+
+    for declaration in &module.declarations {
+        match declaration {
+            Declaration::Const { name, .. } => {
+                symbols.declare(name, SymbolKind::Constant)?;
+            }
+            Declaration::Var { name } => {
+                symbols.declare(name, SymbolKind::Variable)?;
+            }
+            Declaration::Procedure { name, .. } => {
+                symbols.declare(name, SymbolKind::Procedure)?;
+            }
         }
     }
 

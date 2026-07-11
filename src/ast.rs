@@ -23,7 +23,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum Declaration {
-    Const { name: String },
+    Const { name: String, value: i64 },
     Var { name: String },
     Procedure { name: String, params: Vec<String> },
 }

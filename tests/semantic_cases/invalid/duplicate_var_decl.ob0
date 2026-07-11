@@ -1,0 +1,4 @@
+MODULE Main;
+VAR x, x;
+BEGIN
+END Main.

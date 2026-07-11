@@ -1,0 +1,4 @@
+MODULE Main;
+CONST answer 42;
+BEGIN
+END Main.

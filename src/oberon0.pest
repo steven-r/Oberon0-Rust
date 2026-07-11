@@ -1,13 +1,19 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-keyword = { "MODULE" | "IMPORT" | "BEGIN" | "END" }
+keyword = { "MODULE" | "IMPORT" | "CONST" | "VAR" | "BEGIN" | "END" }
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 integer = @{ ASCII_DIGIT+ }
 
-module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ "." ~ EOI }
+module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ declaration_section* ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ "." ~ EOI }
 import_section = { "IMPORT" ~ import_item ~ ("," ~ import_item)* ~ ";" }
 import_item = { ident ~ (":=" ~ ident)? }
+
+declaration_section = { const_section | var_section }
+const_section = { "CONST" ~ const_item+ }
+const_item = { ident ~ "=" ~ integer ~ ";" }
+var_section = { "VAR" ~ ident_list ~ ";" }
+ident_list = { ident ~ ("," ~ ident)* }
 
 stmt_list = { (statement ~ ";")* ~ statement? }
 statement = _{ assign_stmt | call_stmt }
