@@ -54,6 +54,26 @@ Versioning details are documented in:
 
     VERSIONING.md
 
+Release process checklist:
+
+    RELEASE_CHECKLIST.md
+
+## Changelog and releases
+
+Generate a changelog section from Conventional Commits:
+
+    scripts/changelog.sh --from-tag "$(git describe --tags --abbrev=0)" --to-ref HEAD
+
+Create a SemVer release (updates version, updates changelog, commits, tags):
+
+    scripts/release.sh patch
+    scripts/release.sh minor
+    scripts/release.sh major
+
+Preview a release without commit/tag:
+
+    scripts/release.sh patch --dry-run
+
 ## Compile an Oberon0 file
 
 Basic usage:

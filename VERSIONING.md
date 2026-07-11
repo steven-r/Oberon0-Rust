@@ -27,3 +27,14 @@ Recommended mapping for release planning:
 1. `feat:` typically implies `MINOR`
 2. `fix:` typically implies `PATCH`
 3. `feat!:` or `BREAKING CHANGE:` implies `MAJOR`
+
+## Automated workflow
+
+This repository provides local scripts for changelog generation and SemVer releases:
+
+1. `scripts/changelog.sh` generates Markdown release notes from Conventional Commits.
+2. `scripts/release.sh <patch|minor|major>` bumps version, updates changelog, creates a release commit, and creates an annotated tag.
+
+Use dry run mode to preview release effects without commit/tag:
+
+`scripts/release.sh patch --dry-run`
