@@ -2,6 +2,13 @@
 
 A minimal Oberon0 compiler prototype written in Rust.
 
+## AI-assisted development
+
+Large parts of this compiler were built with help from GitHub Copilot (GPT-5.3-Codex).
+The architecture, feature backlog, implementation iterations, and test expansion were significantly accelerated through AI-assisted development.
+
+In short: this project is human-designed and reviewed, but heavily AI-boosted during implementation.
+
 Current pipeline:
 
 1. Scan Oberon0 source using Logos
@@ -229,3 +236,8 @@ Detailed subset and planning documents:
 - Manifest model: `src/manifest.rs`
 - Rust code generation: `src/codegen.rs`
 - Example sources: `examples/`
+
+## License
+
+This repository is licensed under the MIT License.
+See `LICENSE` for full text.
