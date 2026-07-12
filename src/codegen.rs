@@ -83,6 +83,8 @@ fn dependency_line(local_name: &str, binding: &CrateBinding) -> String {
 fn generate_main_rs(module: &HModule) -> String {
     let mut out = String::new();
     let procedure_names = collect_procedure_names(module);
+    let module_constants = collect_module_constants(module);
+    let needs_state_map = statements_need_state_map(&module.statements, &procedure_names);
 
     out.push_str(&format!(
         "// Generated from Oberon0 module `{}`.\n",
@@ -112,6 +114,7 @@ fn generate_main_rs(module: &HModule) -> String {
                 params,
                 local_vars,
                 body,
+                &module_constants,
                 &procedure_names,
             ));
             out.push('\n');
@@ -120,11 +123,14 @@ fn generate_main_rs(module: &HModule) -> String {
 
     out.push_str(&format!("/// Executes the Oberon0 module `{}`.\n", module.name));
     out.push_str("fn main() {\n");
-    out.push_str("    // Module-level Oberon0 variables live in this runtime state map.\n");
-    out.push_str("    let mut vars: HashMap<String, i64> = HashMap::new();\n");
+    if needs_state_map {
+        out.push_str("    // Module-level Oberon0 variables live in this runtime state map.\n");
+        out.push_str("    let mut vars: HashMap<String, i64> = HashMap::new();\n");
+    }
 
     let main_ctx = FormatContext {
         locals: HashMap::new(),
+        constants: module_constants,
         procedures: &procedure_names,
         vars_arg: "&mut vars",
     };
@@ -133,7 +139,11 @@ fn generate_main_rs(module: &HModule) -> String {
         out.push_str(&format_statement(stmt, "    ", &main_ctx));
     }
 
-    out.push_str("    println!(\"State: {:?}\", vars);\n");
+    if needs_state_map {
+        out.push_str("    if !vars.is_empty() {\n");
+        out.push_str("        println!(\"State: {:?}\", vars);\n");
+        out.push_str("    }\n");
+    }
     out.push_str("}\n");
 
     out
@@ -141,6 +151,7 @@ fn generate_main_rs(module: &HModule) -> String {
 
 struct FormatContext<'a> {
     locals: HashMap<usize, String>,
+    constants: HashMap<usize, i64>,
     procedures: &'a HashSet<String>,
     vars_arg: &'a str,
 }
@@ -156,11 +167,61 @@ fn collect_procedure_names(module: &HModule) -> HashSet<String> {
         .collect()
 }
 
+fn collect_module_constants(module: &HModule) -> HashMap<usize, i64> {
+    module
+        .declarations
+        .iter()
+        .filter_map(|decl| match decl {
+            HDeclaration::Const { id, value, .. } => Some((*id, *value)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn statements_need_state_map(stmts: &[HStatement], procedure_names: &HashSet<String>) -> bool {
+    stmts
+        .iter()
+        .any(|stmt| statement_needs_state_map(stmt, procedure_names))
+}
+
+fn statement_needs_state_map(stmt: &HStatement, procedure_names: &HashSet<String>) -> bool {
+    match stmt {
+        HStatement::Assign { .. } => true,
+        HStatement::Call { name, args } => {
+            procedure_names.contains(&name.name)
+                || args.iter().any(expr_needs_state_map)
+        }
+        HStatement::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            expr_needs_state_map(condition)
+                || statements_need_state_map(then_branch, procedure_names)
+                || else_branch
+                    .as_ref()
+                    .is_some_and(|branch| statements_need_state_map(branch, procedure_names))
+        }
+        HStatement::While { condition, body } => {
+            expr_needs_state_map(condition) || statements_need_state_map(body, procedure_names)
+        }
+    }
+}
+
+fn expr_needs_state_map(expr: &HExpr) -> bool {
+    match expr {
+        HExpr::Integer(_) | HExpr::String(_) => false,
+        HExpr::Name(ident) => ident.kind != crate::symbols::SymbolKind::Constant,
+        HExpr::Binary { left, right, .. } => expr_needs_state_map(left) || expr_needs_state_map(right),
+    }
+}
+
 fn format_procedure(
     name: &str,
     params: &[HParam],
     local_vars: &[HResolvedIdent],
     body: &[HStatement],
+    constants: &HashMap<usize, i64>,
     procedure_names: &HashSet<String>,
 ) -> String {
     let mut out = String::new();
@@ -177,6 +238,7 @@ fn format_procedure(
 
     let ctx = FormatContext {
         locals,
+        constants: constants.clone(),
         procedures: procedure_names,
         vars_arg: "vars",
     };
@@ -247,6 +309,15 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
                         format_top_level_expr(first, ctx)
                     ),
                     None => format!("{}println!();\n", indent),
+                }
+            } else if name.name == "WriteString" {
+                match args.first() {
+                    Some(first) => format!(
+                        "{}print!(\"{{}}\", {});\n",
+                        indent,
+                        format_top_level_expr(first, ctx)
+                    ),
+                    None => format!("{}print!(\"\");\n", indent),
                 }
             } else if ctx.procedures.contains(&name.name) {
                 let rendered_args = args
@@ -330,10 +401,17 @@ fn format_block(stmts: &[HStatement], indent: &str, ctx: &FormatContext<'_>) -> 
 fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
     match expr {
         HExpr::Integer(v) => v.to_string(),
-        HExpr::Name(ident) => match ctx.locals.get(&ident.id) {
-            Some(binding) => binding.clone(),
-            None => format!("get_var(&vars, \"{}\")", ident.name),
-        },
+        HExpr::String(value) => format!("{:?}", value),
+        HExpr::Name(ident) => {
+            if let Some(value) = ctx.constants.get(&ident.id) {
+                value.to_string()
+            } else {
+                match ctx.locals.get(&ident.id) {
+                    Some(binding) => binding.clone(),
+                    None => format!("get_var(&vars, \"{}\")", ident.name),
+                }
+            }
+        }
         HExpr::Binary { op, left, right } => {
             let op_s = match op {
                 BinaryOp::Add => "+",
@@ -480,5 +558,50 @@ mod tests {
 
         let generated = generate_main_rs(&module);
         assert!(generated.contains("vars.insert(\"x\".to_string(), 1 + (2 * 3));"));
+    }
+
+    #[test]
+    fn emits_write_string_builtin_as_print_macro() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![HStatement::Call {
+                name: ident(20, "WriteString", SymbolKind::Procedure),
+                args: vec![HExpr::String("Hello, \"Oberon\"".to_string())],
+            }],
+        };
+
+        let generated = generate_main_rs(&module);
+        assert!(generated.contains("print!(\"{}\", \"Hello, \\\"Oberon\\\"\");"));
+        assert!(!generated.contains("let mut vars: HashMap<String, i64> = HashMap::new();"));
+        assert!(!generated.contains("State: {:?}"));
+    }
+
+    #[test]
+    fn resolves_module_constants_in_generated_expressions() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![HDeclaration::Const {
+                id: 30,
+                name: "BASE".to_string(),
+                value: 10,
+            }],
+            statements: vec![HStatement::Assign {
+                target: ident(31, "x", SymbolKind::Variable),
+                value: HExpr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(HExpr::Name(ident(30, "BASE", SymbolKind::Constant))),
+                    right: Box::new(HExpr::Integer(2)),
+                },
+            }],
+        };
+
+        let generated = generate_main_rs(&module);
+        assert!(generated.contains("vars.insert(\"x\".to_string(), 10 + 2);"));
+        assert!(!generated.contains("get_var(&vars, \"BASE\")"));
     }
 }

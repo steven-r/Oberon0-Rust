@@ -105,6 +105,8 @@ pub enum HStatement {
 pub enum HExpr {
     /// Integer literal.
     Integer(i64),
+    /// String literal after parser unescaping.
+    String(String),
     /// Reference to a resolved identifier binding.
     Name(HResolvedIdent),
     /// Binary arithmetic expression.

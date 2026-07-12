@@ -21,4 +21,5 @@ scripts/oberon0 examples/expressions-basic --run
 ```text
 7
 9
+State: {"a": 7, "b": 9}
 ```

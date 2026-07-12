@@ -23,6 +23,11 @@ pub enum SemanticError {
         expected: usize,
         got: usize,
     },
+    InvalidBuiltinArgument {
+        name: String,
+        detail: String,
+    },
+    UnsupportedStringLiteral,
     NotCallable { name: String },
     ProcedureNameMismatch { expected: String, got: String },
 }
@@ -37,8 +42,10 @@ impl SemanticError {
             SemanticError::DuplicateSymbol { .. } => "E004",
             SemanticError::UndefinedSymbol { .. } => "E005",
             SemanticError::ArityMismatch { .. } => "E006",
-            SemanticError::NotCallable { .. } => "E007",
-            SemanticError::ProcedureNameMismatch { .. } => "E008",
+            SemanticError::InvalidBuiltinArgument { .. } => "E007",
+            SemanticError::UnsupportedStringLiteral => "E008",
+            SemanticError::NotCallable { .. } => "E009",
+            SemanticError::ProcedureNameMismatch { .. } => "E010",
         }
     }
 }
@@ -86,6 +93,12 @@ impl fmt::Display for SemanticError {
                     got
                 )
             }
+            SemanticError::InvalidBuiltinArgument { name, detail } => {
+                write!(f, "[{}] Builtin '{}' received an invalid argument: {}", self.code(), name, detail)
+            }
+            SemanticError::UnsupportedStringLiteral => {
+                write!(f, "[{}] String literals are only supported as arguments to 'WriteString'", self.code())
+            }
             SemanticError::NotCallable { name } => {
                 write!(f, "[{}] Symbol '{}' is not callable", self.code(), name)
             }
@@ -116,8 +129,10 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
 
     let mut symbols = SymbolTable::new();
     symbols.declare("WriteInt", SymbolKind::Procedure)?;
+    symbols.declare("WriteString", SymbolKind::Procedure)?;
     let mut proc_arity: HashMap<String, Option<usize>> = HashMap::new();
     proc_arity.insert("WriteInt".to_string(), None);
+    proc_arity.insert("WriteString".to_string(), Some(1));
 
     for import in &module.imports {
         if symbols
@@ -207,6 +222,27 @@ fn analyze_statement(
             Ok(())
         }
         Statement::Call { name, args } => {
+            if name == "WriteString" {
+                if args.len() != 1 {
+                    return Err(SemanticError::ArityMismatch {
+                        name: name.clone(),
+                        expected: 1,
+                        got: args.len(),
+                    }
+                    .into());
+                }
+
+                return match args.first() {
+                    Some(Expr::String(_)) => Ok(()),
+                    Some(_) => Err(SemanticError::InvalidBuiltinArgument {
+                        name: name.clone(),
+                        detail: "expected a string literal".to_string(),
+                    }
+                    .into()),
+                    None => unreachable!("arity checked above"),
+                };
+            }
+
             let symbol = symbols.resolve(name).ok_or_else(|| SemanticError::UndefinedSymbol {
                 name: name.clone(),
             })?;
@@ -262,6 +298,7 @@ fn analyze_statement(
 fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
     match expr {
         Expr::Integer(_) => Ok(()),
+        Expr::String(_) => Err(SemanticError::UnsupportedStringLiteral.into()),
         Expr::Variable(name) => {
             if symbols.resolve(name).is_none() {
                 return Err(SemanticError::UndefinedSymbol { name: name.clone() }.into());
@@ -369,13 +406,62 @@ END Main.
 
         #[test]
         fn reports_stable_error_code_for_undeclared_assignment_target() {
-                let source = r#"
+            let source = r#"
 MODULE Main;
 BEGIN
     y := 1
 END Main.
 "#;
-                let err = semantic_error(source);
-                assert_eq!(err.code(), "E005");
+            let err = semantic_error(source);
+            assert_eq!(err.code(), "E005");
+        }
+
+        #[test]
+        fn accepts_write_string_with_pascal_style_literal() {
+            let source = r#"
+    MODULE Main;
+    BEGIN
+      WriteString("Hello, ""Oberon""")
+    END Main.
+    "#;
+
+            let module = parse_module(source).expect("source should parse");
+            analyze(&module, None).expect("WriteString with a string literal should pass semantic analysis");
+        }
+
+        #[test]
+        fn rejects_string_literal_outside_write_string() {
+            let source = r#"
+    MODULE Main;
+    VAR x;
+    BEGIN
+      x := "Hello"
+    END Main.
+    "#;
+
+            let err = semantic_error(source);
+            match err {
+                SemanticError::UnsupportedStringLiteral => {}
+                other => panic!("expected UnsupportedStringLiteral, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn rejects_non_string_argument_to_write_string() {
+            let source = r#"
+    MODULE Main;
+    BEGIN
+      WriteString(1)
+    END Main.
+    "#;
+
+            let err = semantic_error(source);
+            match err {
+                SemanticError::InvalidBuiltinArgument { name, detail } => {
+                    assert_eq!(name, "WriteString");
+                    assert_eq!(detail, "expected a string literal");
+                }
+                other => panic!("expected InvalidBuiltinArgument, got {other:?}"),
+            }
         }
 }
