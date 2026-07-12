@@ -1,0 +1,7 @@
+(* INVALID: typed assignment uses REAL value for INTEGER target *)
+MODULE Main;
+VAR src: REAL;
+VAR x: INTEGER;
+BEGIN
+  x := src
+END Main.

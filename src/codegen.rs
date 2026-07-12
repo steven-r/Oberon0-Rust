@@ -8,6 +8,18 @@ use crate::ast::BinaryOp;
 use crate::hir::{HDeclaration, HExpr, HModule, HParam, HResolvedIdent, HStatement};
 use crate::manifest::{CrateBinding, ExternalManifest};
 
+#[derive(Default, Clone, Copy)]
+struct IoUsage {
+    uses_read_int: bool,
+    uses_eof: bool,
+}
+
+impl IoUsage {
+    fn any(self) -> bool {
+        self.uses_read_int || self.uses_eof
+    }
+}
+
 pub fn generate_rust_project(
     module: &HModule,
     manifest: Option<&ExternalManifest>,
@@ -85,6 +97,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     let mut out = String::new();
     let procedure_names = collect_procedure_names(module);
     let module_constants = collect_module_constants(module);
+    let io_usage = collect_io_usage(module);
     let needs_module_state = statements_need_state_map(&module.statements, &procedure_names);
     let tracks_procedure_state = emit_state && module_has_procedure_locals(module);
     let needs_runtime_state = needs_module_state || tracks_procedure_state;
@@ -96,8 +109,12 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     ));
     out.push_str("// Comments preserve the mapping between Oberon0 names and generated Rust bindings.\n\n");
     out.push_str("use std::collections::BTreeMap;\n\n");
-    out.push_str("use std::io::Read;\n");
-    out.push_str("use std::sync::{Mutex, OnceLock};\n\n");
+
+    if io_usage.any() {
+        out.push_str("use std::io::Read;\n");
+        out.push_str("use std::sync::{Mutex, OnceLock};\n\n");
+    }
+
     out.push_str("/// Returns the current value of a module-level Oberon0 variable.\n");
     out.push_str("///\n");
     out.push_str("/// Generated programs keep module state in `vars`, keyed by the original Oberon0 name.\n");
@@ -106,66 +123,72 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("    *vars.get(name).unwrap_or(&0)\n");
     out.push_str("}\n\n");
 
-    out.push_str("#[derive(Default)]\n");
-    out.push_str("struct InputState {\n");
-    out.push_str("    tokens: Vec<String>,\n");
-    out.push_str("    position: usize,\n");
-    out.push_str("    initialized: bool,\n");
-    out.push_str("}\n\n");
+    if io_usage.any() {
+        out.push_str("#[derive(Default)]\n");
+        out.push_str("struct InputState {\n");
+        out.push_str("    tokens: Vec<String>,\n");
+        out.push_str("    position: usize,\n");
+        out.push_str("    initialized: bool,\n");
+        out.push_str("}\n\n");
 
-    out.push_str("fn input_state() -> &'static Mutex<InputState> {\n");
-    out.push_str("    static STATE: OnceLock<Mutex<InputState>> = OnceLock::new();\n");
-    out.push_str("    STATE.get_or_init(|| Mutex::new(InputState::default()))\n");
-    out.push_str("}\n\n");
+        out.push_str("fn input_state() -> &'static Mutex<InputState> {\n");
+        out.push_str("    static STATE: OnceLock<Mutex<InputState>> = OnceLock::new();\n");
+        out.push_str("    STATE.get_or_init(|| Mutex::new(InputState::default()))\n");
+        out.push_str("}\n\n");
 
-    out.push_str("fn ensure_input_loaded(state: &mut InputState) {\n");
-    out.push_str("    if state.initialized {\n");
-    out.push_str("        return;\n");
-    out.push_str("    }\n");
-    out.push_str("\n");
-    out.push_str("    let mut input = String::new();\n");
-    out.push_str("    std::io::stdin()\n");
-    out.push_str("        .read_to_string(&mut input)\n");
-    out.push_str("        .expect(\"Runtime IO error: failed to read stdin\");\n");
-    out.push_str("\n");
-    out.push_str("    state.tokens = input\n");
-    out.push_str("        .split_whitespace()\n");
-    out.push_str("        .map(|token| token.to_string())\n");
-    out.push_str("        .collect();\n");
-    out.push_str("    state.position = 0;\n");
-    out.push_str("    state.initialized = true;\n");
-    out.push_str("}\n\n");
+        out.push_str("fn ensure_input_loaded(state: &mut InputState) {\n");
+        out.push_str("    if state.initialized {\n");
+        out.push_str("        return;\n");
+        out.push_str("    }\n");
+        out.push_str("\n");
+        out.push_str("    let mut input = String::new();\n");
+        out.push_str("    std::io::stdin()\n");
+        out.push_str("        .read_to_string(&mut input)\n");
+        out.push_str("        .expect(\"Runtime IO error: failed to read stdin\");\n");
+        out.push_str("\n");
+        out.push_str("    state.tokens = input\n");
+        out.push_str("        .split_whitespace()\n");
+        out.push_str("        .map(|token| token.to_string())\n");
+        out.push_str("        .collect();\n");
+        out.push_str("    state.position = 0;\n");
+        out.push_str("    state.initialized = true;\n");
+        out.push_str("}\n\n");
 
-    out.push_str("fn read_int() -> i64 {\n");
-    out.push_str("    let mut state = input_state()\n");
-    out.push_str("        .lock()\n");
-    out.push_str("        .expect(\"Runtime IO error: input mutex poisoned\");\n");
-    out.push_str("    ensure_input_loaded(&mut state);\n");
-    out.push_str("\n");
-    out.push_str("    if state.position >= state.tokens.len() {\n");
-    out.push_str("        panic!(\"Runtime IO error: ReadInt() reached EOF\");\n");
-    out.push_str("    }\n");
-    out.push_str("\n");
-    out.push_str("    let token = state.tokens[state.position].clone();\n");
-    out.push_str("    state.position += 1;\n");
-    out.push_str("\n");
-    out.push_str("    token.parse::<i64>().unwrap_or_else(|err| {\n");
-    out.push_str("        panic!(\"Runtime IO error: ReadInt() failed to parse integer token '{}' ({})\", token, err)\n");
-    out.push_str("    })\n");
-    out.push_str("}\n\n");
+        if io_usage.uses_read_int {
+            out.push_str("fn read_int() -> i64 {\n");
+            out.push_str("    let mut state = input_state()\n");
+            out.push_str("        .lock()\n");
+            out.push_str("        .expect(\"Runtime IO error: input mutex poisoned\");\n");
+            out.push_str("    ensure_input_loaded(&mut state);\n");
+            out.push_str("\n");
+            out.push_str("    if state.position >= state.tokens.len() {\n");
+            out.push_str("        panic!(\"Runtime IO error: ReadInt() reached EOF\");\n");
+            out.push_str("    }\n");
+            out.push_str("\n");
+            out.push_str("    let token = state.tokens[state.position].clone();\n");
+            out.push_str("    state.position += 1;\n");
+            out.push_str("\n");
+            out.push_str("    token.parse::<i64>().unwrap_or_else(|err| {\n");
+            out.push_str("        panic!(\"Runtime IO error: ReadInt() failed to parse integer token '{}' ({})\", token, err)\n");
+            out.push_str("    })\n");
+            out.push_str("}\n\n");
+        }
 
-    out.push_str("fn eof() -> i64 {\n");
-    out.push_str("    let mut state = input_state()\n");
-    out.push_str("        .lock()\n");
-    out.push_str("        .expect(\"Runtime IO error: input mutex poisoned\");\n");
-    out.push_str("    ensure_input_loaded(&mut state);\n");
-    out.push_str("\n");
-    out.push_str("    if state.position >= state.tokens.len() {\n");
-    out.push_str("        1\n");
-    out.push_str("    } else {\n");
-    out.push_str("        0\n");
-    out.push_str("    }\n");
-    out.push_str("}\n\n");
+        if io_usage.uses_eof {
+            out.push_str("fn eof() -> i64 {\n");
+            out.push_str("    let mut state = input_state()\n");
+            out.push_str("        .lock()\n");
+            out.push_str("        .expect(\"Runtime IO error: input mutex poisoned\");\n");
+            out.push_str("    ensure_input_loaded(&mut state);\n");
+            out.push_str("\n");
+            out.push_str("    if state.position >= state.tokens.len() {\n");
+            out.push_str("        1\n");
+            out.push_str("    } else {\n");
+            out.push_str("        0\n");
+            out.push_str("    }\n");
+            out.push_str("}\n\n");
+        }
+    }
 
     out.push_str("/// Records the current value of a procedure-scoped Oberon0 variable.\n");
     out.push_str("#[allow(dead_code)]\n");
@@ -302,6 +325,103 @@ fn expr_needs_state_map(expr: &HExpr) -> bool {
     }
 }
 
+fn collect_io_usage(module: &HModule) -> IoUsage {
+    let mut usage = IoUsage::default();
+
+    for decl in &module.declarations {
+        if let HDeclaration::Procedure { body, .. } = decl {
+            usage = merge_io_usage(usage, statements_io_usage(body));
+        }
+    }
+
+    merge_io_usage(usage, statements_io_usage(&module.statements))
+}
+
+fn merge_io_usage(left: IoUsage, right: IoUsage) -> IoUsage {
+    IoUsage {
+        uses_read_int: left.uses_read_int || right.uses_read_int,
+        uses_eof: left.uses_eof || right.uses_eof,
+    }
+}
+
+fn statements_io_usage(stmts: &[HStatement]) -> IoUsage {
+    stmts.iter().fold(IoUsage::default(), |acc, stmt| {
+        merge_io_usage(acc, statement_io_usage(stmt))
+    })
+}
+
+fn statement_io_usage(stmt: &HStatement) -> IoUsage {
+    match stmt {
+        HStatement::Assign { value, .. } => expr_io_usage(value),
+        HStatement::Call { args, .. } => args
+            .iter()
+            .fold(IoUsage::default(), |acc, arg| merge_io_usage(acc, expr_io_usage(arg))),
+        HStatement::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            let mut usage = expr_io_usage(condition);
+            usage = merge_io_usage(usage, statements_io_usage(then_branch));
+            if let Some(branch) = else_branch {
+                usage = merge_io_usage(usage, statements_io_usage(branch));
+            }
+            usage
+        }
+        HStatement::While { condition, body } => {
+            merge_io_usage(expr_io_usage(condition), statements_io_usage(body))
+        }
+    }
+}
+
+fn expr_io_usage(expr: &HExpr) -> IoUsage {
+    match expr {
+        HExpr::Integer(_) | HExpr::String(_) | HExpr::Name(_) => IoUsage::default(),
+        HExpr::Call { name, args } => {
+            let mut usage = IoUsage {
+                uses_read_int: name.name == "ReadInt",
+                uses_eof: name.name == "EOF",
+            };
+            for arg in args {
+                usage = merge_io_usage(usage, expr_io_usage(arg));
+            }
+            usage
+        }
+        HExpr::Binary { left, right, .. } => {
+            merge_io_usage(expr_io_usage(left), expr_io_usage(right))
+        }
+    }
+}
+
+fn procedure_assigns_id(body: &[HStatement], ident_id: usize) -> bool {
+    body.iter().any(|stmt| statement_assigns_id(stmt, ident_id))
+}
+
+fn statement_assigns_id(stmt: &HStatement, ident_id: usize) -> bool {
+    match stmt {
+        HStatement::Assign { target, .. } => target.id == ident_id,
+        HStatement::Call { .. } => false,
+        HStatement::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            then_branch
+                .iter()
+                .any(|nested| statement_assigns_id(nested, ident_id))
+                || else_branch.as_ref().is_some_and(|branch| {
+                    branch
+                        .iter()
+                        .any(|nested| statement_assigns_id(nested, ident_id))
+                })
+        }
+        HStatement::While { body, .. } => {
+            body.iter()
+                .any(|nested| statement_assigns_id(nested, ident_id))
+        }
+    }
+}
+
 fn format_procedure(
     name: &str,
     params: &[HParam],
@@ -320,7 +440,11 @@ fn format_procedure(
     for param in params {
         let binding = format!("param_{}", param.id);
         locals.insert(param.id, binding.clone());
-        signature_args.push(format!("mut {}: i64", binding));
+        if procedure_assigns_id(body, param.id) {
+            signature_args.push(format!("mut {}: i64", binding));
+        } else {
+            signature_args.push(format!("{}: i64", binding));
+        }
     }
 
     let ctx = FormatContext {
@@ -361,6 +485,7 @@ fn format_procedure(
             "    // Local variable backing the Oberon0 `{}` binding.\n",
             local.name
         ));
+        out.push_str("    #[allow(unused_assignments)]\n");
         out.push_str(&format!("    let mut local_{}: i64 = 0;\n", local.id));
         if emit_state {
             out.push_str(&format!(
@@ -436,16 +561,28 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
                     None => format!("{}print!(\"\");\n", indent),
                 }
             } else if ctx.procedures.contains(&name.name) {
-                let rendered_args = args
-                    .iter()
-                    .map(|arg| format_top_level_expr(arg, ctx))
-                    .collect::<Vec<_>>();
-                let joined_args = if rendered_args.is_empty() {
+                let mut out = String::new();
+                let mut call_args = Vec::new();
+
+                for (index, arg) in args.iter().enumerate() {
+                    let temp_name = format!("call_arg_{}", index);
+                    out.push_str(&format!(
+                        "{}let {} = {};\n",
+                        indent,
+                        temp_name,
+                        format_top_level_expr(arg, ctx)
+                    ));
+                    call_args.push(temp_name);
+                }
+
+                let joined_args = if call_args.is_empty() {
                     ctx.vars_arg.to_string()
                 } else {
-                    format!("{}, {}", ctx.vars_arg, rendered_args.join(", "))
+                    format!("{}, {}", ctx.vars_arg, call_args.join(", "))
                 };
-                format!("{}{}({});\n", indent, name.name, joined_args)
+
+                out.push_str(&format!("{}{}({});\n", indent, name.name, joined_args));
+                out
             } else {
                 format!(
                     "{}eprintln!(\"Note: call '{}' is not implemented in the MVP.\");\n",

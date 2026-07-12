@@ -1,3 +1,4 @@
+(* INVALID: ReadInt must be used as expression call, not as statement call *)
 MODULE Main;
 BEGIN
   ReadInt()

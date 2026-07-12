@@ -1,0 +1,14 @@
+MODULE Main;
+TYPE Count = INTEGER;
+TYPE Ratio = REAL;
+VAR x: INTEGER;
+VAR y: Count;
+VAR ratio: Ratio;
+VAR flag: BOOLEAN;
+VAR precise: LONGREAL;
+BEGIN
+  x := 12;
+  y := x * 3;
+  WriteInt(y);
+  WriteLn()
+END Main.

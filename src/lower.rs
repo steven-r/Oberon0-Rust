@@ -86,7 +86,10 @@ pub fn lower_module(module: &Module) -> Result<HModule> {
             Declaration::Const { name, .. } => {
                 resolver.declare(name, SymbolKind::Constant)?;
             }
-            Declaration::Var { name } => {
+            Declaration::Type { name, .. } => {
+                resolver.declare(name, SymbolKind::TypeName)?;
+            }
+            Declaration::Var { name, .. } => {
                 resolver.declare(name, SymbolKind::Variable)?;
             }
             Declaration::Procedure { name, .. } => {
@@ -129,18 +132,33 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
                 value: *value,
             })
         }
-        Declaration::Var { name } => {
+        Declaration::Type { name, target } => {
+            let resolved = resolver
+                .resolve(name)
+                .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown type '{}'.", name))?;
+            Ok(HDeclaration::Type {
+                id: resolved.id,
+                name: name.clone(),
+                target: target.clone(),
+            })
+        }
+        Declaration::Var {
+            name,
+            declared_type,
+        } => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown variable '{}'.", name))?;
             Ok(HDeclaration::Var {
                 id: resolved.id,
                 name: name.clone(),
+                declared_type: declared_type.clone(),
             })
         }
         Declaration::Procedure {
             name,
             params,
+            local_vars,
             body,
             end_name,
         } => {
@@ -151,11 +169,17 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
             resolver.enter_scope();
             let mut lowered_params = Vec::new();
             for param in params {
-                let resolved = resolver.declare(param, SymbolKind::Parameter)?;
+                let resolved = resolver.declare(&param.name, SymbolKind::Parameter)?;
                 lowered_params.push(HParam {
                     id: resolved.id,
-                    name: param.clone(),
+                    name: param.name.clone(),
+                    declared_type: param.declared_type.clone(),
+                    is_var: param.is_var,
                 });
+            }
+
+            for local_var in local_vars {
+                resolver.declare(&local_var.name, SymbolKind::Variable)?;
             }
 
             let lowered_body = body
@@ -287,6 +311,7 @@ mod tests {
     use anyhow::Result;
 
     use super::lower_module;
+    use crate::ast::TypeRef;
     use crate::hir::{HDeclaration, HExpr, HStatement};
     use crate::parser::parse_module;
     use crate::semantic::analyze;
@@ -342,7 +367,7 @@ END Main.
             .declarations
             .iter()
             .find_map(|decl| match decl {
-                HDeclaration::Var { id, name } if name == "x" => Some(*id),
+                HDeclaration::Var { id, name, .. } if name == "x" => Some(*id),
                 _ => None,
             })
             .expect("module variable x must exist");
@@ -385,6 +410,120 @@ END Main.
         } else {
             panic!("expected IF as first procedure statement");
         }
+    }
+
+    #[test]
+    fn typed_declarations_survive_lowering_with_preserved_type_info() {
+        let source = r#"
+MODULE Main;
+TYPE Count = REAL;
+VAR x: Count;
+BEGIN
+  x := 1
+END Main.
+"#;
+
+        let hir = lower_from_source(source).expect("lowering should succeed");
+
+        let type_decl = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Type { name, target, .. } if name == "Count" => Some(target.clone()),
+                _ => None,
+            })
+            .expect("type declaration Count must exist in HIR");
+        assert!(matches!(type_decl, TypeRef::Real));
+
+        let var_type = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Var {
+                    name,
+                    declared_type,
+                    ..
+                } if name == "x" => declared_type.clone(),
+                _ => None,
+            })
+            .expect("variable x must carry declared type info in HIR");
+        assert!(matches!(var_type, TypeRef::Named(name) if name == "Count"));
+    }
+
+    #[test]
+    fn typed_formal_parameters_survive_lowering_with_var_mode() {
+        let source = r#"
+MODULE Main;
+PROCEDURE Bump(VAR target: INTEGER; amount: LONGREAL);
+BEGIN
+END Bump;
+BEGIN
+END Main.
+"#;
+
+        let hir = lower_from_source(source).expect("lowering should succeed");
+
+        let params = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Procedure { name, params, .. } if name == "Bump" => Some(params.clone()),
+                _ => None,
+            })
+            .expect("procedure Bump must exist in HIR");
+
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0].name, "target");
+        assert!(params[0].is_var);
+        assert!(matches!(params[0].declared_type, Some(TypeRef::Integer)));
+
+        assert_eq!(params[1].name, "amount");
+        assert!(!params[1].is_var);
+        assert!(matches!(params[1].declared_type, Some(TypeRef::LongReal)));
+    }
+
+    #[test]
+    fn procedure_local_vars_survive_lowering_with_stable_ids() {
+        let source = r#"
+MODULE Main;
+PROCEDURE P;
+VAR x: INTEGER;
+BEGIN
+  x := 1
+END P;
+BEGIN
+  P
+END Main.
+"#;
+
+        let hir = lower_from_source(source).expect("lowering should succeed");
+
+        let (local_vars, body) = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Procedure {
+                    name,
+                    local_vars,
+                    body,
+                    ..
+                } if name == "P" => Some((local_vars.clone(), body.clone())),
+                _ => None,
+            })
+            .expect("procedure P must exist in HIR");
+
+        assert_eq!(local_vars.len(), 1, "procedure P should have one local variable");
+        assert_eq!(local_vars[0].name, "x");
+
+        let assigned_id = body
+            .iter()
+            .find_map(|stmt| match stmt {
+                HStatement::Assign { target, .. } => Some(target.id),
+                _ => None,
+            })
+            .expect("procedure body should assign to local variable x");
+
+        assert_eq!(assigned_id, local_vars[0].id);
     }
 
     #[test]

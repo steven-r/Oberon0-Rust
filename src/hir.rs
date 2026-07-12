@@ -2,7 +2,7 @@
 
 //! Lowered, name-resolved representation used by code generation.
 
-use crate::ast::BinaryOp;
+use crate::ast::{BinaryOp, TypeRef};
 use crate::symbols::SymbolKind;
 
 #[derive(Debug, Clone)]
@@ -47,6 +47,10 @@ pub struct HParam {
     pub id: usize,
     /// Original source-level parameter name.
     pub name: String,
+    /// Optional declared parameter type preserved from the source.
+    pub declared_type: Option<TypeRef>,
+    /// Whether the parameter is declared with `VAR` pass-by-reference mode.
+    pub is_var: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -58,10 +62,17 @@ pub enum HDeclaration {
         name: String,
         value: i64,
     },
-    /// Variable declaration with its resolved id.
+    /// Type declaration with its resolved id and preserved target type.
+    Type {
+        id: usize,
+        name: String,
+        target: TypeRef,
+    },
+    /// Variable declaration with its resolved id and preserved declared type.
     Var {
         id: usize,
         name: String,
+        declared_type: Option<TypeRef>,
     },
     /// Procedure declaration with resolved parameters and local variables.
     Procedure {

@@ -4,7 +4,7 @@ This repository uses the following persistent collaboration rules:
 
 ## Communication
 
-- Use English for all project-facing text.
+- Use English for documentation, code comments, issue text, and chat discussions.
 
 ## Commits
 
@@ -21,8 +21,14 @@ This repository uses the following persistent collaboration rules:
 
 ## Consistency Rules
 
-- Keep docs and examples synchronized with behavior changes.
+- Keep README.md, example README files, relevant docs/*.md files, and CHANGELOG.md synchronized with behavior changes.
 - If state output behavior changes, update example expected outputs.
+
+## Validation Before Commit
+
+- Run cargo test for behavior-affecting changes.
+- Ensure pre-commit hooks pass.
+- Keep repository examples runnable when touched.
 
 ## Source of Truth
 

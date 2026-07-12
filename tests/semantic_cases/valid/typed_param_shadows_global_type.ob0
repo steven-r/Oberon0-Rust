@@ -1,0 +1,8 @@
+MODULE Main;
+TYPE Count = INTEGER;
+PROCEDURE P(Count: INTEGER);
+BEGIN
+  WriteInt(Count)
+END P;
+BEGIN
+END Main.

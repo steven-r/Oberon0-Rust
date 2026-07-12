@@ -8,6 +8,37 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- add `TYPE` declarations and typed `VAR` declarations for `INTEGER` and simple named aliases (#5)
+- preserve declared type information through semantic symbols and HIR for the first typed-declaration slice (#6)
+- add built-in scalar declaration support for `BOOLEAN`, `REAL`, and `LONGREAL` alongside `INTEGER` (#17)
+- keep built-in scalar names reserved while allowing procedure parameters to shadow user-defined module-scope type names, except in declarations like `Count: Count` (no dedicated issue)
+- add optional procedure-local `VAR` sections before `BEGIN` and carry those local bindings through semantic analysis and lowering (no dedicated issue)
+
+### Documentation
+
+- align contributor guidance across repository docs with the project decision log (no dedicated issue)
+- document built-in scalar declaration support in the README, roadmap, and typed-declarations example (#17)
+
+### Tests
+
+- add semantic corpus and lowering coverage for typed declarations and preserved type information in HIR (#5, #6)
+- add semantic coverage for `BOOLEAN`, `REAL`, and `LONGREAL` declaration support (#17)
+- add semantic coverage for user-defined type-name shadowing by parameters while rejecting built-in shadowing and `Count: Count` self-shadowing declarations (no dedicated issue)
+- add semantic and lowering coverage for procedure-local `VAR` declarations, including local shadowing constraints for built-in and user-defined type names (no dedicated issue)
+
+### Build
+
+- update the `toml` crate to v1 for the toolchain and manifest stack (no dedicated issue)
+
+### CI
+
+- migrate Renovate configuration into `.github/renovate.json` and extend scanning to `oberon.toml` files under examples and tests (no dedicated issue)
+- switch release automation to a PR-based flow and harden changelog promotion, git identity handling, and release note extraction (no dedicated issue)
+
+## v0.6.0 - 2026-07-12
+
+### Features
+
 - add Pascal-style string literals and `WriteString` builtin support across scanner, parser, semantic analysis, lowering, and code generation
 - add explicit state-output controls via `compiler.emit_state` in `oberon.toml` and one-shot CLI overrides (`--emit-state`, `--no-emit-state`)
 - extend generated runtime state output to include procedure-scope shadowing bindings under qualified keys (for example `Proc.x`)

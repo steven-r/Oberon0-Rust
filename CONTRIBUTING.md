@@ -29,4 +29,6 @@ When behavior changes:
 
 - Update README.md where needed.
 - Update example README files where needed.
+- Update relevant docs/*.md files where needed.
 - Update CHANGELOG.md Unreleased section.
+- Keep example expected outputs aligned with actual runtime behavior.

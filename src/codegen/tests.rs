@@ -33,6 +33,8 @@
                 params: vec![HParam {
                     id: 2,
                     name: "a".to_string(),
+                    declared_type: None,
+                    is_var: false,
                 }],
                 local_vars: vec![ident(3, "x", SymbolKind::Variable)],
                 body: vec![
@@ -59,7 +61,7 @@
         assert!(generated.contains("/// Returns the current value of a module-level Oberon0 variable."));
         assert!(generated.contains("/// Implements the Oberon0 procedure `AddAndPrint`."));
         assert!(generated.contains("/// - `param_2` corresponds to the Oberon0 parameter `a`."));
-        assert!(generated.contains("fn AddAndPrint(vars: &mut BTreeMap<String, i64>, mut param_2: i64)"));
+        assert!(generated.contains("fn AddAndPrint(vars: &mut BTreeMap<String, i64>, param_2: i64)"));
         assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"a\", param_2);"));
         assert!(generated.contains("// Local variable backing the Oberon0 `x` binding."));
         assert!(generated.contains("let mut local_3: i64 = 0;"));
@@ -68,7 +70,8 @@
         assert!(generated.contains("print!(\"{}\", local_3);"));
         assert!(generated.contains("/// Executes the Oberon0 module `Main`."));
         assert!(generated.contains("// Runtime state keeps module variables and optional procedure-local snapshots."));
-        assert!(generated.contains("AddAndPrint(&mut vars, 7);"));
+        assert!(generated.contains("let call_arg_0 = 7;"));
+        assert!(generated.contains("AddAndPrint(&mut vars, call_arg_0);"));
     }
 
     #[test]
@@ -175,6 +178,7 @@
             declarations: vec![HDeclaration::Var {
                 id: 1,
                 name: "x".to_string(),
+                declared_type: None,
             }],
             statements: vec![
                 HStatement::Assign {
@@ -206,6 +210,72 @@
     }
 
     #[test]
+    fn evaluates_procedure_call_arguments_before_mutable_vars_borrow() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![
+                HDeclaration::Var {
+                    id: 1,
+                    name: "x".to_string(),
+                    declared_type: None,
+                },
+                HDeclaration::Procedure {
+                    id: 2,
+                    name: "Show".to_string(),
+                    params: vec![HParam {
+                        id: 3,
+                        name: "value".to_string(),
+                        declared_type: None,
+                        is_var: false,
+                    }],
+                    local_vars: vec![],
+                    body: vec![HStatement::Call {
+                        name: ident(4, "WriteInt", SymbolKind::Procedure),
+                        args: vec![HExpr::Name(ident(3, "value", SymbolKind::Parameter))],
+                    }],
+                    end_name: "Show".to_string(),
+                },
+            ],
+            statements: vec![
+                HStatement::Assign {
+                    target: ident(1, "x", SymbolKind::Variable),
+                    value: HExpr::Integer(7),
+                },
+                HStatement::Call {
+                    name: ident(2, "Show", SymbolKind::Procedure),
+                    args: vec![HExpr::Name(ident(1, "x", SymbolKind::Variable))],
+                },
+            ],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(generated.contains("let call_arg_0 = get_var(&vars, \"x\");"));
+        assert!(generated.contains("Show(&mut vars, call_arg_0);"));
+    }
+
+    #[test]
+    fn omits_io_runtime_helpers_when_not_used() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![HStatement::Call {
+                name: ident(1, "WriteLn", SymbolKind::Procedure),
+                args: vec![],
+            }],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(!generated.contains("use std::io::Read;"));
+        assert!(!generated.contains("struct InputState"));
+        assert!(!generated.contains("fn read_int() -> i64"));
+        assert!(!generated.contains("fn eof() -> i64"));
+    }
+
+    #[test]
     fn runtime_readint_and_eof_follow_input_contract() {
         let module = HModule {
             name: "Main".to_string(),
@@ -214,6 +284,7 @@
             declarations: vec![HDeclaration::Var {
                 id: 1,
                 name: "x".to_string(),
+                declared_type: None,
             }],
             statements: vec![
                 HStatement::Assign {
@@ -289,6 +360,7 @@
             declarations: vec![HDeclaration::Var {
                 id: 1,
                 name: "x".to_string(),
+                declared_type: None,
             }],
             statements: vec![
                 HStatement::If {
@@ -427,6 +499,8 @@
                 params: vec![HParam {
                     id: 2,
                     name: "x".to_string(),
+                    declared_type: None,
+                    is_var: false,
                 }],
                 local_vars: vec![],
                 body: vec![],
@@ -439,7 +513,7 @@
         };
 
         let generated = generate_main_rs(&module, true);
-        assert!(generated.contains("fn P(vars: &mut BTreeMap<String, i64>, mut param_2: i64)"));
+        assert!(generated.contains("fn P(vars: &mut BTreeMap<String, i64>, param_2: i64)"));
         assert!(generated.contains("set_procedure_var(vars, \"P\", \"x\", param_2);"));
     }
 
@@ -453,6 +527,7 @@
                 HDeclaration::Var {
                     id: 1,
                     name: "x".to_string(),
+                    declared_type: None,
                 },
                 HDeclaration::Procedure {
                     id: 2,
@@ -460,6 +535,8 @@
                     params: vec![HParam {
                         id: 3,
                         name: "x".to_string(),
+                        declared_type: None,
+                        is_var: false,
                     }],
                     local_vars: vec![],
                     body: vec![HStatement::While {
@@ -515,6 +592,7 @@
                 HDeclaration::Var {
                     id: 1,
                     name: "x".to_string(),
+                    declared_type: None,
                 },
                 HDeclaration::Procedure {
                     id: 2,
@@ -522,6 +600,8 @@
                     params: vec![HParam {
                         id: 3,
                         name: "x".to_string(),
+                        declared_type: None,
+                        is_var: false,
                     }],
                     local_vars: vec![],
                     body: vec![HStatement::Call {

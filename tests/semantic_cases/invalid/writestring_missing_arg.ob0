@@ -1,3 +1,4 @@
+(* INVALID: WriteString builtin is called without required argument *)
 MODULE Main;
 BEGIN
   WriteString

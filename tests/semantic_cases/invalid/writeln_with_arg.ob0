@@ -1,3 +1,4 @@
+(* INVALID: WriteLn builtin is called with arguments but expects arity 0 *)
 MODULE Main;
 BEGIN
   WriteLn(1)

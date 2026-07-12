@@ -1,0 +1,8 @@
+(* INVALID: parameter name shadows reserved builtin type name *)
+MODULE Main;
+PROCEDURE P(INTEGER: INTEGER);
+BEGIN
+  WriteInt(INTEGER)
+END P;
+BEGIN
+END Main.

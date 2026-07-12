@@ -5,7 +5,9 @@ use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
 
-use crate::ast::{BinaryOp, Declaration, Expr, ImportDecl, Module, Statement};
+use crate::ast::{
+    BinaryOp, Declaration, Expr, ImportDecl, LocalVarDecl, Module, ParamDecl, Statement, TypeRef,
+};
 
 #[derive(Parser)]
 #[grammar = "oberon0.pest"]
@@ -76,6 +78,7 @@ fn parse_declaration_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
 
     match inner.as_rule() {
         Rule::const_section => parse_const_section(inner),
+        Rule::type_section => parse_type_section(inner),
         Rule::var_section => parse_var_section(inner),
         Rule::procedure_decl => Ok(vec![parse_procedure_decl(inner)?]),
         _ => bail!("Unknown declaration section: {:?}", inner.as_rule()),
@@ -88,12 +91,20 @@ fn parse_procedure_decl(decl: Pair<Rule>) -> Result<Declaration> {
     let name = take_ident(parts.next(), "procedure declaration name")?;
 
     let mut params = Vec::new();
+    let mut local_vars = Vec::new();
     let mut next = parts
         .next()
         .context("Missing data in procedure declaration")?;
 
     if next.as_rule() == Rule::formal_params {
         params = parse_formal_params(next)?;
+        next = parts
+            .next()
+            .context("Missing procedure body or END name")?;
+    }
+
+    while next.as_rule() == Rule::var_section {
+        local_vars.extend(parse_local_var_section(next)?);
         next = parts
             .next()
             .context("Missing procedure body or END name")?;
@@ -112,20 +123,67 @@ fn parse_procedure_decl(decl: Pair<Rule>) -> Result<Declaration> {
     Ok(Declaration::Procedure {
         name,
         params,
+        local_vars,
         body,
         end_name,
     })
 }
 
-/// Parses the positional parameter list for a procedure declaration.
-fn parse_formal_params(params: Pair<Rule>) -> Result<Vec<String>> {
+fn parse_local_var_section(section: Pair<Rule>) -> Result<Vec<LocalVarDecl>> {
     let mut out = Vec::new();
-    if let Some(ident_list) = params.into_inner().next() {
+
+    for item in section.into_inner() {
+        let mut parts = item.into_inner();
+        let ident_list = parts.next().context("Missing procedure-local variable names")?;
+        let declared_type = parts
+            .next()
+            .map(|pair| parse_type_ref_name(pair.as_str().to_string()));
+
         for ident in ident_list.into_inner() {
+            if ident.as_rule() != Rule::ident {
+                bail!("Procedure-local variable name is not an identifier");
+            }
+            out.push(LocalVarDecl {
+                name: ident.as_str().to_string(),
+                declared_type: declared_type.clone(),
+            });
+        }
+    }
+
+    Ok(out)
+}
+
+/// Parses the positional parameter list for a procedure declaration.
+fn parse_formal_params(params: Pair<Rule>) -> Result<Vec<ParamDecl>> {
+    let mut out = Vec::new();
+    for section in params.into_inner() {
+        let mut parts = section.into_inner();
+        let first = parts.next().context("Procedure parameter section is missing")?;
+
+        let (is_var, ident_list_pair) = if first.as_rule() == Rule::var_modifier {
+            (
+                true,
+                parts
+                    .next()
+                    .context("Procedure VAR parameter section is missing identifiers")?,
+            )
+        } else {
+            (false, first)
+        };
+
+        let declared_type = parts
+            .next()
+            .map(|pair| parse_type_ref_name(pair.as_str().to_string()));
+
+        for ident in ident_list_pair.into_inner() {
             if ident.as_rule() != Rule::ident {
                 bail!("Procedure parameter is not an identifier");
             }
-            out.push(ident.as_str().to_string());
+            out.push(ParamDecl {
+                name: ident.as_str().to_string(),
+                declared_type: declared_type.clone(),
+                is_var,
+            });
         }
     }
     Ok(out)
@@ -149,21 +207,40 @@ fn parse_const_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     Ok(out)
 }
 
+/// Parses a `TYPE` declaration section with simple named aliases.
+fn parse_type_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
+    let mut out = Vec::new();
+
+    for item in section.into_inner() {
+        let mut parts = item.into_inner();
+        let name = take_ident(parts.next(), "type name")?;
+        let target = parse_type_ref_name(take_ident(parts.next(), "type target")?);
+        out.push(Declaration::Type { name, target });
+    }
+
+    Ok(out)
+}
+
 /// Parses a `VAR` declaration section.
 fn parse_var_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
-    let ident_list = section
-        .into_inner()
-        .next()
-        .context("Missing variable names")?;
-
     let mut out = Vec::new();
-    for ident in ident_list.into_inner() {
-        if ident.as_rule() != Rule::ident {
-            bail!("Variable name is not an identifier");
+
+    for item in section.into_inner() {
+        let mut parts = item.into_inner();
+        let ident_list = parts.next().context("Missing variable names")?;
+        let declared_type = parts
+            .next()
+            .map(|pair| parse_type_ref_name(pair.as_str().to_string()));
+
+        for ident in ident_list.into_inner() {
+            if ident.as_rule() != Rule::ident {
+                bail!("Variable name is not an identifier");
+            }
+            out.push(Declaration::Var {
+                name: ident.as_str().to_string(),
+                declared_type: declared_type.clone(),
+            });
         }
-        out.push(Declaration::Var {
-            name: ident.as_str().to_string(),
-        });
     }
 
     Ok(out)
@@ -347,6 +424,16 @@ fn parse_pascal_string(raw: &str) -> Result<String> {
     Ok(raw[1..raw.len() - 1].replace("\"\"", "\""))
 }
 
+fn parse_type_ref_name(name: String) -> TypeRef {
+    match name.as_str() {
+        "INTEGER" => TypeRef::Integer,
+        "BOOLEAN" => TypeRef::Boolean,
+        "REAL" => TypeRef::Real,
+        "LONGREAL" => TypeRef::LongReal,
+        _ => TypeRef::Named(name),
+    }
+}
+
 fn parse_add_op(op: Pair<Rule>) -> Result<BinaryOp> {
     match op.as_str() {
         "+" => Ok(BinaryOp::Add),
@@ -406,6 +493,131 @@ mod tests {
         out
     }
 
+    fn replace_required(source: &str, from: &str, to: &str) -> String {
+        assert!(
+            source.contains(from),
+            "expected source to contain '{from}' before replacement"
+        );
+        source.replacen(from, to, 1)
+    }
+
+    fn strip_invalid_header_comment(source: &str) -> String {
+        let mut lines = source.lines();
+        if let Some(first) = lines.next()
+            && first.trim_start().starts_with("(* INVALID:")
+        {
+            return lines.collect::<Vec<_>>().join("\n");
+        }
+
+        source.to_string()
+    }
+
+    fn repair_parser_invalid_case(name: &str, source: &str) -> String {
+        match name {
+            "bad_assign.ob0" => replace_required(source, "x = 1;", "x := 1;"),
+            "bad_const_decl.ob0" => replace_required(source, "CONST answer 42;", "CONST answer = 42;"),
+            "bad_string_literal.ob0" => replace_required(source, "WriteString(\"Hello)", "WriteString(\"Hello\")"),
+            "bad_string_literal_embedded_quote.ob0" => replace_required(
+                source,
+                "WriteString(\"Hello \"Oberon\"\")",
+                "WriteString(\"Hello \"\"Oberon\"\"\")",
+            ),
+            "bad_string_literal_multiline.ob0" => replace_required(
+                source,
+                "WriteString(\"Hello,\nOberon\")",
+                "WriteString(\"Hello, Oberon\")",
+            ),
+            "if_call_condition.ob0" => replace_required(source, "IF WriteInt(1 THEN", "IF 1 THEN"),
+            "if_missing_end.ob0" => replace_required(source, "WriteInt(1)\nEND Main.", "WriteInt(1)\n  END\nEND Main."),
+            "missing_module_dot.ob0" => format!("{}.", source.trim_end()),
+            "procedure_missing_semicolon.ob0" => {
+                replace_required(source, "PROCEDURE P(x)\nBEGIN", "PROCEDURE P(x);\nBEGIN")
+            }
+            other => panic!("missing parser invalid repair mapping for {other}"),
+        }
+    }
+
+    fn repair_semantic_invalid_case(name: &str, source: &str) -> String {
+        match name {
+            "assignment_string_literal.ob0" => replace_required(source, "\"Hello\"", "42"),
+            "duplicate_import_alias.ob0" => replace_required(source, "IMPORT IO, IO;", "IMPORT IO;"),
+            "duplicate_type_decl.ob0" => replace_required(
+                source,
+                "TYPE Count = INTEGER;\nTYPE Count = INTEGER;",
+                "TYPE Count = INTEGER;\nTYPE CountAlias = INTEGER;",
+            ),
+            "duplicate_var_decl.ob0" => replace_required(source, "VAR x, x: INTEGER;", "VAR x, y: INTEGER;"),
+            "end_name_mismatch.ob0" => replace_required(source, "END NotMain.", "END Main."),
+            "eof_with_arg.ob0" => replace_required(source, "EOF(1)", "EOF()"),
+            "if_undefined_condition.ob0" => replace_required(source, "IF unknown THEN", "IF 1 THEN"),
+            "procedure_call_arity_mismatch.ob0" => replace_required(source, "AddAndPrint(2)", "AddAndPrint(2, 3)"),
+            "procedure_end_name_mismatch.ob0" => replace_required(source, "END WrongName;", "END Echo;"),
+            "procedure_local_var_self_shadows_type_alias.ob0" => {
+                replace_required(source, "VAR Count: Count;", "VAR value: Count;")
+            }
+            "procedure_local_var_shadows_builtin_type.ob0" => {
+                replace_required(source, "VAR INTEGER: INTEGER;", "VAR value: INTEGER;")
+            }
+            "readint_statement_call.ob0" => r#"
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+  x := ReadInt()
+END Main.
+"#
+            .to_string(),
+            "typed_assignment_bool_to_integer.ob0" => replace_required(source, "x := flag", "x := 1"),
+            "typed_assignment_real_to_integer.ob0" => replace_required(source, "x := src", "x := 1"),
+            "typed_boolean_arithmetic.ob0" => replace_required(source, "x := flag + 1", "x := 1 + 1"),
+            "typed_param_self_shadows_type_alias.ob0" => {
+                let repaired = replace_required(
+                    source,
+                    "PROCEDURE P(Count: Count);",
+                    "PROCEDURE P(value: Count);",
+                );
+                replace_required(&repaired, "WriteInt(Count)", "WriteInt(value)")
+            }
+            "typed_param_shadows_builtin_type.ob0" => {
+                let repaired = replace_required(
+                    source,
+                    "PROCEDURE P(INTEGER: INTEGER);",
+                    "PROCEDURE P(value: INTEGER);",
+                );
+                replace_required(&repaired, "WriteInt(INTEGER)", "WriteInt(value)")
+            }
+            "typed_param_type_mismatch.ob0" => replace_required(source, "UseInt(x)", "UseInt(1)"),
+            "typed_var_unknown_type.ob0" => replace_required(source, "VAR x: Missing;", "VAR x: INTEGER;"),
+            "undeclared_assignment_target.ob0" => r#"
+MODULE Main;
+VAR y: INTEGER;
+BEGIN
+  y := 1;
+END Main.
+"#
+            .to_string(),
+            "var_param_requires_variable.ob0" => r#"
+MODULE Main;
+VAR x: INTEGER;
+PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
+BEGIN
+END Bump;
+BEGIN
+  Bump(x, 2)
+END Main.
+"#
+            .to_string(),
+            "while_undefined_in_body.ob0" => replace_required(source, "x := y - 1", "x := x - 1"),
+            "writeint_string_literal.ob0" => replace_required(source, "WriteInt(\"Hello\")", "WriteInt(1)"),
+            "writeln_with_arg.ob0" => replace_required(source, "WriteLn(1)", "WriteLn()"),
+            "writestring_missing_arg.ob0" => replace_required(source, "WriteString", "WriteString(\"Hello\")"),
+            "writestring_non_string_arg.ob0" => replace_required(source, "WriteString(1)", "WriteString(\"1\")"),
+            "writestring_too_many_args.ob0" => {
+                replace_required(source, "WriteString(\"Hello\", \"World\")", "WriteString(\"Hello\")")
+            }
+            other => panic!("missing semantic invalid repair mapping for {other}"),
+        }
+    }
+
     #[test]
     fn valid_corpus_parses() {
         for (name, source) in read_dir_sources("tests/parser_cases/valid") {
@@ -424,6 +636,24 @@ mod tests {
                 result.is_err(),
                 "expected invalid parse for {name}, but parsing succeeded"
             );
+        }
+    }
+
+    #[test]
+    fn parser_invalid_corpus_has_single_fault_repairs() {
+        for (name, source) in read_dir_sources("tests/parser_cases/invalid") {
+            let base = strip_invalid_header_comment(&source);
+            let repaired = repair_parser_invalid_case(&name, &base);
+            scan(&repaired).unwrap_or_else(|err| {
+                panic!(
+                    "expected repaired parser case {name} to scan successfully, got: {err}"
+                )
+            });
+            parse_module(&repaired).unwrap_or_else(|err| {
+                panic!(
+                    "expected repaired parser case {name} to parse successfully, got: {err}"
+                )
+            });
         }
     }
 
@@ -450,6 +680,29 @@ mod tests {
                 result.is_err(),
                 "expected semantic failure for {name}, but analysis succeeded"
             );
+        }
+    }
+
+    #[test]
+    fn semantic_invalid_corpus_has_single_fault_repairs() {
+        for (name, source) in read_dir_sources("tests/semantic_cases/invalid") {
+            let base = strip_invalid_header_comment(&source);
+            let repaired = repair_semantic_invalid_case(&name, &base);
+            scan(&repaired).unwrap_or_else(|err| {
+                panic!(
+                    "expected repaired semantic case {name} to scan successfully, got: {err}"
+                )
+            });
+            let module = parse_module(&repaired).unwrap_or_else(|err| {
+                panic!(
+                    "expected repaired semantic case {name} to parse successfully, got: {err}"
+                )
+            });
+            analyze(&module, None).unwrap_or_else(|err| {
+                panic!(
+                    "expected repaired semantic case {name} to pass semantic analysis, got: {err}"
+                )
+            });
         }
     }
 

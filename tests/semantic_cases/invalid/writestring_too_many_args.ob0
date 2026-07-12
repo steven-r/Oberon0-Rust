@@ -1,3 +1,4 @@
+(* INVALID: WriteString builtin is called with too many arguments *)
 MODULE Main;
 BEGIN
   WriteString("Hello", "World")

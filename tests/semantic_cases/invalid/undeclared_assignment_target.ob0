@@ -1,3 +1,4 @@
+(* INVALID: assignment target symbol is not declared *)
 MODULE Main;
 BEGIN
   y := 1;

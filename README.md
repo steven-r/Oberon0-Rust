@@ -247,11 +247,12 @@ The current compiler supports the Milestone A subset:
 
 - `MODULE ... END ... .`
 - Optional `IMPORT` section
-- Declarations:
-  - `CONST` declarations
-  - `VAR` declarations
-  - `PROCEDURE` declarations with parameter lists
-- Procedure-local `VAR` declarations are not part of the current subset yet; procedure-scope shadowing examples therefore use parameters rather than local `VAR` blocks.
+- Declarations include `CONST`, `TYPE`, `VAR`, and `PROCEDURE` declarations.
+- `TYPE` declarations currently support built-in scalar targets `INTEGER`, `BOOLEAN`, `REAL`, `LONGREAL` and simple named aliases.
+- `VAR` declarations may optionally carry declared types such as `VAR x: INTEGER;`, `VAR flag: BOOLEAN;`, or `VAR x: Count;`.
+- User-defined type names remain reserved at module scope but may be shadowed by procedure parameters; built-in scalar names stay reserved, and a parameter cannot reuse the same user-defined type name in its own declaration as in `Count: Count`.
+- Procedure declarations support optional local `VAR` sections before `BEGIN` (for example `PROCEDURE P; VAR x: INTEGER; BEGIN ... END P;`).
+- Procedure-local `VAR` names may shadow user-defined module type aliases, but built-in scalar names stay reserved and declarations like `VAR Count: Count;` are rejected in procedure scope.
 - Statements:
   - assignment: `x := expr`
   - call: `Proc(...)` or `Proc`
@@ -259,6 +260,10 @@ The current compiler supports the Milestone A subset:
   - `WHILE ... DO ... END`
 - Expressions with integer literals, identifiers, and parentheses
 - Operators: `+`, `-`, `*`, `/`
+
+Focused typed-declaration example:
+
+- `examples/typed-declarations/`
 
 Detailed subset and planning documents:
 

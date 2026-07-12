@@ -26,6 +26,41 @@ pub struct ImportDecl {
 }
 
 #[derive(Debug, Clone)]
+/// Procedure parameter declaration, optionally typed and optionally passed by reference.
+pub struct ParamDecl {
+    /// Source-level parameter name.
+    pub name: String,
+    /// Optional declared type of the parameter.
+    pub declared_type: Option<TypeRef>,
+    /// Whether the parameter was declared with `VAR` pass-by-reference mode.
+    pub is_var: bool,
+}
+
+#[derive(Debug, Clone)]
+/// Procedure-local variable declaration with an optional declared type.
+pub struct LocalVarDecl {
+    /// Source-level local variable name.
+    pub name: String,
+    /// Optional declared type of the local variable.
+    pub declared_type: Option<TypeRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Type references supported by the current typed-declaration milestone.
+pub enum TypeRef {
+    /// Built-in INTEGER scalar type.
+    Integer,
+    /// Built-in BOOLEAN scalar type.
+    Boolean,
+    /// Built-in REAL scalar type.
+    Real,
+    /// Built-in LONGREAL scalar type.
+    LongReal,
+    /// Named type alias or user-defined type reference.
+    Named(String),
+}
+
+#[derive(Debug, Clone)]
 /// Executable statements supported by the current Oberon0 subset.
 pub enum Statement {
     /// Assigns the evaluated expression to an existing identifier.
@@ -51,12 +86,18 @@ pub enum Statement {
 pub enum Declaration {
     /// Constant declaration with an integer literal value.
     Const { name: String, value: i64 },
-    /// Mutable variable declaration.
-    Var { name: String },
+    /// Named type alias declaration.
+    Type { name: String, target: TypeRef },
+    /// Mutable variable declaration, optionally with a declared type.
+    Var {
+        name: String,
+        declared_type: Option<TypeRef>,
+    },
     /// Procedure declaration with positional parameters and a statement body.
     Procedure {
         name: String,
-        params: Vec<String>,
+        params: Vec<ParamDecl>,
+        local_vars: Vec<LocalVarDecl>,
         body: Vec<Statement>,
         end_name: String,
     },

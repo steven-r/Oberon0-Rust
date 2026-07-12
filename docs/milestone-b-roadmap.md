@@ -24,7 +24,7 @@ Required architectural rules:
 
 ## B1. Roadmap reset and target freeze
 
-Status: Planned.
+Status: Completed.
 
 Tasks:
 
@@ -41,7 +41,7 @@ Definition of done:
 
 ## B2. String literals and `WriteString`
 
-Status: Planned.
+Status: Completed.
 
 Tasks:
 
@@ -60,7 +60,7 @@ Definition of done:
 
 ## B3. Minimal IO builtin surface
 
-Status: Designed (implementation split pending).
+Status: Completed.
 
 Tasks:
 
@@ -81,7 +81,7 @@ Decision document:
 
 ## B4. Typed declaration model
 
-Status: Planned.
+Status: In progress.
 
 Tasks:
 
@@ -95,6 +95,13 @@ Definition of done:
 1. Typed variable declarations parse and analyze successfully.
 2. The compiler distinguishes symbol kind from symbol type.
 3. HIR preserves declared type information for code generation.
+
+Current status:
+
+1. `TYPE` declarations and typed `VAR` declarations are being added first for `INTEGER` and simple named aliases.
+2. Symbol entries now carry declared type information for typed declarations.
+3. HIR now preserves `TYPE` declarations and typed `VAR` declarations explicitly, without changing current code generation behavior.
+4. Built-in scalar declaration support now covers `INTEGER`, `BOOLEAN`, `REAL`, and `LONGREAL`; expression-level typing and runtime representation remain follow-up work.
 
 ## B5. Array types and indexing
 
