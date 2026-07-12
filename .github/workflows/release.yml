@@ -187,6 +187,28 @@ jobs:
 
           scripts/release.sh "${{ steps.decide.outputs.bump_type }}"
 
+          normalized_changelog="$(mktemp)"
+          awk '
+            BEGIN { blank = 0 }
+            {
+              if ($0 ~ /^[[:space:]]*$/) {
+                blank++
+                if (blank <= 1) {
+                  print ""
+                }
+              } else {
+                blank = 0
+                print
+              }
+            }
+          ' CHANGELOG.md > "$normalized_changelog"
+          mv "$normalized_changelog" CHANGELOG.md
+
+          if ! git diff --quiet -- CHANGELOG.md; then
+            git add CHANGELOG.md
+            git commit --amend --no-edit
+          fi
+
           release_tag="$(git describe --tags --abbrev=0)"
           git tag -d "$release_tag"
 
