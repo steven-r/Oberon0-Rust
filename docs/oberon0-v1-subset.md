@@ -2,6 +2,8 @@
 
 This document defines the implementation target for compiler Milestone A.
 
+Milestone A is complete. For planned post-v1 work, see [milestone-b-roadmap.md](milestone-b-roadmap.md) and [milestone-b-issue-backlog.md](milestone-b-issue-backlog.md).
+
 ## Goals
 
 1. Freeze a stable, testable language subset.

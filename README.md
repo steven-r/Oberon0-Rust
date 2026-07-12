@@ -236,6 +236,8 @@ Detailed subset and planning documents:
 
 - docs/oberon0-v1-subset.md
 - docs/milestone-a-backlog.md
+- docs/milestone-b-roadmap.md
+- docs/milestone-b-issue-backlog.md
 
 ## Troubleshooting
 
