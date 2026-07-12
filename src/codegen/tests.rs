@@ -61,7 +61,7 @@
         assert!(generated.contains("/// Returns the current value of a module-level Oberon0 variable."));
         assert!(generated.contains("/// Implements the Oberon0 procedure `AddAndPrint`."));
         assert!(generated.contains("/// - `param_2` corresponds to the Oberon0 parameter `a`."));
-        assert!(generated.contains("fn AddAndPrint(vars: &mut BTreeMap<String, i64>, mut param_2: i64)"));
+        assert!(generated.contains("fn AddAndPrint(vars: &mut BTreeMap<String, i64>, param_2: i64)"));
         assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"a\", param_2);"));
         assert!(generated.contains("// Local variable backing the Oberon0 `x` binding."));
         assert!(generated.contains("let mut local_3: i64 = 0;"));
@@ -253,6 +253,26 @@
         let generated = generate_main_rs(&module, false);
         assert!(generated.contains("let call_arg_0 = get_var(&vars, \"x\");"));
         assert!(generated.contains("Show(&mut vars, call_arg_0);"));
+    }
+
+    #[test]
+    fn omits_io_runtime_helpers_when_not_used() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![HStatement::Call {
+                name: ident(1, "WriteLn", SymbolKind::Procedure),
+                args: vec![],
+            }],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(!generated.contains("use std::io::Read;"));
+        assert!(!generated.contains("struct InputState"));
+        assert!(!generated.contains("fn read_int() -> i64"));
+        assert!(!generated.contains("fn eof() -> i64"));
     }
 
     #[test]
@@ -493,7 +513,7 @@
         };
 
         let generated = generate_main_rs(&module, true);
-        assert!(generated.contains("fn P(vars: &mut BTreeMap<String, i64>, mut param_2: i64)"));
+        assert!(generated.contains("fn P(vars: &mut BTreeMap<String, i64>, param_2: i64)"));
         assert!(generated.contains("set_procedure_var(vars, \"P\", \"x\", param_2);"));
     }
 
