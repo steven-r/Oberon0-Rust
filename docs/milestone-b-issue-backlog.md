@@ -88,6 +88,11 @@ Dependencies:
 1. Issue 1.
 2. Issue 3 if `WriteString` is included in the same builtin group.
 
+Decision status:
+
+1. Design baseline documented in docs/io-builtin-contract.md.
+2. Remaining implementation tracked in issues #12 and #13.
+
 ## Issue 5. Add `TYPE` declarations and typed variable declarations
 
 Suggested title:

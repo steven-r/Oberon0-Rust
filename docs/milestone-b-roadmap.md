@@ -56,7 +56,7 @@ Definition of done:
 
 ## B3. Minimal IO builtin surface
 
-Status: Planned.
+Status: Designed (implementation split pending).
 
 Tasks:
 
@@ -70,6 +70,10 @@ Definition of done:
 1. The builtin IO surface is documented and tested.
 2. The semantic pass validates arity and builtin call legality.
 3. End-to-end examples demonstrate text output and integer input.
+
+Decision document:
+
+1. docs/io-builtin-contract.md
 
 ## B4. Typed declaration model
 
