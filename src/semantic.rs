@@ -52,12 +52,12 @@ impl SemanticError {
             SemanticError::UndefinedSymbol { .. } => "E005",
             SemanticError::ArityMismatch { .. } => "E006",
             SemanticError::InvalidBuiltinArgument { .. } => "E007",
-            SemanticError::InvalidVarArgument { .. } => "E008",
-            SemanticError::TypeMismatch { .. } => "E009",
-            SemanticError::UnknownType { .. } => "E010",
-            SemanticError::UnsupportedStringLiteral => "E011",
-            SemanticError::NotCallable { .. } => "E012",
-            SemanticError::ProcedureNameMismatch { .. } => "E013",
+            SemanticError::UnsupportedStringLiteral => "E008",
+            SemanticError::NotCallable { .. } => "E009",
+            SemanticError::ProcedureNameMismatch { .. } => "E010",
+            SemanticError::InvalidVarArgument { .. } => "E011",
+            SemanticError::TypeMismatch { .. } => "E012",
+            SemanticError::UnknownType { .. } => "E013",
         }
     }
 }
@@ -872,7 +872,7 @@ BEGIN
     x()
 END Main.
 "#,
-                                code: "E012",
+                                code: "E009",
                                 message_contains: &["Symbol 'x' is not callable"],
                         },
                         ErrorCase {
@@ -901,7 +901,7 @@ END Wrong;
 BEGIN
 END Main.
 "#,
-                                code: "E013",
+                                code: "E010",
                                 message_contains: &["Procedure END name mismatch", "expected 'P', got 'Wrong'"],
                         },
                         ErrorCase {
@@ -924,7 +924,7 @@ BEGIN
     x := "Hello"
 END Main.
 "#,
-                                code: "E011",
+                                code: "E008",
                                 message_contains: &["String literals are only supported"],
                         },
                         ErrorCase {
@@ -958,7 +958,7 @@ BEGIN
     x := 1
 END Main.
 "#,
-                                code: "E010",
+                                code: "E013",
                                 message_contains: &["Unknown type reference: 'Missing'"],
                         },
                         ErrorCase {
@@ -1044,7 +1044,7 @@ BEGIN
     Bump(1, 2)
 END Main.
 "#,
-                                code: "E008",
+                                code: "E011",
                                 message_contains: &["Procedure 'Bump' received an invalid VAR argument", "position 1", "expected a variable designator"],
                         },
                         ErrorCase {
@@ -1057,7 +1057,7 @@ BEGIN
     x := flag
 END Main.
 "#,
-                                code: "E009",
+                                code: "E012",
                                 message_contains: &["cannot assign BOOLEAN to INTEGER 'x'"],
                         },
                         ErrorCase {
@@ -1070,7 +1070,7 @@ BEGIN
     x := src
 END Main.
 "#,
-                                code: "E009",
+                                code: "E012",
                                 message_contains: &["cannot assign REAL to INTEGER 'x'"],
                         },
                         ErrorCase {
@@ -1083,7 +1083,7 @@ BEGIN
     x := flag + 1
 END Main.
 "#,
-                                code: "E009",
+                                code: "E012",
                                 message_contains: &["arithmetic expressions require numeric operands"],
                         },
                         ErrorCase {
@@ -1098,7 +1098,7 @@ BEGIN
     UseInt(x)
 END Main.
 "#,
-                                code: "E009",
+                                code: "E012",
                                 message_contains: &["parameter 'value' expects INTEGER, got REAL"],
                         },
                         ErrorCase {
