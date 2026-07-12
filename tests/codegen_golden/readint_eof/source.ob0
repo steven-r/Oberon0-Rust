@@ -1,0 +1,13 @@
+MODULE Main;
+VAR x;
+BEGIN
+  x := ReadInt();
+  IF EOF() THEN
+    WriteInt(1)
+  ELSE
+    WriteInt(0)
+  END;
+  WriteLn();
+  WriteInt(x);
+  WriteLn()
+END Main.
