@@ -5,7 +5,7 @@ use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
 
-use crate::ast::{BinaryOp, Declaration, Expr, ImportDecl, Module, Statement, TypeRef};
+use crate::ast::{BinaryOp, Declaration, Expr, ImportDecl, Module, ParamDecl, Statement, TypeRef};
 
 #[derive(Parser)]
 #[grammar = "oberon0.pest"]
@@ -119,14 +119,36 @@ fn parse_procedure_decl(decl: Pair<Rule>) -> Result<Declaration> {
 }
 
 /// Parses the positional parameter list for a procedure declaration.
-fn parse_formal_params(params: Pair<Rule>) -> Result<Vec<String>> {
+fn parse_formal_params(params: Pair<Rule>) -> Result<Vec<ParamDecl>> {
     let mut out = Vec::new();
-    if let Some(ident_list) = params.into_inner().next() {
-        for ident in ident_list.into_inner() {
+    for section in params.into_inner() {
+        let mut parts = section.into_inner();
+        let first = parts.next().context("Procedure parameter section is missing")?;
+
+        let (is_var, ident_list_pair) = if first.as_rule() == Rule::var_modifier {
+            (
+                true,
+                parts
+                    .next()
+                    .context("Procedure VAR parameter section is missing identifiers")?,
+            )
+        } else {
+            (false, first)
+        };
+
+        let declared_type = parts
+            .next()
+            .map(|pair| parse_type_ref_name(pair.as_str().to_string()));
+
+        for ident in ident_list_pair.into_inner() {
             if ident.as_rule() != Rule::ident {
                 bail!("Procedure parameter is not an identifier");
             }
-            out.push(ident.as_str().to_string());
+            out.push(ParamDecl {
+                name: ident.as_str().to_string(),
+                declared_type: declared_type.clone(),
+                is_var,
+            });
         }
     }
     Ok(out)

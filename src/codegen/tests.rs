@@ -33,6 +33,8 @@
                 params: vec![HParam {
                     id: 2,
                     name: "a".to_string(),
+                    declared_type: None,
+                    is_var: false,
                 }],
                 local_vars: vec![ident(3, "x", SymbolKind::Variable)],
                 body: vec![
@@ -430,6 +432,8 @@
                 params: vec![HParam {
                     id: 2,
                     name: "x".to_string(),
+                    declared_type: None,
+                    is_var: false,
                 }],
                 local_vars: vec![],
                 body: vec![],
@@ -464,6 +468,8 @@
                     params: vec![HParam {
                         id: 3,
                         name: "x".to_string(),
+                        declared_type: None,
+                        is_var: false,
                     }],
                     local_vars: vec![],
                     body: vec![HStatement::While {
@@ -527,6 +533,8 @@
                     params: vec![HParam {
                         id: 3,
                         name: "x".to_string(),
+                        declared_type: None,
+                        is_var: false,
                     }],
                     local_vars: vec![],
                     body: vec![HStatement::Call {

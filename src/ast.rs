@@ -26,6 +26,17 @@ pub struct ImportDecl {
 }
 
 #[derive(Debug, Clone)]
+/// Procedure parameter declaration, optionally typed and optionally passed by reference.
+pub struct ParamDecl {
+    /// Source-level parameter name.
+    pub name: String,
+    /// Optional declared type of the parameter.
+    pub declared_type: Option<TypeRef>,
+    /// Whether the parameter was declared with `VAR` pass-by-reference mode.
+    pub is_var: bool,
+}
+
+#[derive(Debug, Clone)]
 /// Type references supported by the current typed-declaration milestone.
 pub enum TypeRef {
     /// Built-in INTEGER scalar type.
@@ -76,7 +87,7 @@ pub enum Declaration {
     /// Procedure declaration with positional parameters and a statement body.
     Procedure {
         name: String,
-        params: Vec<String>,
+        params: Vec<ParamDecl>,
         body: Vec<Statement>,
         end_name: String,
     },

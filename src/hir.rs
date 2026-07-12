@@ -47,6 +47,10 @@ pub struct HParam {
     pub id: usize,
     /// Original source-level parameter name.
     pub name: String,
+    /// Optional declared parameter type preserved from the source.
+    pub declared_type: Option<TypeRef>,
+    /// Whether the parameter is declared with `VAR` pass-by-reference mode.
+    pub is_var: bool,
 }
 
 #[derive(Debug, Clone)]
