@@ -1,0 +1,5 @@
+MODULE Main;
+TYPE Count = INTEGER;
+TYPE Count = INTEGER;
+BEGIN
+END Main.

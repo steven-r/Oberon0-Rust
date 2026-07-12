@@ -1,0 +1,6 @@
+MODULE Main;
+TYPE Count = INTEGER;
+VAR x: Count;
+BEGIN
+  x := 1
+END Main.

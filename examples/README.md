@@ -17,6 +17,7 @@ scripts/oberon0 <example-directory> --run
 - `imports-manifest`: import declarations plus `oberon.toml` crate mapping
 - `expressions-basic`: operator precedence and parenthesized expressions
 - `declarations-const-var`: `CONST` and `VAR` declarations
+- `typed-declarations`: `TYPE` aliases and typed `VAR` declarations with `INTEGER`
 - `control-if-else`: branching with `IF/ELSE`
 - `control-while`: looping with `WHILE`
 - `procedures-params`: parameter shadowing with distinct module and procedure state values

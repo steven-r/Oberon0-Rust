@@ -1,0 +1,10 @@
+MODULE Main;
+TYPE Count = INTEGER;
+VAR x: INTEGER;
+VAR y: Count;
+BEGIN
+  x := 12;
+  y := x * 3;
+  WriteInt(y);
+  WriteLn()
+END Main.

@@ -175,6 +175,7 @@
             declarations: vec![HDeclaration::Var {
                 id: 1,
                 name: "x".to_string(),
+                declared_type: None,
             }],
             statements: vec![
                 HStatement::Assign {
@@ -214,6 +215,7 @@
             declarations: vec![HDeclaration::Var {
                 id: 1,
                 name: "x".to_string(),
+                declared_type: None,
             }],
             statements: vec![
                 HStatement::Assign {
@@ -289,6 +291,7 @@
             declarations: vec![HDeclaration::Var {
                 id: 1,
                 name: "x".to_string(),
+                declared_type: None,
             }],
             statements: vec![
                 HStatement::If {
@@ -453,6 +456,7 @@
                 HDeclaration::Var {
                     id: 1,
                     name: "x".to_string(),
+                    declared_type: None,
                 },
                 HDeclaration::Procedure {
                     id: 2,
@@ -515,6 +519,7 @@
                 HDeclaration::Var {
                     id: 1,
                     name: "x".to_string(),
+                    declared_type: None,
                 },
                 HDeclaration::Procedure {
                     id: 2,

@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-keyword = { "MODULE" | "IMPORT" | "CONST" | "VAR" | "PROCEDURE" | "BEGIN" | "END" | "IF" | "THEN" | "ELSE" | "WHILE" | "DO" }
+keyword = { "MODULE" | "IMPORT" | "CONST" | "TYPE" | "VAR" | "PROCEDURE" | "BEGIN" | "END" | "IF" | "THEN" | "ELSE" | "WHILE" | "DO" }
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 integer = @{ ASCII_DIGIT+ }
 string = @{ "\"" ~ ("\"\"" | (!("\"" | NEWLINE) ~ ANY))* ~ "\"" }
@@ -10,10 +10,13 @@ module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ declaration_section*
 import_section = { "IMPORT" ~ import_item ~ ("," ~ import_item)* ~ ";" }
 import_item = { ident ~ (":=" ~ ident)? }
 
-declaration_section = { const_section | var_section | procedure_decl }
+declaration_section = { const_section | type_section | var_section | procedure_decl }
 const_section = { "CONST" ~ const_item+ }
 const_item = { ident ~ "=" ~ integer ~ ";" }
-var_section = { "VAR" ~ ident_list ~ ";" }
+type_section = { "TYPE" ~ type_item+ }
+type_item = { ident ~ "=" ~ ident ~ ";" }
+var_section = { "VAR" ~ var_item+ }
+var_item = { ident_list ~ (":" ~ ident)? ~ ";" }
 ident_list = { ident ~ ("," ~ ident)* }
 procedure_decl = { "PROCEDURE" ~ ident ~ formal_params? ~ ";" ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ ";" }
 formal_params = { "(" ~ ident_list? ~ ")" }

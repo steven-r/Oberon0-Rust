@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file.
 - add explicit state-output controls via `compiler.emit_state` in `oberon.toml` and one-shot CLI overrides (`--emit-state`, `--no-emit-state`)
 - extend generated runtime state output to include procedure-scope shadowing bindings under qualified keys (for example `Proc.x`)
 - enforce declarative assignment-target resolution in semantic analysis and keep the same invariant in lowering
+- add `TYPE` declarations plus typed `VAR` declarations for `INTEGER` and simple named aliases
+- preserve declared type information through semantic symbols and HIR for the first typed-declaration slice
 
 ### Fixes
 
@@ -23,6 +25,7 @@ All notable changes to this project will be documented in this file.
 - document explicit state-output controls and current subset limits for procedure-local `VAR` declarations
 - add focused examples for manifest-backed imports and procedure-scope shadowing flows
 - expand language-planning documentation for declarative semantics and scope behavior
+- document typed declaration support in the README and add a focused typed-declarations example
 
 ### Tests
 
@@ -30,6 +33,7 @@ All notable changes to this project will be documented in this file.
 - add codegen/runtime regressions for explicit state output control, shadowed bindings, and mutable reassigned procedure parameters
 - add end-to-end example coverage for string handling and new procedure-scope shadowing scenarios
 - strengthen declarative-scope regressions for undeclared assignment targets and stable `E005` diagnostics
+- add semantic corpus and lowering coverage for typed declarations and preserved type information in HIR
 
 ### Chores
 

@@ -2,6 +2,7 @@
 
 //! Semantic symbol table primitives shared across analysis and lowering.
 
+use crate::ast::TypeRef;
 use crate::scope::ScopedMap;
 use crate::semantic::SemanticError;
 
@@ -10,6 +11,7 @@ use crate::semantic::SemanticError;
 pub enum SymbolKind {
     Variable,
     Constant,
+    TypeName,
     Procedure,
     Parameter,
 }
@@ -21,6 +23,8 @@ pub struct Symbol {
     pub name: String,
     /// Resolved kind of this symbol.
     pub kind: SymbolKind,
+    /// Declared type information carried for typed declarations.
+    pub declared_type: Option<TypeRef>,
     /// Scope depth where the symbol was declared.
     pub scope_depth: usize,
 }
@@ -56,12 +60,23 @@ impl SymbolTable {
 
     /// Declares a symbol in the current scope.
     pub fn declare(&mut self, name: &str, kind: SymbolKind) -> Result<(), SemanticError> {
+        self.declare_with_type(name, kind, None)
+    }
+
+    /// Declares a symbol in the current scope with optional declared type data.
+    pub fn declare_with_type(
+        &mut self,
+        name: &str,
+        kind: SymbolKind,
+        declared_type: Option<TypeRef>,
+    ) -> Result<(), SemanticError> {
         let depth = self.depth();
         self.scopes.declare(
             name,
             Symbol {
                 name: name.to_string(),
                 kind,
+                declared_type,
                 scope_depth: depth,
             },
             |name| SemanticError::DuplicateSymbol {

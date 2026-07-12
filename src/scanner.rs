@@ -11,6 +11,8 @@ pub enum Token {
     KwImport,
     #[token("CONST")]
     KwConst,
+    #[token("TYPE")]
+    KwType,
     #[token("VAR")]
     KwVar,
     #[token("PROCEDURE")]
@@ -38,6 +40,8 @@ pub enum Token {
     Semicolon,
     #[token(",")]
     Comma,
+    #[token(":")]
+    Colon,
     #[token(".")]
     Dot,
     #[token("(")]
@@ -144,12 +148,14 @@ mod tests {
 
     #[test]
     fn scans_declaration_keywords_as_keywords() {
-        let source = "MODULE Main; CONST BASE = 10; VAR x; BEGIN END Main.";
+        let source = "MODULE Main; CONST BASE = 10; TYPE Count = INTEGER; VAR x: Count; BEGIN END Main.";
         let tokens = scan(source).expect("scanner should accept declaration keywords");
 
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwModule)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwConst)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::KwType)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwVar)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Colon)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwBegin)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwEnd)));
     }

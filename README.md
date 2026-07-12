@@ -249,7 +249,8 @@ The current compiler supports the Milestone A subset:
 - Optional `IMPORT` section
 - Declarations:
   - `CONST` declarations
-  - `VAR` declarations
+    - `TYPE` declarations with `INTEGER` and simple named aliases
+    - `VAR` declarations, with optional declared types such as `VAR x: INTEGER;` or `VAR x: Count;`
   - `PROCEDURE` declarations with parameter lists
 - Procedure-local `VAR` declarations are not part of the current subset yet; procedure-scope shadowing examples therefore use parameters rather than local `VAR` blocks.
 - Statements:
@@ -259,6 +260,10 @@ The current compiler supports the Milestone A subset:
   - `WHILE ... DO ... END`
 - Expressions with integer literals, identifiers, and parentheses
 - Operators: `+`, `-`, `*`, `/`
+
+Focused typed-declaration example:
+
+- `examples/typed-declarations/`
 
 Detailed subset and planning documents:
 

@@ -6,7 +6,7 @@ use std::fmt;
 
 use anyhow::Result;
 
-use crate::ast::{Declaration, Expr, Module, Statement};
+use crate::ast::{Declaration, Expr, Module, Statement, TypeRef};
 use crate::manifest::ExternalManifest;
 use crate::symbols::{SymbolKind, SymbolTable};
 
@@ -27,6 +27,7 @@ pub enum SemanticError {
         name: String,
         detail: String,
     },
+    UnknownType { name: String },
     UnsupportedStringLiteral,
     NotCallable { name: String },
     ProcedureNameMismatch { expected: String, got: String },
@@ -43,9 +44,10 @@ impl SemanticError {
             SemanticError::UndefinedSymbol { .. } => "E005",
             SemanticError::ArityMismatch { .. } => "E006",
             SemanticError::InvalidBuiltinArgument { .. } => "E007",
-            SemanticError::UnsupportedStringLiteral => "E008",
-            SemanticError::NotCallable { .. } => "E009",
-            SemanticError::ProcedureNameMismatch { .. } => "E010",
+            SemanticError::UnknownType { .. } => "E008",
+            SemanticError::UnsupportedStringLiteral => "E009",
+            SemanticError::NotCallable { .. } => "E010",
+            SemanticError::ProcedureNameMismatch { .. } => "E011",
         }
     }
 }
@@ -96,6 +98,9 @@ impl fmt::Display for SemanticError {
             SemanticError::InvalidBuiltinArgument { name, detail } => {
                 write!(f, "[{}] Builtin '{}' received an invalid argument: {}", self.code(), name, detail)
             }
+            SemanticError::UnknownType { name } => {
+                write!(f, "[{}] Unknown type reference: '{}'", self.code(), name)
+            }
             SemanticError::UnsupportedStringLiteral => {
                 write!(f, "[{}] String literals are only supported as arguments to 'WriteString'", self.code())
             }
@@ -116,6 +121,16 @@ impl fmt::Display for SemanticError {
 }
 
 impl Error for SemanticError {}
+
+fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Option<TypeRef> {
+    match type_ref {
+        TypeRef::Integer => Some(TypeRef::Integer),
+        TypeRef::Named(name) => match types.get(name) {
+            Some(target) => resolve_type_ref(target, types),
+            None => None,
+        },
+    }
+}
 
 /// Validates module structure, scope rules, and procedure calls before lowering.
 pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<()> {
@@ -139,6 +154,8 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     proc_arity.insert("WriteLn".to_string(), Some(0));
     proc_arity.insert("ReadInt".to_string(), Some(0));
     proc_arity.insert("EOF".to_string(), Some(0));
+    let mut types: HashMap<String, TypeRef> = HashMap::new();
+    types.insert("INTEGER".to_string(), TypeRef::Integer);
 
     for import in &module.imports {
         if symbols
@@ -166,8 +183,35 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
             Declaration::Const { name, .. } => {
                 symbols.declare(name, SymbolKind::Constant)?;
             }
-            Declaration::Var { name } => {
-                symbols.declare(name, SymbolKind::Variable)?;
+            Declaration::Type { name, target } => {
+                if resolve_type_ref(target, &types).is_none() {
+                    return Err(SemanticError::UnknownType {
+                        name: match target {
+                            TypeRef::Integer => "INTEGER".to_string(),
+                            TypeRef::Named(name) => name.clone(),
+                        },
+                    }
+                    .into());
+                }
+                symbols.declare_with_type(name, SymbolKind::TypeName, Some(target.clone()))?;
+                types.insert(name.clone(), target.clone());
+            }
+            Declaration::Var {
+                name,
+                declared_type,
+            } => {
+                if let Some(type_ref) = declared_type
+                    && resolve_type_ref(type_ref, &types).is_none()
+                {
+                    return Err(SemanticError::UnknownType {
+                        name: match type_ref {
+                            TypeRef::Integer => "INTEGER".to_string(),
+                            TypeRef::Named(name) => name.clone(),
+                        },
+                    }
+                    .into());
+                }
+                symbols.declare_with_type(name, SymbolKind::Variable, declared_type.clone())?;
             }
             Declaration::Procedure { name, params, .. } => {
                 symbols.declare(name, SymbolKind::Procedure)?;
@@ -537,6 +581,69 @@ END Main.
                     assert_eq!(got, 1);
                 }
                 other => panic!("expected ArityMismatch, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn accepts_typed_integer_variable_declaration() {
+            let source = r#"
+    MODULE Main;
+    VAR x: INTEGER;
+    BEGIN
+      x := 1
+    END Main.
+    "#;
+
+            let module = parse_module(source).expect("source should parse");
+            analyze(&module, None).expect("typed INTEGER variable should pass semantic analysis");
+        }
+
+        #[test]
+        fn accepts_named_type_alias_for_variable_declaration() {
+            let source = r#"
+    MODULE Main;
+    TYPE Count = INTEGER;
+    VAR x: Count;
+    BEGIN
+      x := 1
+    END Main.
+    "#;
+
+            let module = parse_module(source).expect("source should parse");
+            analyze(&module, None).expect("named type alias should pass semantic analysis");
+        }
+
+        #[test]
+        fn rejects_unknown_type_reference() {
+            let source = r#"
+    MODULE Main;
+    VAR x: Missing;
+    BEGIN
+      x := 1
+    END Main.
+    "#;
+
+            let err = semantic_error(source);
+            match err {
+                SemanticError::UnknownType { name } => assert_eq!(name, "Missing"),
+                other => panic!("expected UnknownType, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn rejects_duplicate_type_declaration() {
+            let source = r#"
+    MODULE Main;
+    TYPE Count = INTEGER;
+    TYPE Count = INTEGER;
+    BEGIN
+    END Main.
+    "#;
+
+            let err = semantic_error(source);
+            match err {
+                SemanticError::DuplicateSymbol { name } => assert_eq!(name, "Count"),
+                other => panic!("expected DuplicateSymbol, got {other:?}"),
             }
         }
 
