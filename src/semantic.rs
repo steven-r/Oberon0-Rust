@@ -130,9 +130,11 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     let mut symbols = SymbolTable::new();
     symbols.declare("WriteInt", SymbolKind::Procedure)?;
     symbols.declare("WriteString", SymbolKind::Procedure)?;
+    symbols.declare("WriteLn", SymbolKind::Procedure)?;
     let mut proc_arity: HashMap<String, Option<usize>> = HashMap::new();
     proc_arity.insert("WriteInt".to_string(), None);
     proc_arity.insert("WriteString".to_string(), Some(1));
+    proc_arity.insert("WriteLn".to_string(), Some(0));
 
     for import in &module.imports {
         if symbols
@@ -462,6 +464,43 @@ END Main.
                     assert_eq!(detail, "expected a string literal");
                 }
                 other => panic!("expected InvalidBuiltinArgument, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn accepts_writeln_without_arguments() {
+            let source = r#"
+    MODULE Main;
+    BEGIN
+      WriteLn()
+    END Main.
+    "#;
+
+            let module = parse_module(source).expect("source should parse");
+            analyze(&module, None).expect("WriteLn without arguments should pass semantic analysis");
+        }
+
+        #[test]
+        fn rejects_writeln_with_arguments() {
+            let source = r#"
+    MODULE Main;
+    BEGIN
+      WriteLn(1)
+    END Main.
+    "#;
+
+            let err = semantic_error(source);
+            match err {
+                SemanticError::ArityMismatch {
+                    name,
+                    expected,
+                    got,
+                } => {
+                    assert_eq!(name, "WriteLn");
+                    assert_eq!(expected, 0);
+                    assert_eq!(got, 1);
+                }
+                other => panic!("expected ArityMismatch, got {other:?}"),
             }
         }
 }

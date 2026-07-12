@@ -4,12 +4,16 @@ PROCEDURE Mix(x);
 BEGIN
   y := x + 1;
   WriteInt(x);
-  WriteInt(y)
+  WriteLn();
+  WriteInt(y);
+  WriteLn()
 END Mix;
 BEGIN
   x := 7;
   y := 0;
   Mix(42);
   WriteInt(x);
-  WriteInt(y)
+  WriteLn();
+  WriteInt(y);
+  WriteLn()
 END Main.

@@ -354,12 +354,14 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
             if name.name == "WriteInt" {
                 match args.first() {
                     Some(first) => format!(
-                        "{}println!(\"{{}}\", {});\n",
+                        "{}print!(\"{{}}\", {});\n",
                         indent,
                         format_top_level_expr(first, ctx)
                     ),
-                    None => format!("{}println!();\n", indent),
+                    None => format!("{}print!(\"\");\n", indent),
                 }
+            } else if name.name == "WriteLn" {
+                format!("{}println!();\n", indent)
             } else if name.name == "WriteString" {
                 match args.first() {
                     Some(first) => format!(
@@ -550,7 +552,7 @@ mod tests {
         assert!(generated.contains("let mut local_3: i64 = 0;"));
         assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"x\", local_3);"));
         assert!(generated.contains("local_3 = param_2;"));
-        assert!(generated.contains("println!(\"{}\", local_3);"));
+        assert!(generated.contains("print!(\"{}\", local_3);"));
         assert!(generated.contains("/// Executes the Oberon0 module `Main`."));
         assert!(generated.contains("// Runtime state keeps module variables and optional procedure-local snapshots."));
         assert!(generated.contains("AddAndPrint(&mut vars, 7);"));
@@ -632,6 +634,23 @@ mod tests {
         assert!(generated.contains("print!(\"{}\", \"Hello, \\\"Oberon\\\"\");"));
         assert!(!generated.contains("let mut vars: BTreeMap<String, i64> = BTreeMap::new();"));
         assert!(!generated.contains("State: {:?}"));
+    }
+
+    #[test]
+    fn emits_writeln_builtin_as_newline_println() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![HStatement::Call {
+                name: ident(21, "WriteLn", SymbolKind::Procedure),
+                args: vec![],
+            }],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(generated.contains("println!();"));
     }
 
     #[test]
