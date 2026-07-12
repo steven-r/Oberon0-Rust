@@ -250,6 +250,7 @@ The current compiler supports the Milestone A subset:
 - Declarations include `CONST`, `TYPE`, `VAR`, and `PROCEDURE` declarations.
 - `TYPE` declarations currently support built-in scalar targets `INTEGER`, `BOOLEAN`, `REAL`, `LONGREAL` and simple named aliases.
 - `VAR` declarations may optionally carry declared types such as `VAR x: INTEGER;`, `VAR flag: BOOLEAN;`, or `VAR x: Count;`.
+- User-defined type names remain reserved at module scope but may be shadowed by procedure parameters; built-in scalar names stay reserved, and a parameter cannot reuse the same user-defined type name in its own declaration as in `Count: Count`.
 - Procedure-local `VAR` declarations are not part of the current subset yet; procedure-scope shadowing examples therefore use parameters rather than local `VAR` blocks.
 - Statements:
   - assignment: `x := expr`
