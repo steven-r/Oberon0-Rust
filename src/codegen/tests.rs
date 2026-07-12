@@ -70,7 +70,8 @@
         assert!(generated.contains("print!(\"{}\", local_3);"));
         assert!(generated.contains("/// Executes the Oberon0 module `Main`."));
         assert!(generated.contains("// Runtime state keeps module variables and optional procedure-local snapshots."));
-        assert!(generated.contains("AddAndPrint(&mut vars, 7);"));
+        assert!(generated.contains("let call_arg_0 = 7;"));
+        assert!(generated.contains("AddAndPrint(&mut vars, call_arg_0);"));
     }
 
     #[test]
@@ -206,6 +207,52 @@
         assert!(generated.contains("fn eof() -> i64"));
         assert!(generated.contains("vars.insert(\"x\".to_string(), read_int());"));
         assert!(generated.contains("if eof() != 0 {"));
+    }
+
+    #[test]
+    fn evaluates_procedure_call_arguments_before_mutable_vars_borrow() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![
+                HDeclaration::Var {
+                    id: 1,
+                    name: "x".to_string(),
+                    declared_type: None,
+                },
+                HDeclaration::Procedure {
+                    id: 2,
+                    name: "Show".to_string(),
+                    params: vec![HParam {
+                        id: 3,
+                        name: "value".to_string(),
+                        declared_type: None,
+                        is_var: false,
+                    }],
+                    local_vars: vec![],
+                    body: vec![HStatement::Call {
+                        name: ident(4, "WriteInt", SymbolKind::Procedure),
+                        args: vec![HExpr::Name(ident(3, "value", SymbolKind::Parameter))],
+                    }],
+                    end_name: "Show".to_string(),
+                },
+            ],
+            statements: vec![
+                HStatement::Assign {
+                    target: ident(1, "x", SymbolKind::Variable),
+                    value: HExpr::Integer(7),
+                },
+                HStatement::Call {
+                    name: ident(2, "Show", SymbolKind::Procedure),
+                    args: vec![HExpr::Name(ident(1, "x", SymbolKind::Variable))],
+                },
+            ],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(generated.contains("let call_arg_0 = get_var(&vars, \"x\");"));
+        assert!(generated.contains("Show(&mut vars, call_arg_0);"));
     }
 
     #[test]
