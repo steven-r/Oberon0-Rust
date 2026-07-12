@@ -3,7 +3,7 @@
   "extends": [
     "config:recommended"
   ],
-  "baseBranches": [
+  "baseBranchPatterns": [
     "dev"
   ],
   "customManagers": [
@@ -22,7 +22,7 @@
   "dependencyDashboard": true,
   "vulnerabilityAlerts": {
     "enabled": true,
-    "baseBranches": [
+    "baseBranchPatterns": [
       "main"
     ],
     "automerge": true,
