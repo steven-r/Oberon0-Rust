@@ -30,6 +30,12 @@ pub struct ImportDecl {
 pub enum TypeRef {
     /// Built-in INTEGER scalar type.
     Integer,
+    /// Built-in BOOLEAN scalar type.
+    Boolean,
+    /// Built-in REAL scalar type.
+    Real,
+    /// Built-in LONGREAL scalar type.
+    LongReal,
     /// Named type alias or user-defined type reference.
     Named(String),
 }

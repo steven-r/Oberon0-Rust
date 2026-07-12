@@ -10,14 +10,17 @@ All notable changes to this project will be documented in this file.
 
 - add `TYPE` declarations and typed `VAR` declarations for `INTEGER` and simple named aliases (#5)
 - preserve declared type information through semantic symbols and HIR for the first typed-declaration slice (#6)
+- add built-in scalar declaration support for `BOOLEAN`, `REAL`, and `LONGREAL` alongside `INTEGER` (#17)
 
 ### Documentation
 
 - align contributor guidance across repository docs with the project decision log (no dedicated issue)
+- document built-in scalar declaration support in the README, roadmap, and typed-declarations example (#17)
 
 ### Tests
 
 - add semantic corpus and lowering coverage for typed declarations and preserved type information in HIR (#5, #6)
+- add semantic coverage for `BOOLEAN`, `REAL`, and `LONGREAL` declaration support (#17)
 
 ### Build
 

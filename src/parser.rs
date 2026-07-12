@@ -370,6 +370,9 @@ fn parse_pascal_string(raw: &str) -> Result<String> {
 fn parse_type_ref_name(name: String) -> TypeRef {
     match name.as_str() {
         "INTEGER" => TypeRef::Integer,
+        "BOOLEAN" => TypeRef::Boolean,
+        "REAL" => TypeRef::Real,
+        "LONGREAL" => TypeRef::LongReal,
         _ => TypeRef::Named(name),
     }
 }

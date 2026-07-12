@@ -247,11 +247,9 @@ The current compiler supports the Milestone A subset:
 
 - `MODULE ... END ... .`
 - Optional `IMPORT` section
-- Declarations:
-  - `CONST` declarations
-    - `TYPE` declarations with `INTEGER` and simple named aliases
-    - `VAR` declarations, with optional declared types such as `VAR x: INTEGER;` or `VAR x: Count;`
-  - `PROCEDURE` declarations with parameter lists
+- Declarations include `CONST`, `TYPE`, `VAR`, and `PROCEDURE` declarations.
+- `TYPE` declarations currently support built-in scalar targets `INTEGER`, `BOOLEAN`, `REAL`, `LONGREAL` and simple named aliases.
+- `VAR` declarations may optionally carry declared types such as `VAR x: INTEGER;`, `VAR flag: BOOLEAN;`, or `VAR x: Count;`.
 - Procedure-local `VAR` declarations are not part of the current subset yet; procedure-scope shadowing examples therefore use parameters rather than local `VAR` blocks.
 - Statements:
   - assignment: `x := expr`

@@ -5,8 +5,8 @@ This example demonstrates the first typed declaration slice in Milestone B.
 ## What it shows
 
 - `TYPE` alias declaration
-- typed `VAR` declarations using `INTEGER`
-- typed `VAR` declarations using a named alias
+- typed `VAR` declarations using `INTEGER`, `BOOLEAN`, `REAL`, and `LONGREAL`
+- typed `VAR` declarations using named aliases
 - ordinary integer assignment and output
 
 ## Source
