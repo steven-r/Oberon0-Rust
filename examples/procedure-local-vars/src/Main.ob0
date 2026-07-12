@@ -17,7 +17,7 @@ END Accumulate;
 
 BEGIN
   base := 5;
-  Accumulate(5);
+  Accumulate(base);
   WriteInt(base);
   WriteLn()
 END Main.

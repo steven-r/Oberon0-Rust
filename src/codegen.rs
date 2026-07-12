@@ -436,16 +436,28 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
                     None => format!("{}print!(\"\");\n", indent),
                 }
             } else if ctx.procedures.contains(&name.name) {
-                let rendered_args = args
-                    .iter()
-                    .map(|arg| format_top_level_expr(arg, ctx))
-                    .collect::<Vec<_>>();
-                let joined_args = if rendered_args.is_empty() {
+                let mut out = String::new();
+                let mut call_args = Vec::new();
+
+                for (index, arg) in args.iter().enumerate() {
+                    let temp_name = format!("call_arg_{}", index);
+                    out.push_str(&format!(
+                        "{}let {} = {};\n",
+                        indent,
+                        temp_name,
+                        format_top_level_expr(arg, ctx)
+                    ));
+                    call_args.push(temp_name);
+                }
+
+                let joined_args = if call_args.is_empty() {
                     ctx.vars_arg.to_string()
                 } else {
-                    format!("{}, {}", ctx.vars_arg, rendered_args.join(", "))
+                    format!("{}, {}", ctx.vars_arg, call_args.join(", "))
                 };
-                format!("{}{}({});\n", indent, name.name, joined_args)
+
+                out.push_str(&format!("{}{}({});\n", indent, name.name, joined_args));
+                out
             } else {
                 format!(
                     "{}eprintln!(\"Note: call '{}' is not implemented in the MVP.\");\n",
