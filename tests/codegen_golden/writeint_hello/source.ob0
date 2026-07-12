@@ -1,0 +1,7 @@
+MODULE Main;
+VAR x;
+BEGIN
+  x := 7;
+  WriteInt(x);
+  WriteLn()
+END Main.
