@@ -7,6 +7,7 @@ use pest_derive::Parser;
 
 use crate::ast::{
     BinaryOp, Declaration, Expr, ImportDecl, LocalVarDecl, Module, ParamDecl, Statement, TypeRef,
+    UnaryOp,
 };
 
 #[derive(Parser)]
@@ -358,7 +359,23 @@ fn parse_arg_list(arg_list: Pair<Rule>) -> Result<Vec<Expr>> {
 
 fn parse_expr(expr: Pair<Rule>) -> Result<Expr> {
     let mut inner = expr.into_inner();
-    let mut left = parse_term(inner.next().context("Empty expression")?)?;
+    let mut unary_sign = None;
+
+    let mut next = inner.next().context("Empty expression")?;
+    if next.as_rule() == Rule::unary_sign {
+        unary_sign = Some(parse_unary_sign(next)?);
+        next = inner
+            .next()
+            .context("Missing term after unary sign")?;
+    }
+
+    let mut left = parse_term(next)?;
+    if let Some(op) = unary_sign {
+        left = Expr::Unary {
+            op,
+            value: Box::new(left),
+        };
+    }
 
     while let Some(op) = inner.next() {
         let right_term = inner.next().context("Missing right term")?;
@@ -393,6 +410,28 @@ fn parse_term(term: Pair<Rule>) -> Result<Expr> {
 fn parse_factor(factor: Pair<Rule>) -> Result<Expr> {
     let inner = factor.into_inner().next().context("Empty factor")?;
     match inner.as_rule() {
+        Rule::not_factor => {
+            let value = inner
+                .into_inner()
+                .next()
+                .context("Missing operand for unary '~'")?;
+            Ok(Expr::Unary {
+                op: UnaryOp::Not,
+                value: Box::new(parse_factor(value)?),
+            })
+        }
+        Rule::primary_factor => parse_primary_factor(inner),
+        _ => bail!("Unknown factor: {:?}", inner.as_rule()),
+    }
+}
+
+fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
+    let inner = primary
+        .into_inner()
+        .next()
+        .context("Empty primary factor")?;
+
+    match inner.as_rule() {
         Rule::integer => {
             let value = inner
                 .as_str()
@@ -412,7 +451,7 @@ fn parse_factor(factor: Pair<Rule>) -> Result<Expr> {
         }
         Rule::ident => Ok(Expr::Variable(inner.as_str().to_string())),
         Rule::expr => parse_expr(inner),
-        _ => bail!("Unknown factor: {:?}", inner.as_rule()),
+        _ => bail!("Unknown primary factor: {:?}", inner.as_rule()),
     }
 }
 
@@ -438,6 +477,7 @@ fn parse_add_op(op: Pair<Rule>) -> Result<BinaryOp> {
     match op.as_str() {
         "+" => Ok(BinaryOp::Add),
         "-" => Ok(BinaryOp::Sub),
+        "OR" => Ok(BinaryOp::Or),
         other => bail!("Unknown add operator: {}", other),
     }
 }
@@ -446,7 +486,18 @@ fn parse_mul_op(op: Pair<Rule>) -> Result<BinaryOp> {
     match op.as_str() {
         "*" => Ok(BinaryOp::Mul),
         "/" => Ok(BinaryOp::Div),
+        "DIV" => Ok(BinaryOp::IntDiv),
+        "MOD" => Ok(BinaryOp::Mod),
+        "&" => Ok(BinaryOp::And),
         other => bail!("Unknown mul operator: {}", other),
+    }
+}
+
+fn parse_unary_sign(op: Pair<Rule>) -> Result<UnaryOp> {
+    match op.as_str() {
+        "+" => Ok(UnaryOp::Plus),
+        "-" => Ok(UnaryOp::Minus),
+        other => bail!("Unknown unary sign operator: {}", other),
     }
 }
 
@@ -464,7 +515,7 @@ mod tests {
     use std::path::Path;
 
     use super::parse_module;
-    use crate::ast::{Expr, Statement};
+    use crate::ast::{BinaryOp, Expr, Statement, UnaryOp};
     use crate::manifest::ExternalManifest;
     use crate::scanner::scan;
     use crate::semantic::analyze;
@@ -530,6 +581,12 @@ mod tests {
             "if_call_condition.ob0" => replace_required(source, "IF WriteInt(1 THEN", "IF 1 THEN"),
             "if_missing_end.ob0" => replace_required(source, "WriteInt(1)\nEND Main.", "WriteInt(1)\n  END\nEND Main."),
             "missing_module_dot.ob0" => format!("{}.", source.trim_end()),
+            "operator_div_missing_rhs.ob0" => {
+                replace_required(source, "x := 7 DIV", "x := 7 DIV 2")
+            }
+            "operator_not_missing_operand.ob0" => {
+                replace_required(source, "flag := ~", "flag := ~flag")
+            }
             "procedure_missing_semicolon.ob0" => {
                 replace_required(source, "PROCEDURE P(x)\nBEGIN", "PROCEDURE P(x);\nBEGIN")
             }
@@ -550,6 +607,14 @@ mod tests {
             "end_name_mismatch.ob0" => replace_required(source, "END NotMain.", "END Main."),
             "eof_with_arg.ob0" => replace_required(source, "EOF(1)", "EOF()"),
             "if_undefined_condition.ob0" => replace_required(source, "IF unknown THEN", "IF 1 THEN"),
+            "operator_div_requires_integer.ob0" => {
+                replace_required(source, "x := src DIV 2", "x := 7 DIV 2")
+            }
+            "operator_not_requires_boolean.ob0" => replace_required(source, "b := ~1", "b := ~b"),
+            "operator_or_requires_boolean.ob0" => replace_required(source, "b := 1 OR 0", "b := b OR b"),
+            "operator_unary_sign_requires_numeric.ob0" => {
+                replace_required(source, "x := +flag", "x := +1")
+            }
             "procedure_call_arity_mismatch.ob0" => replace_required(source, "AddAndPrint(2)", "AddAndPrint(2, 3)"),
             "procedure_end_name_mismatch.ob0" => replace_required(source, "END WrongName;", "END Echo;"),
             "procedure_local_var_self_shadows_type_alias.ob0" => {
@@ -766,5 +831,45 @@ END Main.
         };
 
         assert!(matches!(args.first(), Some(Expr::String(value)) if value == "Hello, \"Oberon\""));
+    }
+
+    #[test]
+    fn parses_extended_operator_expression_tree() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+VAR x: INTEGER;
+VAR flag: BOOLEAN;
+BEGIN
+  x := -1 + 2 DIV 3 MOD 2;
+  flag := ~(1 OR 0) & (1 OR 1)
+END Main.
+"#,
+        )
+        .expect("extended operators program should parse");
+
+        let Statement::Assign { value, .. } = &module.statements[0] else {
+            panic!("expected first statement to be assignment");
+        };
+
+        let Expr::Binary { op, left, right } = value else {
+            panic!("expected top-level binary expression");
+        };
+        assert!(matches!(op, BinaryOp::Add));
+        assert!(matches!(left.as_ref(), Expr::Unary { op: UnaryOp::Minus, .. }));
+        assert!(matches!(
+            right.as_ref(),
+            Expr::Binary { op: BinaryOp::Mod, .. }
+        ));
+
+        let Statement::Assign { value, .. } = &module.statements[1] else {
+            panic!("expected second statement to be assignment");
+        };
+        let Expr::Binary { op, left, right } = value else {
+            panic!("expected boolean binary expression");
+        };
+        assert!(matches!(op, BinaryOp::And));
+        assert!(matches!(left.as_ref(), Expr::Unary { op: UnaryOp::Not, .. }));
+        assert!(matches!(right.as_ref(), Expr::Binary { op: BinaryOp::Or, .. }));
     }
 }

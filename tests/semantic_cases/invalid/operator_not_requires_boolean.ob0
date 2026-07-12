@@ -1,0 +1,6 @@
+(* INVALID: unary '~' requires a BOOLEAN operand, not INTEGER literal *)
+MODULE Main;
+VAR b: BOOLEAN;
+BEGIN
+  b := ~1
+END Main.

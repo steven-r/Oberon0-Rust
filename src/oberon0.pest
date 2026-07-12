@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-keyword = { "MODULE" | "IMPORT" | "CONST" | "TYPE" | "VAR" | "PROCEDURE" | "BEGIN" | "END" | "IF" | "THEN" | "ELSE" | "WHILE" | "DO" }
+keyword = { "MODULE" | "IMPORT" | "CONST" | "TYPE" | "VAR" | "PROCEDURE" | "BEGIN" | "END" | "IF" | "THEN" | "ELSE" | "WHILE" | "DO" | "OR" | "DIV" | "MOD" }
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 integer = @{ ASCII_DIGIT+ }
 string = @{ "\"" ~ ("\"\"" | (!("\"" | NEWLINE) ~ ANY))* ~ "\"" }
@@ -33,8 +33,11 @@ while_stmt = { "WHILE" ~ expr ~ "DO" ~ stmt_list? ~ "END" }
 arg_list = { expr ~ ("," ~ expr)* }
 call_expr = { ident ~ "(" ~ arg_list? ~ ")" }
 
-expr = { term ~ (add_op ~ term)* }
-add_op = { "+" | "-" }
+expr = { unary_sign? ~ term ~ (add_op ~ term)* }
+unary_sign = { "+" | "-" }
+add_op = { "+" | "-" | "OR" }
 term = { factor ~ (mul_op ~ factor)* }
-mul_op = { "*" | "/" }
-factor = { integer | string | call_expr | ident | "(" ~ expr ~ ")" }
+mul_op = { "*" | "/" | "DIV" | "MOD" | "&" }
+factor = { not_factor | primary_factor }
+not_factor = { "~" ~ factor }
+primary_factor = { integer | string | call_expr | ident | "(" ~ expr ~ ")" }

@@ -114,6 +114,11 @@ pub enum Expr {
     Variable(String),
     /// Function-like call expression.
     Call { name: String, args: Vec<Expr> },
+    /// Unary expression.
+    Unary {
+        op: UnaryOp,
+        value: Box<Expr>,
+    },
     /// Binary arithmetic expression.
     Binary {
         op: BinaryOp,
@@ -127,6 +132,18 @@ pub enum Expr {
 pub enum BinaryOp {
     Add,
     Sub,
+    Or,
     Mul,
     Div,
+    IntDiv,
+    Mod,
+    And,
+}
+
+#[derive(Debug, Clone, Copy)]
+/// Supported unary operators in the current subset.
+pub enum UnaryOp {
+    Plus,
+    Minus,
+    Not,
 }

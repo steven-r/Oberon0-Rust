@@ -259,7 +259,7 @@ The current compiler supports the Milestone A subset:
   - `IF ... THEN ... [ELSE ...] END`
   - `WHILE ... DO ... END`
 - Expressions with integer literals, identifiers, and parentheses
-- Operators: `+`, `-`, `*`, `/`
+- Operators: `+`, `-`, unary `+`, unary `-`, `*`, `/`, `DIV`, `MOD`, `OR`, `&`, unary `~`
 
 Focused typed-declaration example:
 

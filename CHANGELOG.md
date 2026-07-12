@@ -13,11 +13,13 @@ All notable changes to this project will be documented in this file.
 - add built-in scalar declaration support for `BOOLEAN`, `REAL`, and `LONGREAL` alongside `INTEGER` (#17)
 - keep built-in scalar names reserved while allowing procedure parameters to shadow user-defined module-scope type names, except in declarations like `Count: Count` (no dedicated issue)
 - add optional procedure-local `VAR` sections before `BEGIN` and carry those local bindings through semantic analysis and lowering (no dedicated issue)
+- add Oberon operator support for `DIV`, `MOD`, `OR`, `&`, unary `~`, and unary signs in scanner, parser, semantic analysis, lowering, and code generation (#18)
 
 ### Documentation
 
 - align contributor guidance across repository docs with the project decision log (no dedicated issue)
 - document built-in scalar declaration support in the README, roadmap, and typed-declarations example (#17)
+- document extended operator coverage in the root README and examples index, and add a focused `operators-extended` example (#18)
 
 ### Tests
 
@@ -25,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - add semantic coverage for `BOOLEAN`, `REAL`, and `LONGREAL` declaration support (#17)
 - add semantic coverage for user-defined type-name shadowing by parameters while rejecting built-in shadowing and `Count: Count` self-shadowing declarations (no dedicated issue)
 - add semantic and lowering coverage for procedure-local `VAR` declarations, including local shadowing constraints for built-in and user-defined type names (no dedicated issue)
+- add parser and semantic valid/invalid corpus coverage for extended operators, including dedicated single-fault repairs for new invalid cases (#18)
 
 ### Build
 

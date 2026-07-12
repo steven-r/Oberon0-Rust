@@ -6,7 +6,9 @@ use std::fmt;
 
 use anyhow::Result;
 
-use crate::ast::{Declaration, Expr, LocalVarDecl, Module, ParamDecl, Statement, TypeRef};
+use crate::ast::{
+    BinaryOp, Declaration, Expr, LocalVarDecl, Module, ParamDecl, Statement, TypeRef, UnaryOp,
+};
 use crate::manifest::ExternalManifest;
 use crate::symbols::{SymbolKind, SymbolTable};
 
@@ -295,29 +297,95 @@ fn infer_expr_type(
             }
             .into())
         }
-        Expr::Binary { left, right, .. } => {
+        Expr::Unary { op, value } => {
+            let value_type = infer_expr_type(value, symbols, types)?;
+
+            match (op, value_type) {
+                (UnaryOp::Plus | UnaryOp::Minus, Some(value_type)) => {
+                    if !is_numeric_type(&value_type) {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!(
+                                "unary sign operators require numeric operands, got {}",
+                                format_type_name(&value_type)
+                            ),
+                        }
+                        .into());
+                    }
+                    Ok(Some(value_type))
+                }
+                (UnaryOp::Not, Some(value_type)) => {
+                    if value_type != TypeRef::Boolean {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!(
+                                "operator '~' requires BOOLEAN operand, got {}",
+                                format_type_name(&value_type)
+                            ),
+                        }
+                        .into());
+                    }
+                    Ok(Some(TypeRef::Boolean))
+                }
+                (_, None) => Ok(None),
+            }
+        }
+        Expr::Binary { op, left, right } => {
             let left_type = infer_expr_type(left, symbols, types)?;
             let right_type = infer_expr_type(right, symbols, types)?;
 
             match (left_type, right_type) {
                 (Some(left_type), Some(right_type)) => {
-                    if !is_numeric_type(&left_type) || !is_numeric_type(&right_type) {
-                        return Err(SemanticError::TypeMismatch {
-                            detail: format!(
-                                "arithmetic expressions require numeric operands, got {} and {}",
-                                format_type_name(&left_type),
-                                format_type_name(&right_type)
-                            ),
+                    match op {
+                        BinaryOp::Or | BinaryOp::And => {
+                            if left_type != TypeRef::Boolean || right_type != TypeRef::Boolean {
+                                return Err(SemanticError::TypeMismatch {
+                                    detail: format!(
+                                        "logical operator requires BOOLEAN operands, got {} and {}",
+                                        format_type_name(&left_type),
+                                        format_type_name(&right_type)
+                                    ),
+                                }
+                                .into());
+                            }
+                            Ok(Some(TypeRef::Boolean))
                         }
-                        .into());
-                    }
+                        BinaryOp::IntDiv | BinaryOp::Mod => {
+                            if left_type != TypeRef::Integer || right_type != TypeRef::Integer {
+                                return Err(SemanticError::TypeMismatch {
+                                    detail: format!(
+                                        "operator '{}' requires INTEGER operands, got {} and {}",
+                                        match op {
+                                            BinaryOp::IntDiv => "DIV",
+                                            BinaryOp::Mod => "MOD",
+                                            _ => unreachable!(),
+                                        },
+                                        format_type_name(&left_type),
+                                        format_type_name(&right_type)
+                                    ),
+                                }
+                                .into());
+                            }
+                            Ok(Some(TypeRef::Integer))
+                        }
+                        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => {
+                            if !is_numeric_type(&left_type) || !is_numeric_type(&right_type) {
+                                return Err(SemanticError::TypeMismatch {
+                                    detail: format!(
+                                        "arithmetic expressions require numeric operands, got {} and {}",
+                                        format_type_name(&left_type),
+                                        format_type_name(&right_type)
+                                    ),
+                                }
+                                .into());
+                            }
 
-                    if left_type == TypeRef::LongReal || right_type == TypeRef::LongReal {
-                        Ok(Some(TypeRef::LongReal))
-                    } else if left_type == TypeRef::Real || right_type == TypeRef::Real {
-                        Ok(Some(TypeRef::Real))
-                    } else {
-                        Ok(Some(TypeRef::Integer))
+                            if left_type == TypeRef::LongReal || right_type == TypeRef::LongReal {
+                                Ok(Some(TypeRef::LongReal))
+                            } else if left_type == TypeRef::Real || right_type == TypeRef::Real {
+                                Ok(Some(TypeRef::Real))
+                            } else {
+                                Ok(Some(TypeRef::Integer))
+                            }
+                        }
                     }
                 }
                 _ => Ok(None),
@@ -700,6 +768,7 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             }
             .into())
         }
+        Expr::Unary { value, .. } => analyze_expr(value, symbols),
         Expr::Binary { left, right, .. } => {
             analyze_expr(left, symbols)?;
             analyze_expr(right, symbols)
@@ -846,6 +915,22 @@ BEGIN
     IF EOF() THEN
         WriteLn()
     END
+END Main.
+"#,
+                        },
+                        SuccessCase {
+                                name: "extended operators with valid types",
+                                source: r#"
+MODULE Main;
+VAR x: INTEGER;
+VAR y: INTEGER;
+VAR b1: BOOLEAN;
+VAR b2: BOOLEAN;
+BEGIN
+    x := -1 + (+2) * (7 DIV 3);
+    y := 7 MOD 3;
+    b1 := ~b1;
+    b2 := b1 & b2
 END Main.
 "#,
                         },
@@ -1124,6 +1209,43 @@ END Main.
                                 code: "E007",
                                 message_contains: &["Builtin 'WriteInt' received an invalid argument", "currently support only ReadInt() and EOF()"],
                         },
+            ErrorCase {
+                name: "logical operator with numeric operands",
+                source: r#"
+MODULE Main;
+VAR b: BOOLEAN;
+BEGIN
+    b := 1 OR 0
+END Main.
+"#,
+                code: "E012",
+                message_contains: &["logical operator requires BOOLEAN operands"],
+            },
+            ErrorCase {
+                name: "div requires integer operands",
+                source: r#"
+MODULE Main;
+VAR src: REAL;
+VAR x: INTEGER;
+BEGIN
+    x := src DIV 2
+END Main.
+"#,
+                code: "E012",
+                message_contains: &["operator 'DIV' requires INTEGER operands"],
+            },
+            ErrorCase {
+                name: "unary not requires boolean",
+                source: r#"
+MODULE Main;
+VAR b: BOOLEAN;
+BEGIN
+    b := ~1
+END Main.
+"#,
+                code: "E012",
+                message_contains: &["operator '~' requires BOOLEAN operand"],
+            },
                 ];
 
                 for case in cases {

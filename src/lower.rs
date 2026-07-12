@@ -298,6 +298,10 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
                 args: lowered_args,
             })
         }
+        Expr::Unary { op, value } => Ok(HExpr::Unary {
+            op: *op,
+            value: Box::new(lower_expr(value, resolver)?),
+        }),
         Expr::Binary { op, left, right } => Ok(HExpr::Binary {
             op: *op,
             left: Box::new(lower_expr(left, resolver)?),

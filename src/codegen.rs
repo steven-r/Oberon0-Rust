@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, bail};
 
-use crate::ast::BinaryOp;
+use crate::ast::{BinaryOp, UnaryOp};
 use crate::hir::{HDeclaration, HExpr, HModule, HParam, HResolvedIdent, HStatement};
 use crate::manifest::{CrateBinding, ExternalManifest};
 
@@ -321,6 +321,7 @@ fn expr_needs_state_map(expr: &HExpr) -> bool {
         HExpr::Integer(_) | HExpr::String(_) => false,
         HExpr::Name(ident) => ident.kind != crate::symbols::SymbolKind::Constant,
         HExpr::Call { args, .. } => args.iter().any(expr_needs_state_map),
+        HExpr::Unary { value, .. } => expr_needs_state_map(value),
         HExpr::Binary { left, right, .. } => expr_needs_state_map(left) || expr_needs_state_map(right),
     }
 }
@@ -387,6 +388,7 @@ fn expr_io_usage(expr: &HExpr) -> IoUsage {
             }
             usage
         }
+        HExpr::Unary { value, .. } => expr_io_usage(value),
         HExpr::Binary { left, right, .. } => {
             merge_io_usage(expr_io_usage(left), expr_io_usage(right))
         }
@@ -631,13 +633,10 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
 fn format_top_level_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
     match expr {
         HExpr::Binary { op, left, right } => {
-            let op_s = match op {
-                BinaryOp::Add => "+",
-                BinaryOp::Sub => "-",
-                BinaryOp::Mul => "*",
-                BinaryOp::Div => "/",
-            };
-            format!("{} {} {}", format_expr(left, ctx), op_s, format_expr(right, ctx))
+            format!(
+                "{}",
+                format_binary_expr(*op, &format_expr(left, ctx), &format_expr(right, ctx), false)
+            )
         }
         _ => format_expr(expr, ctx),
     }
@@ -679,15 +678,36 @@ fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
                 format!("/* unsupported call expr {}({}) */ 0", name.name, rendered_args)
             }
         }
-        HExpr::Binary { op, left, right } => {
-            let op_s = match op {
-                BinaryOp::Add => "+",
-                BinaryOp::Sub => "-",
-                BinaryOp::Mul => "*",
-                BinaryOp::Div => "/",
-            };
-            format!("({} {} {})", format_expr(left, ctx), op_s, format_expr(right, ctx))
+        HExpr::Unary { op, value } => {
+            let rendered = format_expr(value, ctx);
+            match op {
+                UnaryOp::Plus => format!("(+{})", rendered),
+                UnaryOp::Minus => format!("(-{})", rendered),
+                UnaryOp::Not => format!("(({} == 0) as i64)", rendered),
+            }
         }
+        HExpr::Binary { op, left, right } => {
+            format_binary_expr(*op, &format_expr(left, ctx), &format_expr(right, ctx), true)
+        }
+    }
+}
+
+fn format_binary_expr(op: BinaryOp, left: &str, right: &str, wrap: bool) -> String {
+    let rendered = match op {
+        BinaryOp::Add => format!("{} + {}", left, right),
+        BinaryOp::Sub => format!("{} - {}", left, right),
+        BinaryOp::Or => format!("(({} != 0 || {} != 0) as i64)", left, right),
+        BinaryOp::Mul => format!("{} * {}", left, right),
+        BinaryOp::Div => format!("{} / {}", left, right),
+        BinaryOp::IntDiv => format!("{} / {}", left, right),
+        BinaryOp::Mod => format!("{} % {}", left, right),
+        BinaryOp::And => format!("(({} != 0 && {} != 0) as i64)", left, right),
+    };
+
+    if wrap {
+        format!("({})", rendered)
+    } else {
+        rendered
     }
 }
 
