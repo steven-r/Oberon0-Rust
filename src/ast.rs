@@ -67,6 +67,8 @@ pub enum Declaration {
 pub enum Expr {
     /// Integer literal.
     Integer(i64),
+    /// String literal using Pascal-style doubled quotes for embedded `"` characters.
+    String(String),
     /// Reference to an identifier before semantic resolution.
     Variable(String),
     /// Binary arithmetic expression.

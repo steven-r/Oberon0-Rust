@@ -4,6 +4,7 @@ COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 keyword = { "MODULE" | "IMPORT" | "CONST" | "VAR" | "PROCEDURE" | "BEGIN" | "END" | "IF" | "THEN" | "ELSE" | "WHILE" | "DO" }
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 integer = @{ ASCII_DIGIT+ }
+string = @{ "\"" ~ ("\"\"" | (!("\"" | NEWLINE) ~ ANY))* ~ "\"" }
 
 module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ declaration_section* ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ "." ~ EOI }
 import_section = { "IMPORT" ~ import_item ~ ("," ~ import_item)* ~ ";" }
@@ -30,4 +31,4 @@ expr = { term ~ (add_op ~ term)* }
 add_op = { "+" | "-" }
 term = { factor ~ (mul_op ~ factor)* }
 mul_op = { "*" | "/" }
-factor = { integer | ident | "(" ~ expr ~ ")" }
+factor = { integer | string | ident | "(" ~ expr ~ ")" }

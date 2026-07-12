@@ -22,4 +22,5 @@ scripts/oberon0 examples/control-while --run
 3
 2
 1
+State: {"x": 0}
 ```

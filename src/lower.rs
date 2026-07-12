@@ -64,6 +64,7 @@ impl Resolver {
 pub fn lower_module(module: &Module) -> Result<HModule> {
     let mut resolver = Resolver::new();
     resolver.declare("WriteInt", SymbolKind::Procedure)?;
+    resolver.declare("WriteString", SymbolKind::Procedure)?;
 
     let imports = module
         .imports
@@ -250,6 +251,7 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
 fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
     match expr {
         Expr::Integer(value) => Ok(HExpr::Integer(*value)),
+        Expr::String(value) => Ok(HExpr::String(value.clone())),
         Expr::Variable(name) => {
             let resolved = resolver
                 .resolve(name)

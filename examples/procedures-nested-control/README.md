@@ -3,7 +3,7 @@
 This example combines multiple language features in one program:
 
 - procedure declaration with one parameter
-- procedure-local variable introduced by assignment
+- shared module variable updated from inside the procedure
 - nested `WHILE` + `IF/ELSE`
 - procedure call from module body
 
@@ -23,4 +23,5 @@ scripts/oberon0 examples/procedures-nested-control --run
 3
 2
 100
+State: {"current": 0}
 ```

@@ -58,6 +58,9 @@ pub enum Token {
 
     #[regex(r"[0-9]+", |lex| lex.slice().parse::<i64>().ok())]
     Integer(i64),
+
+    #[regex(r#"\"([^\"\n]|\"\")*\""#, parse_pascal_string)]
+    String(String),
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +96,19 @@ pub fn scan(source: &str) -> Result<Vec<SpannedToken>> {
     }
 
     Ok(out)
+}
+
+fn parse_pascal_string(lex: &mut logos::Lexer<'_, Token>) -> Option<String> {
+    unescape_pascal_string(lex.slice()).ok()
+}
+
+fn unescape_pascal_string(raw: &str) -> Result<String> {
+    if raw.len() < 2 || !raw.starts_with('"') || !raw.ends_with('"') {
+        bail!("Invalid string literal: {}", raw);
+    }
+
+    let inner = &raw[1..raw.len() - 1];
+    Ok(inner.replace("\"\"", "\""))
 }
 
 #[cfg(test)]
@@ -136,5 +152,21 @@ mod tests {
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwVar)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwBegin)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwEnd)));
+    }
+
+    #[test]
+    fn scans_pascal_style_string_literals() {
+        let source = "MODULE Main; BEGIN WriteString(\"Hello, \"\"Oberon\"\"\"); END Main.";
+        let tokens = scan(source).expect("scanner should accept string literal syntax");
+
+        let string_token = tokens
+            .iter()
+            .find_map(|t| match &t.token {
+                Token::String(value) => Some(value.clone()),
+                _ => None,
+            })
+            .expect("scanner should emit a string token");
+
+        assert_eq!(string_token, "Hello, \"Oberon\"");
     }
 }

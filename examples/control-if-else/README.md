@@ -20,4 +20,5 @@ scripts/oberon0 examples/control-if-else --run
 
 ```text
 0
+State: {"x": 4}
 ```
