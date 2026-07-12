@@ -168,10 +168,12 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
             resolver.enter_scope();
             let mut lowered_params = Vec::new();
             for param in params {
-                let resolved = resolver.declare(param, SymbolKind::Parameter)?;
+                let resolved = resolver.declare(&param.name, SymbolKind::Parameter)?;
                 lowered_params.push(HParam {
                     id: resolved.id,
-                    name: param.clone(),
+                    name: param.name.clone(),
+                    declared_type: param.declared_type.clone(),
+                    is_var: param.is_var,
                 });
             }
 
@@ -441,6 +443,38 @@ END Main.
             })
             .expect("variable x must carry declared type info in HIR");
         assert!(matches!(var_type, TypeRef::Named(name) if name == "Count"));
+    }
+
+    #[test]
+    fn typed_formal_parameters_survive_lowering_with_var_mode() {
+        let source = r#"
+MODULE Main;
+PROCEDURE Bump(VAR target: INTEGER; amount: LONGREAL);
+BEGIN
+END Bump;
+BEGIN
+END Main.
+"#;
+
+        let hir = lower_from_source(source).expect("lowering should succeed");
+
+        let params = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Procedure { name, params, .. } if name == "Bump" => Some(params.clone()),
+                _ => None,
+            })
+            .expect("procedure Bump must exist in HIR");
+
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0].name, "target");
+        assert!(params[0].is_var);
+        assert!(matches!(params[0].declared_type, Some(TypeRef::Integer)));
+
+        assert_eq!(params[1].name, "amount");
+        assert!(!params[1].is_var);
+        assert!(matches!(params[1].declared_type, Some(TypeRef::LongReal)));
     }
 
     #[test]

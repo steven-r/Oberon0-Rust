@@ -6,7 +6,7 @@ use std::fmt;
 
 use anyhow::Result;
 
-use crate::ast::{Declaration, Expr, Module, Statement, TypeRef};
+use crate::ast::{Declaration, Expr, Module, ParamDecl, Statement, TypeRef};
 use crate::manifest::ExternalManifest;
 use crate::symbols::{SymbolKind, SymbolTable};
 
@@ -27,6 +27,11 @@ pub enum SemanticError {
         name: String,
         detail: String,
     },
+    InvalidVarArgument {
+        name: String,
+        position: usize,
+        detail: String,
+    },
     UnknownType { name: String },
     UnsupportedStringLiteral,
     NotCallable { name: String },
@@ -44,10 +49,11 @@ impl SemanticError {
             SemanticError::UndefinedSymbol { .. } => "E005",
             SemanticError::ArityMismatch { .. } => "E006",
             SemanticError::InvalidBuiltinArgument { .. } => "E007",
-            SemanticError::UnknownType { .. } => "E008",
-            SemanticError::UnsupportedStringLiteral => "E009",
-            SemanticError::NotCallable { .. } => "E010",
-            SemanticError::ProcedureNameMismatch { .. } => "E011",
+            SemanticError::InvalidVarArgument { .. } => "E008",
+            SemanticError::UnknownType { .. } => "E009",
+            SemanticError::UnsupportedStringLiteral => "E010",
+            SemanticError::NotCallable { .. } => "E011",
+            SemanticError::ProcedureNameMismatch { .. } => "E012",
         }
     }
 }
@@ -98,6 +104,20 @@ impl fmt::Display for SemanticError {
             SemanticError::InvalidBuiltinArgument { name, detail } => {
                 write!(f, "[{}] Builtin '{}' received an invalid argument: {}", self.code(), name, detail)
             }
+            SemanticError::InvalidVarArgument {
+                name,
+                position,
+                detail,
+            } => {
+                write!(
+                    f,
+                    "[{}] Procedure '{}' received an invalid VAR argument at position {}: {}",
+                    self.code(),
+                    name,
+                    position,
+                    detail
+                )
+            }
             SemanticError::UnknownType { name } => {
                 write!(f, "[{}] Unknown type reference: '{}'", self.code(), name)
             }
@@ -121,6 +141,23 @@ impl fmt::Display for SemanticError {
 }
 
 impl Error for SemanticError {}
+
+fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Result<()> {
+    if resolve_type_ref(type_ref, types).is_none() {
+        return Err(SemanticError::UnknownType {
+            name: match type_ref {
+                TypeRef::Integer => "INTEGER".to_string(),
+                TypeRef::Boolean => "BOOLEAN".to_string(),
+                TypeRef::Real => "REAL".to_string(),
+                TypeRef::LongReal => "LONGREAL".to_string(),
+                TypeRef::Named(name) => name.clone(),
+            },
+        }
+        .into());
+    }
+
+    Ok(())
+}
 
 fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Option<TypeRef> {
     match type_ref {
@@ -152,6 +189,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     symbols.declare("ReadInt", SymbolKind::Procedure)?;
     symbols.declare("EOF", SymbolKind::Procedure)?;
     let mut proc_arity: HashMap<String, Option<usize>> = HashMap::new();
+    let mut proc_params: HashMap<String, Vec<ParamDecl>> = HashMap::new();
     proc_arity.insert("WriteInt".to_string(), None);
     proc_arity.insert("WriteString".to_string(), Some(1));
     proc_arity.insert("WriteLn".to_string(), Some(0));
@@ -190,18 +228,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                 symbols.declare(name, SymbolKind::Constant)?;
             }
             Declaration::Type { name, target } => {
-                if resolve_type_ref(target, &types).is_none() {
-                    return Err(SemanticError::UnknownType {
-                        name: match target {
-                            TypeRef::Integer => "INTEGER".to_string(),
-                            TypeRef::Boolean => "BOOLEAN".to_string(),
-                            TypeRef::Real => "REAL".to_string(),
-                            TypeRef::LongReal => "LONGREAL".to_string(),
-                            TypeRef::Named(name) => name.clone(),
-                        },
-                    }
-                    .into());
-                }
+                validate_declared_type(target, &types)?;
                 symbols.declare_with_type(name, SymbolKind::TypeName, Some(target.clone()))?;
                 types.insert(name.clone(), target.clone());
             }
@@ -210,24 +237,20 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                 declared_type,
             } => {
                 if let Some(type_ref) = declared_type
-                    && resolve_type_ref(type_ref, &types).is_none()
                 {
-                    return Err(SemanticError::UnknownType {
-                        name: match type_ref {
-                            TypeRef::Integer => "INTEGER".to_string(),
-                            TypeRef::Boolean => "BOOLEAN".to_string(),
-                            TypeRef::Real => "REAL".to_string(),
-                            TypeRef::LongReal => "LONGREAL".to_string(),
-                            TypeRef::Named(name) => name.clone(),
-                        },
-                    }
-                    .into());
+                    validate_declared_type(type_ref, &types)?;
                 }
                 symbols.declare_with_type(name, SymbolKind::Variable, declared_type.clone())?;
             }
             Declaration::Procedure { name, params, .. } => {
+                for param in params {
+                    if let Some(type_ref) = &param.declared_type {
+                        validate_declared_type(type_ref, &types)?;
+                    }
+                }
                 symbols.declare(name, SymbolKind::Procedure)?;
                 proc_arity.insert(name.clone(), Some(params.len()));
+                proc_params.insert(name.clone(), params.clone());
             }
         }
     }
@@ -250,20 +273,55 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
 
             symbols.enter_scope();
             for param in params {
-                symbols.declare(param, SymbolKind::Parameter)?;
+                symbols.declare_with_type(
+                    &param.name,
+                    SymbolKind::Parameter,
+                    param.declared_type.clone(),
+                )?;
             }
             for statement in body {
-                analyze_statement(statement, &mut symbols, &proc_arity)?;
+                analyze_statement(statement, &mut symbols, &proc_arity, &proc_params)?;
             }
             symbols.exit_scope();
         }
     }
 
     for statement in &module.statements {
-        analyze_statement(statement, &mut symbols, &proc_arity)?;
+        analyze_statement(statement, &mut symbols, &proc_arity, &proc_params)?;
     }
 
     Ok(())
+}
+
+fn validate_var_argument(
+    proc_name: &str,
+    position: usize,
+    arg: &Expr,
+    symbols: &SymbolTable,
+) -> Result<()> {
+    match arg {
+        Expr::Variable(name) => {
+            let symbol = symbols.resolve(name).ok_or_else(|| SemanticError::UndefinedSymbol {
+                name: name.clone(),
+            })?;
+
+            match symbol.kind {
+                SymbolKind::Variable | SymbolKind::Parameter => Ok(()),
+                _ => Err(SemanticError::InvalidVarArgument {
+                    name: proc_name.to_string(),
+                    position,
+                    detail: format!("'{}' is not an assignable variable binding", name),
+                }
+                .into()),
+            }
+        }
+        _ => Err(SemanticError::InvalidVarArgument {
+            name: proc_name.to_string(),
+            position,
+            detail: "expected a variable designator".to_string(),
+        }
+        .into()),
+    }
 }
 
 /// Validates one statement within the current symbol-table scope.
@@ -271,6 +329,7 @@ fn analyze_statement(
     stmt: &Statement,
     symbols: &mut SymbolTable,
     proc_arity: &HashMap<String, Option<usize>>,
+    proc_params: &HashMap<String, Vec<ParamDecl>>,
 ) -> Result<()> {
     match stmt {
         Statement::Assign { target, value } => {
@@ -333,6 +392,14 @@ fn analyze_statement(
                 .into());
             }
 
+            if let Some(params) = proc_params.get(name) {
+                for (index, (param, arg)) in params.iter().zip(args.iter()).enumerate() {
+                    if param.is_var {
+                        validate_var_argument(name, index + 1, arg, symbols)?;
+                    }
+                }
+            }
+
             for arg in args {
                 analyze_expr(arg, symbols)?;
             }
@@ -346,11 +413,11 @@ fn analyze_statement(
         } => {
             analyze_expr(condition, symbols)?;
             for stmt in then_branch {
-                analyze_statement(stmt, symbols, proc_arity)?;
+                analyze_statement(stmt, symbols, proc_arity, proc_params)?;
             }
             if let Some(else_branch) = else_branch {
                 for stmt in else_branch {
-                    analyze_statement(stmt, symbols, proc_arity)?;
+                    analyze_statement(stmt, symbols, proc_arity, proc_params)?;
                 }
             }
             Ok(())
@@ -358,7 +425,7 @@ fn analyze_statement(
         Statement::While { condition, body } => {
             analyze_expr(condition, symbols)?;
             for stmt in body {
-                analyze_statement(stmt, symbols, proc_arity)?;
+                analyze_statement(stmt, symbols, proc_arity, proc_params)?;
             }
             Ok(())
         }
@@ -674,6 +741,53 @@ END Main.
                 other => panic!("expected DuplicateSymbol, got {other:?}"),
             }
         }
+
+                #[test]
+                fn accepts_typed_formal_parameters_with_var_mode() {
+                        let source = r#"
+        MODULE Main;
+        VAR x;
+        PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
+        BEGIN
+            target := target + amount
+        END Bump;
+        BEGIN
+            x := 1;
+            Bump(x, 2)
+        END Main.
+        "#;
+
+                        let module = parse_module(source).expect("source should parse");
+                        analyze(&module, None)
+                                .expect("typed formal parameters with VAR mode should pass semantic analysis");
+                }
+
+                #[test]
+                fn rejects_literal_for_var_parameter_argument() {
+                        let source = r#"
+        MODULE Main;
+        PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
+        BEGIN
+        END Bump;
+        BEGIN
+            Bump(1, 2)
+        END Main.
+        "#;
+
+                        let err = semantic_error(source);
+                        match err {
+                                SemanticError::InvalidVarArgument {
+                                        name,
+                                        position,
+                                        detail,
+                                } => {
+                                        assert_eq!(name, "Bump");
+                                        assert_eq!(position, 1);
+                                        assert!(detail.contains("expected a variable designator"));
+                                }
+                                other => panic!("expected InvalidVarArgument, got {other:?}"),
+                        }
+                }
 
                 #[test]
                 fn accepts_readint_call_expression_in_assignment() {

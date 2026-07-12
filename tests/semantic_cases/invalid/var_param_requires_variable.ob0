@@ -1,0 +1,7 @@
+MODULE Main;
+PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
+BEGIN
+END Bump;
+BEGIN
+  Bump(1, 2)
+END Main.

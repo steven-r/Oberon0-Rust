@@ -1,0 +1,10 @@
+MODULE Main;
+VAR x;
+PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
+BEGIN
+  target := target + amount
+END Bump;
+BEGIN
+  x := 1;
+  Bump(x, 2)
+END Main.
