@@ -1,3 +1,4 @@
+(* INVALID: IF condition references undefined symbol *)
 MODULE Main;
 BEGIN
   IF unknown THEN

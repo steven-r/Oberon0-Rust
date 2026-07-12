@@ -1,0 +1,23 @@
+MODULE Main;
+VAR base: INTEGER;
+
+PROCEDURE Accumulate(limit: INTEGER);
+VAR i: INTEGER;
+VAR total: INTEGER;
+BEGIN
+  i := limit;
+  total := 0;
+  WHILE i DO
+    total := total + i;
+    i := i - 1
+  END;
+  WriteInt(total);
+  WriteLn()
+END Accumulate;
+
+BEGIN
+  base := 5;
+  Accumulate(5);
+  WriteInt(base);
+  WriteLn()
+END Main.

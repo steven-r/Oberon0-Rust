@@ -1,3 +1,4 @@
+(* INVALID: typed assignment uses BOOLEAN value for INTEGER target *)
 MODULE Main;
 VAR flag: BOOLEAN;
 VAR x: INTEGER;

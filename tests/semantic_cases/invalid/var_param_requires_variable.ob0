@@ -1,3 +1,4 @@
+(* INVALID: VAR parameter requires assignable variable, but literal is passed *)
 MODULE Main;
 PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
 BEGIN

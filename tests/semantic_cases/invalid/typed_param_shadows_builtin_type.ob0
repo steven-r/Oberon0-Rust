@@ -1,3 +1,4 @@
+(* INVALID: parameter name shadows reserved builtin type name *)
 MODULE Main;
 PROCEDURE P(INTEGER: INTEGER);
 BEGIN

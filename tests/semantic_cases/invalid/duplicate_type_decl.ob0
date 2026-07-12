@@ -1,3 +1,4 @@
+(* INVALID: TYPE alias is redeclared in the same module scope *)
 MODULE Main;
 TYPE Count = INTEGER;
 TYPE Count = INTEGER;

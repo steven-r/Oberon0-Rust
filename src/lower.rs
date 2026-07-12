@@ -158,6 +158,7 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
         Declaration::Procedure {
             name,
             params,
+            local_vars,
             body,
             end_name,
         } => {
@@ -175,6 +176,10 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
                     declared_type: param.declared_type.clone(),
                     is_var: param.is_var,
                 });
+            }
+
+            for local_var in local_vars {
+                resolver.declare(&local_var.name, SymbolKind::Variable)?;
             }
 
             let lowered_body = body
@@ -475,6 +480,50 @@ END Main.
         assert_eq!(params[1].name, "amount");
         assert!(!params[1].is_var);
         assert!(matches!(params[1].declared_type, Some(TypeRef::LongReal)));
+    }
+
+    #[test]
+    fn procedure_local_vars_survive_lowering_with_stable_ids() {
+        let source = r#"
+MODULE Main;
+PROCEDURE P;
+VAR x: INTEGER;
+BEGIN
+  x := 1
+END P;
+BEGIN
+  P
+END Main.
+"#;
+
+        let hir = lower_from_source(source).expect("lowering should succeed");
+
+        let (local_vars, body) = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Procedure {
+                    name,
+                    local_vars,
+                    body,
+                    ..
+                } if name == "P" => Some((local_vars.clone(), body.clone())),
+                _ => None,
+            })
+            .expect("procedure P must exist in HIR");
+
+        assert_eq!(local_vars.len(), 1, "procedure P should have one local variable");
+        assert_eq!(local_vars[0].name, "x");
+
+        let assigned_id = body
+            .iter()
+            .find_map(|stmt| match stmt {
+                HStatement::Assign { target, .. } => Some(target.id),
+                _ => None,
+            })
+            .expect("procedure body should assign to local variable x");
+
+        assert_eq!(assigned_id, local_vars[0].id);
     }
 
     #[test]

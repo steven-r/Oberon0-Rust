@@ -36,6 +36,15 @@ pub struct ParamDecl {
     pub is_var: bool,
 }
 
+#[derive(Debug, Clone)]
+/// Procedure-local variable declaration with an optional declared type.
+pub struct LocalVarDecl {
+    /// Source-level local variable name.
+    pub name: String,
+    /// Optional declared type of the local variable.
+    pub declared_type: Option<TypeRef>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Type references supported by the current typed-declaration milestone.
 pub enum TypeRef {
@@ -88,6 +97,7 @@ pub enum Declaration {
     Procedure {
         name: String,
         params: Vec<ParamDecl>,
+        local_vars: Vec<LocalVarDecl>,
         body: Vec<Statement>,
         end_name: String,
     },

@@ -1,3 +1,4 @@
+(* INVALID: embedded quotes are not escaped using doubled quotes *)
 MODULE Main;
 BEGIN
   WriteString("Hello "Oberon"")

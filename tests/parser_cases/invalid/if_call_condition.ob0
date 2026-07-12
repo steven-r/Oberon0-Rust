@@ -1,3 +1,4 @@
+(* INVALID: IF condition contains malformed call syntax with missing ')' *)
 MODULE Main;
 BEGIN
   IF WriteInt(1 THEN

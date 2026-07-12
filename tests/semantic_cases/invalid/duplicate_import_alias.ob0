@@ -1,3 +1,4 @@
+(* INVALID: same import alias is declared more than once *)
 MODULE Main;
 IMPORT IO, IO;
 BEGIN

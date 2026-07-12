@@ -1,0 +1,11 @@
+MODULE Main;
+TYPE Count = REAL;
+PROCEDURE P;
+VAR Count: INTEGER;
+BEGIN
+  Count := 1;
+  WriteInt(Count)
+END P;
+BEGIN
+  P
+END Main.

@@ -1,5 +1,6 @@
+(* INVALID: WHILE body references undefined symbol *)
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 BEGIN
   x := 1;
   WHILE x DO

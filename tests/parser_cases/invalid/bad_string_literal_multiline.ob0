@@ -1,3 +1,4 @@
+(* INVALID: string literal spans multiple lines *)
 MODULE Main;
 BEGIN
   WriteString("Hello,

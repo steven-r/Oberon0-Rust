@@ -1,3 +1,4 @@
+(* INVALID: WriteInt builtin receives string literal instead of integer expression *)
 MODULE Main;
 BEGIN
   WriteInt("Hello")

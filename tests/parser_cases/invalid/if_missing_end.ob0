@@ -1,3 +1,4 @@
+(* INVALID: IF block is missing its closing END *)
 MODULE Main;
 BEGIN
   IF 1 THEN

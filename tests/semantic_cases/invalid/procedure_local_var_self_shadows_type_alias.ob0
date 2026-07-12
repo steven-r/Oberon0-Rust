@@ -1,0 +1,10 @@
+(* INVALID: procedure-local variable reuses a type alias name in its own declaration (Count: Count) *)
+MODULE Main;
+TYPE Count = INTEGER;
+PROCEDURE P;
+VAR Count: Count;
+BEGIN
+END P;
+BEGIN
+  P
+END Main.
