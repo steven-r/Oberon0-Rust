@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
-
+use crate::scope::ScopedMap;
 use crate::semantic::SemanticError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,65 +18,47 @@ pub struct Symbol {
     pub scope_depth: usize,
 }
 
-#[derive(Debug, Default)]
-struct Scope {
-    symbols: HashMap<String, Symbol>,
-}
-
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SymbolTable {
-    scopes: Vec<Scope>,
+    scopes: ScopedMap<Symbol>,
 }
 
 impl SymbolTable {
     pub fn new() -> Self {
-        let mut table = Self::default();
-        table.enter_scope();
-        table
+        Self {
+            scopes: ScopedMap::new(),
+        }
     }
 
     pub fn depth(&self) -> usize {
-        self.scopes.len().saturating_sub(1)
+        self.scopes.depth()
     }
 
     pub fn enter_scope(&mut self) {
-        self.scopes.push(Scope::default());
+        self.scopes.enter_scope();
     }
 
     pub fn exit_scope(&mut self) {
-        self.scopes.pop();
+        self.scopes.exit_scope();
     }
 
     pub fn declare(&mut self, name: &str, kind: SymbolKind) -> Result<(), SemanticError> {
         let depth = self.depth();
-        let scope = self
-            .scopes
-            .last_mut()
-            .expect("symbol table must always have an active scope");
-
-        if scope.symbols.contains_key(name) {
-            return Err(SemanticError::DuplicateSymbol {
-                name: name.to_string(),
-            });
-        }
-
-        scope.symbols.insert(
-            name.to_string(),
+        self.scopes.declare(
+            name,
             Symbol {
                 name: name.to_string(),
                 kind,
                 scope_depth: depth,
             },
-        );
-
-        Ok(())
+            |name| SemanticError::DuplicateSymbol {
+                name: name.to_string(),
+            },
+        )
     }
 
     pub fn resolve(&self, name: &str) -> Option<&Symbol> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.symbols.get(name))
+        self.scopes.resolve(name)
     }
 }
 

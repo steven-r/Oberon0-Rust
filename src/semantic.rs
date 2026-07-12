@@ -359,4 +359,16 @@ END Main.
             other => panic!("expected UndefinedSymbol, got {other:?}"),
         }
     }
+
+        #[test]
+        fn reports_stable_error_code_for_undeclared_assignment_target() {
+                let source = r#"
+MODULE Main;
+BEGIN
+    y := 1
+END Main.
+"#;
+                let err = semantic_error(source);
+                assert_eq!(err.code(), "E005");
+        }
 }

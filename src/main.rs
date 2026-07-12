@@ -5,6 +5,7 @@ mod lower;
 mod manifest;
 mod parser;
 mod scanner;
+mod scope;
 mod semantic;
 mod symbols;
 

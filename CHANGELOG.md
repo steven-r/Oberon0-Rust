@@ -22,6 +22,12 @@ All notable changes to this project will be documented in this file.
 - add semantic invalid corpus case for undeclared assignment target
 - adapt semantic valid corpus to explicit declaration model
 - add lowering regression for unresolved assignment target invariant
+- assert stable E005 diagnostics for undeclared assignment target
+- align scanner keyword tokens with parser grammar for declaration/control-flow keywords
+
+### Chores
+
+- introduce shared scoped map helper reused by semantic symbol table and lowering resolver
 
 ## v0.2.0 - 2026-07-11
 

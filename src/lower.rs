@@ -1,42 +1,33 @@
-use std::collections::HashMap;
-
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use crate::ast::{Declaration, Expr, Module, Statement};
 use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
+use crate::scope::ScopedMap;
 use crate::symbols::SymbolKind;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Resolver {
-    scopes: Vec<HashMap<String, HResolvedIdent>>,
+    scopes: ScopedMap<HResolvedIdent>,
     next_id: usize,
 }
 
 impl Resolver {
     fn new() -> Self {
-        let mut resolver = Self::default();
-        resolver.enter_scope();
-        resolver
+        Self {
+            scopes: ScopedMap::new(),
+            next_id: 0,
+        }
     }
 
     fn enter_scope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.scopes.enter_scope();
     }
 
     fn exit_scope(&mut self) {
-        self.scopes.pop();
+        self.scopes.exit_scope();
     }
 
     fn declare(&mut self, name: &str, kind: SymbolKind) -> Result<HResolvedIdent> {
-        let scope = self
-            .scopes
-            .last_mut()
-            .expect("resolver must always have an active scope");
-
-        if scope.contains_key(name) {
-            bail!("Lowering failed: duplicate symbol declaration '{}'.", name);
-        }
-
         let resolved = HResolvedIdent {
             id: self.next_id,
             name: name.to_string(),
@@ -44,24 +35,19 @@ impl Resolver {
         };
         self.next_id += 1;
 
-        scope.insert(name.to_string(), resolved.clone());
+        self.scopes.declare(name, resolved.clone(), |name| {
+            anyhow::anyhow!("Lowering failed: duplicate symbol declaration '{}'.", name)
+        })?;
+
         Ok(resolved)
     }
 
     fn resolve(&self, name: &str) -> Option<HResolvedIdent> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(name))
-            .cloned()
+        self.scopes.resolve(name).cloned()
     }
 
     fn current_scope_symbols(&self) -> Vec<HResolvedIdent> {
-        let scope = self
-            .scopes
-            .last()
-            .expect("resolver must always have an active scope");
-        scope.values().cloned().collect()
+        self.scopes.current_scope_values()
     }
 }
 

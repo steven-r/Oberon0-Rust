@@ -8,10 +8,26 @@ pub enum Token {
     KwModule,
     #[token("IMPORT")]
     KwImport,
+    #[token("CONST")]
+    KwConst,
+    #[token("VAR")]
+    KwVar,
+    #[token("PROCEDURE")]
+    KwProcedure,
     #[token("BEGIN")]
     KwBegin,
     #[token("END")]
     KwEnd,
+    #[token("IF")]
+    KwIf,
+    #[token("THEN")]
+    KwThen,
+    #[token("ELSE")]
+    KwElse,
+    #[token("WHILE")]
+    KwWhile,
+    #[token("DO")]
+    KwDo,
 
     #[token(":=")]
     Assign,
@@ -91,13 +107,28 @@ mod tests {
         let source = "PROCEDURE P(x); BEGIN IF x THEN WHILE x DO x := x - 1 END END END P;";
         let tokens = scan(source).expect("scanner should accept procedure and control-flow syntax");
 
-        let has_if = tokens.iter().any(|t| matches!(t.token, Token::Ident(ref s) if s == "IF"));
-        let has_while = tokens
-            .iter()
-            .any(|t| matches!(t.token, Token::Ident(ref s) if s == "WHILE"));
+        let has_procedure = tokens.iter().any(|t| matches!(t.token, Token::KwProcedure));
+        let has_if = tokens.iter().any(|t| matches!(t.token, Token::KwIf));
+        let has_then = tokens.iter().any(|t| matches!(t.token, Token::KwThen));
+        let has_while = tokens.iter().any(|t| matches!(t.token, Token::KwWhile));
+        let has_do = tokens.iter().any(|t| matches!(t.token, Token::KwDo));
 
-        // Scanner treats unknown keywords as identifiers; this test protects accepted lexical surface.
-        assert!(has_if, "scanner should preserve IF token text");
-        assert!(has_while, "scanner should preserve WHILE token text");
+        assert!(has_procedure, "scanner should tokenize PROCEDURE as a keyword");
+        assert!(has_if, "scanner should tokenize IF as a keyword");
+        assert!(has_then, "scanner should tokenize THEN as a keyword");
+        assert!(has_while, "scanner should tokenize WHILE as a keyword");
+        assert!(has_do, "scanner should tokenize DO as a keyword");
+    }
+
+    #[test]
+    fn scans_declaration_keywords_as_keywords() {
+        let source = "MODULE Main; CONST BASE = 10; VAR x; BEGIN END Main.";
+        let tokens = scan(source).expect("scanner should accept declaration keywords");
+
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::KwModule)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::KwConst)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::KwVar)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::KwBegin)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::KwEnd)));
     }
 }

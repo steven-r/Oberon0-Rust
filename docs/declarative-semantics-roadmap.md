@@ -49,7 +49,7 @@ Definition of done:
 
 ## D4. Corpus and diagnostics update
 
-Status: Planned.
+Status: Done.
 
 Tasks:
 
@@ -64,7 +64,7 @@ Definition of done:
 
 ## D5. Frontend consistency hardening
 
-Status: Planned.
+Status: Done.
 
 Tasks:
 
@@ -79,7 +79,7 @@ Definition of done:
 
 ## D6. Unified symbol-resolution architecture
 
-Status: Planned.
+Status: Done.
 
 Tasks:
 
