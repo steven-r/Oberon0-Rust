@@ -36,7 +36,7 @@ pub struct ParamDecl {
     pub is_var: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// Type references supported by the current typed-declaration milestone.
 pub enum TypeRef {
     /// Built-in INTEGER scalar type.

@@ -1,0 +1,6 @@
+MODULE Main;
+VAR flag: BOOLEAN;
+VAR x: INTEGER;
+BEGIN
+  x := flag + 1
+END Main.

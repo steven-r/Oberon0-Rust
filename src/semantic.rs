@@ -32,6 +32,9 @@ pub enum SemanticError {
         position: usize,
         detail: String,
     },
+    TypeMismatch {
+        detail: String,
+    },
     UnknownType { name: String },
     UnsupportedStringLiteral,
     NotCallable { name: String },
@@ -50,10 +53,11 @@ impl SemanticError {
             SemanticError::ArityMismatch { .. } => "E006",
             SemanticError::InvalidBuiltinArgument { .. } => "E007",
             SemanticError::InvalidVarArgument { .. } => "E008",
-            SemanticError::UnknownType { .. } => "E009",
-            SemanticError::UnsupportedStringLiteral => "E010",
-            SemanticError::NotCallable { .. } => "E011",
-            SemanticError::ProcedureNameMismatch { .. } => "E012",
+            SemanticError::TypeMismatch { .. } => "E009",
+            SemanticError::UnknownType { .. } => "E010",
+            SemanticError::UnsupportedStringLiteral => "E011",
+            SemanticError::NotCallable { .. } => "E012",
+            SemanticError::ProcedureNameMismatch { .. } => "E013",
         }
     }
 }
@@ -118,6 +122,9 @@ impl fmt::Display for SemanticError {
                     detail
                 )
             }
+            SemanticError::TypeMismatch { detail } => {
+                write!(f, "[{}] Type mismatch: {}", self.code(), detail)
+            }
             SemanticError::UnknownType { name } => {
                 write!(f, "[{}] Unknown type reference: '{}'", self.code(), name)
             }
@@ -159,6 +166,42 @@ fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) 
     Ok(())
 }
 
+fn validate_declaration_name(name: &str, types: &HashMap<String, TypeRef>) -> Result<()> {
+    if types.contains_key(name) {
+        return Err(SemanticError::DuplicateSymbol {
+            name: name.to_string(),
+        }
+        .into());
+    }
+
+    Ok(())
+}
+
+fn is_builtin_type_name(name: &str) -> bool {
+    matches!(name, "INTEGER" | "BOOLEAN" | "REAL" | "LONGREAL")
+}
+
+fn validate_parameter_name(param: &ParamDecl, types: &HashMap<String, TypeRef>) -> Result<()> {
+    if is_builtin_type_name(&param.name) {
+        return Err(SemanticError::DuplicateSymbol {
+            name: param.name.clone(),
+        }
+        .into());
+    }
+
+    if let Some(TypeRef::Named(type_name)) = &param.declared_type
+        && type_name == &param.name
+        && types.contains_key(type_name)
+    {
+        return Err(SemanticError::DuplicateSymbol {
+            name: param.name.clone(),
+        }
+        .into());
+    }
+
+    Ok(())
+}
+
 fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Option<TypeRef> {
     match type_ref {
         TypeRef::Integer => Some(TypeRef::Integer),
@@ -169,6 +212,105 @@ fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Opt
             Some(target) => resolve_type_ref(target, types),
             None => None,
         },
+    }
+}
+
+fn is_numeric_type(type_ref: &TypeRef) -> bool {
+    matches!(type_ref, TypeRef::Integer | TypeRef::Real | TypeRef::LongReal)
+}
+
+fn assignment_compatible(expected: &TypeRef, actual: &TypeRef) -> bool {
+    match (expected, actual) {
+        (TypeRef::Integer, TypeRef::Integer) => true,
+        (TypeRef::Real, TypeRef::Integer | TypeRef::Real) => true,
+        (TypeRef::LongReal, TypeRef::Integer | TypeRef::Real | TypeRef::LongReal) => true,
+        (TypeRef::Boolean, TypeRef::Boolean) => true,
+        _ => expected == actual,
+    }
+}
+
+fn format_type_name(type_ref: &TypeRef) -> &'static str {
+    match type_ref {
+        TypeRef::Integer => "INTEGER",
+        TypeRef::Boolean => "BOOLEAN",
+        TypeRef::Real => "REAL",
+        TypeRef::LongReal => "LONGREAL",
+        TypeRef::Named(_) => "<named>",
+    }
+}
+
+fn resolve_symbol_type(symbols: &SymbolTable, name: &str) -> Option<TypeRef> {
+    symbols
+        .resolve(name)
+        .and_then(|symbol| symbol.declared_type.clone())
+}
+
+fn infer_expr_type(
+    expr: &Expr,
+    symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
+) -> Result<Option<TypeRef>> {
+    match expr {
+        Expr::Integer(_) => Ok(Some(TypeRef::Integer)),
+        Expr::String(_) => Err(SemanticError::UnsupportedStringLiteral.into()),
+        Expr::Variable(name) => {
+            if symbols.resolve(name).is_none() {
+                return Err(SemanticError::UndefinedSymbol { name: name.clone() }.into());
+            }
+
+            Ok(resolve_symbol_type(symbols, name).and_then(|type_ref| resolve_type_ref(&type_ref, types)))
+        }
+        Expr::Call { name, args } => {
+            if name == "ReadInt" || name == "EOF" {
+                if !args.is_empty() {
+                    return Err(SemanticError::ArityMismatch {
+                        name: name.clone(),
+                        expected: 0,
+                        got: args.len(),
+                    }
+                    .into());
+                }
+                return Ok(Some(TypeRef::Integer));
+            }
+
+            if symbols.resolve(name).is_none() {
+                return Err(SemanticError::UndefinedSymbol { name: name.clone() }.into());
+            }
+
+            Err(SemanticError::InvalidBuiltinArgument {
+                name: name.clone(),
+                detail: "call expressions currently support only ReadInt() and EOF()".to_string(),
+            }
+            .into())
+        }
+        Expr::Binary { left, right, .. } => {
+            let left_type = infer_expr_type(left, symbols, types)?;
+            let right_type = infer_expr_type(right, symbols, types)?;
+
+            match (left_type, right_type) {
+                (Some(left_type), Some(right_type)) => {
+                    if !is_numeric_type(&left_type) || !is_numeric_type(&right_type) {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!(
+                                "arithmetic expressions require numeric operands, got {} and {}",
+                                format_type_name(&left_type),
+                                format_type_name(&right_type)
+                            ),
+                        }
+                        .into());
+                    }
+
+                    if left_type == TypeRef::LongReal || right_type == TypeRef::LongReal {
+                        Ok(Some(TypeRef::LongReal))
+                    } else if left_type == TypeRef::Real || right_type == TypeRef::Real {
+                        Ok(Some(TypeRef::Real))
+                    } else {
+                        Ok(Some(TypeRef::Integer))
+                    }
+                }
+                _ => Ok(None),
+            }
+        }
     }
 }
 
@@ -225,9 +367,11 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     for declaration in &module.declarations {
         match declaration {
             Declaration::Const { name, .. } => {
+                validate_declaration_name(name, &types)?;
                 symbols.declare(name, SymbolKind::Constant)?;
             }
             Declaration::Type { name, target } => {
+                validate_declaration_name(name, &types)?;
                 validate_declared_type(target, &types)?;
                 symbols.declare_with_type(name, SymbolKind::TypeName, Some(target.clone()))?;
                 types.insert(name.clone(), target.clone());
@@ -236,6 +380,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                 name,
                 declared_type,
             } => {
+                validate_declaration_name(name, &types)?;
                 if let Some(type_ref) = declared_type
                 {
                     validate_declared_type(type_ref, &types)?;
@@ -243,7 +388,9 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                 symbols.declare_with_type(name, SymbolKind::Variable, declared_type.clone())?;
             }
             Declaration::Procedure { name, params, .. } => {
+                validate_declaration_name(name, &types)?;
                 for param in params {
+                    validate_parameter_name(param, &types)?;
                     if let Some(type_ref) = &param.declared_type {
                         validate_declared_type(type_ref, &types)?;
                     }
@@ -280,14 +427,14 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                 )?;
             }
             for statement in body {
-                analyze_statement(statement, &mut symbols, &proc_arity, &proc_params)?;
+                analyze_statement(statement, &mut symbols, &proc_arity, &proc_params, &types)?;
             }
             symbols.exit_scope();
         }
     }
 
     for statement in &module.statements {
-        analyze_statement(statement, &mut symbols, &proc_arity, &proc_params)?;
+        analyze_statement(statement, &mut symbols, &proc_arity, &proc_params, &types)?;
     }
 
     Ok(())
@@ -330,10 +477,33 @@ fn analyze_statement(
     symbols: &mut SymbolTable,
     proc_arity: &HashMap<String, Option<usize>>,
     proc_params: &HashMap<String, Vec<ParamDecl>>,
+    types: &HashMap<String, TypeRef>,
 ) -> Result<()> {
     match stmt {
         Statement::Assign { target, value } => {
             analyze_expr(value, symbols)?;
+            let symbol = symbols.resolve(target).ok_or_else(|| SemanticError::UndefinedSymbol {
+                name: target.clone(),
+            })?;
+
+            if let Some(expected_type) = &symbol.declared_type
+                && let Some(actual_type) = infer_expr_type(value, symbols, types)?
+            {
+                let expected_type = resolve_type_ref(expected_type, types)
+                    .expect("declared target type should resolve after semantic validation");
+                if !assignment_compatible(&expected_type, &actual_type) {
+                    return Err(SemanticError::TypeMismatch {
+                        detail: format!(
+                            "cannot assign {} to {} '{}'",
+                            format_type_name(&actual_type),
+                            format_type_name(&expected_type),
+                            target
+                        ),
+                    }
+                    .into());
+                }
+            }
+
             if symbols.resolve(target).is_none() {
                 return Err(SemanticError::UndefinedSymbol {
                     name: target.clone(),
@@ -396,6 +566,39 @@ fn analyze_statement(
                 for (index, (param, arg)) in params.iter().zip(args.iter()).enumerate() {
                     if param.is_var {
                         validate_var_argument(name, index + 1, arg, symbols)?;
+                        if let Some(expected_type) = &param.declared_type
+                            && let Some(actual_type) = infer_expr_type(arg, symbols, types)?
+                        {
+                            let expected_type = resolve_type_ref(expected_type, types)
+                                .expect("VAR parameter type should resolve after semantic validation");
+                            if expected_type != actual_type {
+                                return Err(SemanticError::TypeMismatch {
+                                    detail: format!(
+                                        "VAR parameter '{}' expects exact type {}, got {}",
+                                        param.name,
+                                        format_type_name(&expected_type),
+                                        format_type_name(&actual_type)
+                                    ),
+                                }
+                                .into());
+                            }
+                        }
+                    } else if let Some(expected_type) = &param.declared_type
+                        && let Some(actual_type) = infer_expr_type(arg, symbols, types)?
+                    {
+                        let expected_type = resolve_type_ref(expected_type, types)
+                            .expect("parameter type should resolve after semantic validation");
+                        if !assignment_compatible(&expected_type, &actual_type) {
+                            return Err(SemanticError::TypeMismatch {
+                                detail: format!(
+                                    "parameter '{}' expects {}, got {}",
+                                    param.name,
+                                    format_type_name(&expected_type),
+                                    format_type_name(&actual_type)
+                                ),
+                            }
+                            .into());
+                        }
                     }
                 }
             }
@@ -413,11 +616,11 @@ fn analyze_statement(
         } => {
             analyze_expr(condition, symbols)?;
             for stmt in then_branch {
-                analyze_statement(stmt, symbols, proc_arity, proc_params)?;
+                analyze_statement(stmt, symbols, proc_arity, proc_params, types)?;
             }
             if let Some(else_branch) = else_branch {
                 for stmt in else_branch {
-                    analyze_statement(stmt, symbols, proc_arity, proc_params)?;
+                    analyze_statement(stmt, symbols, proc_arity, proc_params, types)?;
                 }
             }
             Ok(())
@@ -425,7 +628,7 @@ fn analyze_statement(
         Statement::While { condition, body } => {
             analyze_expr(condition, symbols)?;
             for stmt in body {
-                analyze_statement(stmt, symbols, proc_arity, proc_params)?;
+                analyze_statement(stmt, symbols, proc_arity, proc_params, types)?;
             }
             Ok(())
         }
@@ -742,6 +945,63 @@ END Main.
             }
         }
 
+        #[test]
+        fn accepts_parameter_that_shadows_global_type_alias() {
+            let source = r#"
+    MODULE Main;
+    TYPE Count = INTEGER;
+    PROCEDURE P(Count: INTEGER);
+    BEGIN
+      WriteInt(Count)
+    END P;
+    BEGIN
+    END Main.
+    "#;
+
+            let module = parse_module(source).expect("source should parse");
+            analyze(&module, None)
+                .expect("procedure parameters should be allowed to shadow global type aliases");
+        }
+
+        #[test]
+        fn rejects_parameter_that_shadows_builtin_type_name() {
+            let source = r#"
+    MODULE Main;
+    PROCEDURE P(INTEGER: INTEGER);
+    BEGIN
+      WriteInt(INTEGER)
+    END P;
+    BEGIN
+    END Main.
+    "#;
+
+            let err = semantic_error(source);
+            match err {
+                SemanticError::DuplicateSymbol { name } => assert_eq!(name, "INTEGER"),
+                other => panic!("expected DuplicateSymbol, got {other:?}"),
+            }
+        }
+
+        #[test]
+        fn rejects_parameter_that_uses_its_shadowed_type_name_in_own_declaration() {
+            let source = r#"
+    MODULE Main;
+    TYPE Count = INTEGER;
+    PROCEDURE P(Count: Count);
+    BEGIN
+      WriteInt(Count)
+    END P;
+    BEGIN
+    END Main.
+    "#;
+
+            let err = semantic_error(source);
+            match err {
+                SemanticError::DuplicateSymbol { name } => assert_eq!(name, "Count"),
+                other => panic!("expected DuplicateSymbol, got {other:?}"),
+            }
+        }
+
                 #[test]
                 fn accepts_typed_formal_parameters_with_var_mode() {
                         let source = r#"
@@ -788,6 +1048,88 @@ END Main.
                                 other => panic!("expected InvalidVarArgument, got {other:?}"),
                         }
                 }
+
+                        #[test]
+                        fn rejects_assigning_boolean_to_integer_variable() {
+                            let source = r#"
+                    MODULE Main;
+                    VAR flag: BOOLEAN;
+                    VAR x: INTEGER;
+                    BEGIN
+                      x := flag
+                    END Main.
+                    "#;
+
+                            let err = semantic_error(source);
+                            match err {
+                                SemanticError::TypeMismatch { detail } => {
+                                    assert!(detail.contains("cannot assign BOOLEAN to INTEGER 'x'"));
+                                }
+                                other => panic!("expected TypeMismatch, got {other:?}"),
+                            }
+                        }
+
+                        #[test]
+                        fn rejects_assigning_real_to_integer_variable() {
+                            let source = r#"
+                    MODULE Main;
+                    VAR src: REAL;
+                    VAR x: INTEGER;
+                    BEGIN
+                      x := src
+                    END Main.
+                    "#;
+
+                            let err = semantic_error(source);
+                            match err {
+                                SemanticError::TypeMismatch { detail } => {
+                                    assert!(detail.contains("cannot assign REAL to INTEGER 'x'"));
+                                }
+                                other => panic!("expected TypeMismatch, got {other:?}"),
+                            }
+                        }
+
+                        #[test]
+                        fn rejects_non_numeric_boolean_arithmetic() {
+                            let source = r#"
+                    MODULE Main;
+                    VAR flag: BOOLEAN;
+                    VAR x: INTEGER;
+                    BEGIN
+                      x := flag + 1
+                    END Main.
+                    "#;
+
+                            let err = semantic_error(source);
+                            match err {
+                                SemanticError::TypeMismatch { detail } => {
+                                    assert!(detail.contains("arithmetic expressions require numeric operands"));
+                                }
+                                other => panic!("expected TypeMismatch, got {other:?}"),
+                            }
+                        }
+
+                        #[test]
+                        fn rejects_parameter_type_mismatch_for_non_var_argument() {
+                            let source = r#"
+                    MODULE Main;
+                    VAR x: REAL;
+                    PROCEDURE UseInt(value: INTEGER);
+                    BEGIN
+                    END UseInt;
+                    BEGIN
+                      UseInt(x)
+                    END Main.
+                    "#;
+
+                            let err = semantic_error(source);
+                            match err {
+                                SemanticError::TypeMismatch { detail } => {
+                                    assert!(detail.contains("parameter 'value' expects INTEGER, got REAL"));
+                                }
+                                other => panic!("expected TypeMismatch, got {other:?}"),
+                            }
+                        }
 
                 #[test]
                 fn accepts_readint_call_expression_in_assignment() {

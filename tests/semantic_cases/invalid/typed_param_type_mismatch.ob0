@@ -1,0 +1,8 @@
+MODULE Main;
+VAR x: REAL;
+PROCEDURE UseInt(value: INTEGER);
+BEGIN
+END UseInt;
+BEGIN
+  UseInt(x)
+END Main.

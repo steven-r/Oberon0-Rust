@@ -1,0 +1,6 @@
+MODULE Main;
+VAR src: REAL;
+VAR x: INTEGER;
+BEGIN
+  x := src
+END Main.
