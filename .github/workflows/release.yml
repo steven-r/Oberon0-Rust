@@ -74,8 +74,9 @@ jobs:
             capture { print }
           ' CHANGELOG.md > "$notes_file"
 
-          if [[ ! -s "$notes_file" ]]; then
-            echo "$tag" > "$notes_file"
+          if [[ -z "$(tr -d '[:space:]' < "$notes_file")" ]]; then
+            echo "Failed to extract release notes for $tag from CHANGELOG.md" >&2
+            exit 1
           fi
 
           if gh release view "$tag" >/dev/null 2>&1; then
@@ -204,28 +205,6 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
 
           scripts/release.sh "${{ steps.decide.outputs.bump_type }}"
-
-          normalized_changelog="$(mktemp)"
-          awk '
-            BEGIN { blank = 0 }
-            {
-              if ($0 ~ /^[[:space:]]*$/) {
-                blank++
-                if (blank <= 1) {
-                  print ""
-                }
-              } else {
-                blank = 0
-                print
-              }
-            }
-          ' CHANGELOG.md > "$normalized_changelog"
-          mv "$normalized_changelog" CHANGELOG.md
-
-          if ! git diff --quiet -- CHANGELOG.md; then
-            git add CHANGELOG.md
-            git commit --amend --no-edit
-          fi
 
           release_tag="$(git describe --tags --abbrev=0)"
           git tag -d "$release_tag"
