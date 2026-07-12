@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.7.0 - 2026-07-12
+
 ### Features
 
 - add `TYPE` declarations and typed `VAR` declarations for `INTEGER` and simple named aliases (#5)
