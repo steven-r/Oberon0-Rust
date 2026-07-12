@@ -90,6 +90,24 @@ trim_outer_blank_lines() {
   ' "$input_file"
 }
 
+validate_changelog_structure() {
+  local changelog_file="$1"
+  local h1_count unreleased_count
+
+  h1_count="$(grep -c '^# Changelog$' "$changelog_file" || true)"
+  unreleased_count="$(grep -c '^## Unreleased$' "$changelog_file" || true)"
+
+  if [[ "$h1_count" -ne 1 ]]; then
+    echo "CHANGELOG.md must contain exactly one '# Changelog' heading (found: $h1_count)" >&2
+    exit 1
+  fi
+
+  if [[ "$unreleased_count" -ne 1 ]]; then
+    echo "CHANGELOG.md must contain exactly one '## Unreleased' heading (found: $unreleased_count)" >&2
+    exit 1
+  fi
+}
+
 current_version="$(grep -E '^version = "[0-9]+\.[0-9]+\.[0-9]+"$' Cargo.toml | head -n1 | sed -E 's/version = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/')"
 if [[ -z "$current_version" ]]; then
   echo "Failed to read version from Cargo.toml" >&2
@@ -176,10 +194,10 @@ awk '
 ' CHANGELOG.md > "$tmp_prefix"
 
 awk '
-  BEGIN { capture = 0 }
-  /^## Unreleased$/ { capture = 1; next }
-  capture && /^## / { print; capture = 0; next }
-  !capture { print }
+  BEGIN { in_unreleased = 0; in_suffix = 0 }
+  /^## Unreleased$/ { in_unreleased = 1; next }
+  in_unreleased && /^## / { in_suffix = 1 }
+  in_suffix { print }
 ' CHANGELOG.md > "$tmp_suffix"
 
 new_changelog="$(mktemp)"
@@ -193,6 +211,8 @@ new_changelog="$(mktemp)"
 normalized_changelog="$(mktemp)"
 normalize_markdown_spacing "$new_changelog" > "$normalized_changelog"
 mv "$normalized_changelog" CHANGELOG.md
+
+validate_changelog_structure CHANGELOG.md
 
 sed -i -E "0,/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"$/s//version = \"${new_version}\"/" Cargo.toml
 sed -i -E "s/^Current value: \`[0-9]+\.[0-9]+\.[0-9]+\`$/Current value: \`${new_version}\`/" VERSIONING.md
