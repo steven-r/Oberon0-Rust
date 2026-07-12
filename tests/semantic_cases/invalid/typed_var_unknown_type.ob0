@@ -1,0 +1,5 @@
+MODULE Main;
+VAR x: Missing;
+BEGIN
+  x := 1
+END Main.

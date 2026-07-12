@@ -86,7 +86,10 @@ pub fn lower_module(module: &Module) -> Result<HModule> {
             Declaration::Const { name, .. } => {
                 resolver.declare(name, SymbolKind::Constant)?;
             }
-            Declaration::Var { name } => {
+            Declaration::Type { name, .. } => {
+                resolver.declare(name, SymbolKind::TypeName)?;
+            }
+            Declaration::Var { name, .. } => {
                 resolver.declare(name, SymbolKind::Variable)?;
             }
             Declaration::Procedure { name, .. } => {
@@ -129,13 +132,27 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
                 value: *value,
             })
         }
-        Declaration::Var { name } => {
+        Declaration::Type { name, target } => {
+            let resolved = resolver
+                .resolve(name)
+                .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown type '{}'.", name))?;
+            Ok(HDeclaration::Type {
+                id: resolved.id,
+                name: name.clone(),
+                target: target.clone(),
+            })
+        }
+        Declaration::Var {
+            name,
+            declared_type,
+        } => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown variable '{}'.", name))?;
             Ok(HDeclaration::Var {
                 id: resolved.id,
                 name: name.clone(),
+                declared_type: declared_type.clone(),
             })
         }
         Declaration::Procedure {
@@ -287,6 +304,7 @@ mod tests {
     use anyhow::Result;
 
     use super::lower_module;
+    use crate::ast::TypeRef;
     use crate::hir::{HDeclaration, HExpr, HStatement};
     use crate::parser::parse_module;
     use crate::semantic::analyze;
@@ -342,7 +360,7 @@ END Main.
             .declarations
             .iter()
             .find_map(|decl| match decl {
-                HDeclaration::Var { id, name } if name == "x" => Some(*id),
+                HDeclaration::Var { id, name, .. } if name == "x" => Some(*id),
                 _ => None,
             })
             .expect("module variable x must exist");
@@ -385,6 +403,44 @@ END Main.
         } else {
             panic!("expected IF as first procedure statement");
         }
+    }
+
+    #[test]
+    fn typed_declarations_survive_lowering_with_preserved_type_info() {
+        let source = r#"
+MODULE Main;
+TYPE Count = INTEGER;
+VAR x: Count;
+BEGIN
+  x := 1
+END Main.
+"#;
+
+        let hir = lower_from_source(source).expect("lowering should succeed");
+
+        let type_decl = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Type { name, target, .. } if name == "Count" => Some(target.clone()),
+                _ => None,
+            })
+            .expect("type declaration Count must exist in HIR");
+        assert!(matches!(type_decl, TypeRef::Integer));
+
+        let var_type = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Var {
+                    name,
+                    declared_type,
+                    ..
+                } if name == "x" => declared_type.clone(),
+                _ => None,
+            })
+            .expect("variable x must carry declared type info in HIR");
+        assert!(matches!(var_type, TypeRef::Named(name) if name == "Count"));
     }
 
     #[test]

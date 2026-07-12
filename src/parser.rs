@@ -5,7 +5,7 @@ use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
 
-use crate::ast::{BinaryOp, Declaration, Expr, ImportDecl, Module, Statement};
+use crate::ast::{BinaryOp, Declaration, Expr, ImportDecl, Module, Statement, TypeRef};
 
 #[derive(Parser)]
 #[grammar = "oberon0.pest"]
@@ -76,6 +76,7 @@ fn parse_declaration_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
 
     match inner.as_rule() {
         Rule::const_section => parse_const_section(inner),
+        Rule::type_section => parse_type_section(inner),
         Rule::var_section => parse_var_section(inner),
         Rule::procedure_decl => Ok(vec![parse_procedure_decl(inner)?]),
         _ => bail!("Unknown declaration section: {:?}", inner.as_rule()),
@@ -149,21 +150,40 @@ fn parse_const_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     Ok(out)
 }
 
+/// Parses a `TYPE` declaration section with simple named aliases.
+fn parse_type_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
+    let mut out = Vec::new();
+
+    for item in section.into_inner() {
+        let mut parts = item.into_inner();
+        let name = take_ident(parts.next(), "type name")?;
+        let target = parse_type_ref_name(take_ident(parts.next(), "type target")?);
+        out.push(Declaration::Type { name, target });
+    }
+
+    Ok(out)
+}
+
 /// Parses a `VAR` declaration section.
 fn parse_var_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
-    let ident_list = section
-        .into_inner()
-        .next()
-        .context("Missing variable names")?;
-
     let mut out = Vec::new();
-    for ident in ident_list.into_inner() {
-        if ident.as_rule() != Rule::ident {
-            bail!("Variable name is not an identifier");
+
+    for item in section.into_inner() {
+        let mut parts = item.into_inner();
+        let ident_list = parts.next().context("Missing variable names")?;
+        let declared_type = parts
+            .next()
+            .map(|pair| parse_type_ref_name(pair.as_str().to_string()));
+
+        for ident in ident_list.into_inner() {
+            if ident.as_rule() != Rule::ident {
+                bail!("Variable name is not an identifier");
+            }
+            out.push(Declaration::Var {
+                name: ident.as_str().to_string(),
+                declared_type: declared_type.clone(),
+            });
         }
-        out.push(Declaration::Var {
-            name: ident.as_str().to_string(),
-        });
     }
 
     Ok(out)
@@ -345,6 +365,13 @@ fn parse_pascal_string(raw: &str) -> Result<String> {
     }
 
     Ok(raw[1..raw.len() - 1].replace("\"\"", "\""))
+}
+
+fn parse_type_ref_name(name: String) -> TypeRef {
+    match name.as_str() {
+        "INTEGER" => TypeRef::Integer,
+        _ => TypeRef::Named(name),
+    }
 }
 
 fn parse_add_op(op: Pair<Rule>) -> Result<BinaryOp> {

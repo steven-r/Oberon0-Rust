@@ -2,7 +2,7 @@
 
 //! Lowered, name-resolved representation used by code generation.
 
-use crate::ast::BinaryOp;
+use crate::ast::{BinaryOp, TypeRef};
 use crate::symbols::SymbolKind;
 
 #[derive(Debug, Clone)]
@@ -58,10 +58,17 @@ pub enum HDeclaration {
         name: String,
         value: i64,
     },
-    /// Variable declaration with its resolved id.
+    /// Type declaration with its resolved id and preserved target type.
+    Type {
+        id: usize,
+        name: String,
+        target: TypeRef,
+    },
+    /// Variable declaration with its resolved id and preserved declared type.
     Var {
         id: usize,
         name: String,
+        declared_type: Option<TypeRef>,
     },
     /// Procedure declaration with resolved parameters and local variables.
     Procedure {

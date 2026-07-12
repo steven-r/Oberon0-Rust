@@ -26,6 +26,15 @@ pub struct ImportDecl {
 }
 
 #[derive(Debug, Clone)]
+/// Type references supported by the current typed-declaration milestone.
+pub enum TypeRef {
+    /// Built-in INTEGER scalar type.
+    Integer,
+    /// Named type alias or user-defined type reference.
+    Named(String),
+}
+
+#[derive(Debug, Clone)]
 /// Executable statements supported by the current Oberon0 subset.
 pub enum Statement {
     /// Assigns the evaluated expression to an existing identifier.
@@ -51,8 +60,13 @@ pub enum Statement {
 pub enum Declaration {
     /// Constant declaration with an integer literal value.
     Const { name: String, value: i64 },
-    /// Mutable variable declaration.
-    Var { name: String },
+    /// Named type alias declaration.
+    Type { name: String, target: TypeRef },
+    /// Mutable variable declaration, optionally with a declared type.
+    Var {
+        name: String,
+        declared_type: Option<TypeRef>,
+    },
     /// Procedure declaration with positional parameters and a statement body.
     Procedure {
         name: String,
