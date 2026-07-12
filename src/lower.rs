@@ -409,7 +409,7 @@ END Main.
     fn typed_declarations_survive_lowering_with_preserved_type_info() {
         let source = r#"
 MODULE Main;
-TYPE Count = INTEGER;
+TYPE Count = REAL;
 VAR x: Count;
 BEGIN
   x := 1
@@ -426,7 +426,7 @@ END Main.
                 _ => None,
             })
             .expect("type declaration Count must exist in HIR");
-        assert!(matches!(type_decl, TypeRef::Integer));
+        assert!(matches!(type_decl, TypeRef::Real));
 
         let var_type = hir
             .declarations

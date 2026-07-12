@@ -101,6 +101,7 @@ Current status:
 1. `TYPE` declarations and typed `VAR` declarations are being added first for `INTEGER` and simple named aliases.
 2. Symbol entries now carry declared type information for typed declarations.
 3. HIR now preserves `TYPE` declarations and typed `VAR` declarations explicitly, without changing current code generation behavior.
+4. Built-in scalar declaration support now covers `INTEGER`, `BOOLEAN`, `REAL`, and `LONGREAL`; expression-level typing and runtime representation remain follow-up work.
 
 ## B5. Array types and indexing
 

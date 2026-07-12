@@ -125,6 +125,9 @@ impl Error for SemanticError {}
 fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Option<TypeRef> {
     match type_ref {
         TypeRef::Integer => Some(TypeRef::Integer),
+        TypeRef::Boolean => Some(TypeRef::Boolean),
+        TypeRef::Real => Some(TypeRef::Real),
+        TypeRef::LongReal => Some(TypeRef::LongReal),
         TypeRef::Named(name) => match types.get(name) {
             Some(target) => resolve_type_ref(target, types),
             None => None,
@@ -156,6 +159,9 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     proc_arity.insert("EOF".to_string(), Some(0));
     let mut types: HashMap<String, TypeRef> = HashMap::new();
     types.insert("INTEGER".to_string(), TypeRef::Integer);
+    types.insert("BOOLEAN".to_string(), TypeRef::Boolean);
+    types.insert("REAL".to_string(), TypeRef::Real);
+    types.insert("LONGREAL".to_string(), TypeRef::LongReal);
 
     for import in &module.imports {
         if symbols
@@ -188,6 +194,9 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                     return Err(SemanticError::UnknownType {
                         name: match target {
                             TypeRef::Integer => "INTEGER".to_string(),
+                            TypeRef::Boolean => "BOOLEAN".to_string(),
+                            TypeRef::Real => "REAL".to_string(),
+                            TypeRef::LongReal => "LONGREAL".to_string(),
                             TypeRef::Named(name) => name.clone(),
                         },
                     }
@@ -206,6 +215,9 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                     return Err(SemanticError::UnknownType {
                         name: match type_ref {
                             TypeRef::Integer => "INTEGER".to_string(),
+                            TypeRef::Boolean => "BOOLEAN".to_string(),
+                            TypeRef::Real => "REAL".to_string(),
+                            TypeRef::LongReal => "LONGREAL".to_string(),
                             TypeRef::Named(name) => name.clone(),
                         },
                     }
@@ -599,10 +611,26 @@ END Main.
         }
 
         #[test]
+        fn accepts_builtin_boolean_real_and_longreal_declarations() {
+            let source = r#"
+    MODULE Main;
+    VAR flag: BOOLEAN;
+    VAR x: REAL;
+    VAR y: LONGREAL;
+    BEGIN
+    END Main.
+    "#;
+
+            let module = parse_module(source).expect("source should parse");
+            analyze(&module, None)
+                .expect("builtin BOOLEAN, REAL, and LONGREAL declarations should pass semantic analysis");
+        }
+
+        #[test]
         fn accepts_named_type_alias_for_variable_declaration() {
             let source = r#"
     MODULE Main;
-    TYPE Count = INTEGER;
+        TYPE Count = REAL;
     VAR x: Count;
     BEGIN
       x := 1
