@@ -678,8 +678,20 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{SemanticError, analyze};
+        use super::{SemanticError, analyze};
     use crate::parser::parse_module;
+
+        struct SuccessCase {
+                name: &'static str,
+                source: &'static str,
+        }
+
+        struct ErrorCase {
+                name: &'static str,
+                source: &'static str,
+                code: &'static str,
+                message_contains: &'static [&'static str],
+        }
 
     fn semantic_error(source: &str) -> SemanticError {
         let module = parse_module(source).expect("source should parse for semantic test");
@@ -689,513 +701,366 @@ mod tests {
     }
 
     #[test]
-    fn reports_not_callable_for_variable_call() {
-        let source = r#"
+        fn semantic_success_cases() {
+                let cases = [
+                        SuccessCase {
+                                name: "writestring literal",
+                                source: r#"
+MODULE Main;
+BEGIN
+    WriteString("Hello, ""Oberon""")
+END Main.
+"#,
+                        },
+                        SuccessCase {
+                                name: "writeln without args",
+                                source: r#"
+MODULE Main;
+BEGIN
+    WriteLn()
+END Main.
+"#,
+                        },
+                        SuccessCase {
+                                name: "typed integer variable",
+                                source: r#"
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+    x := 1
+END Main.
+"#,
+                        },
+                        SuccessCase {
+                                name: "builtin scalar declarations",
+                                source: r#"
+MODULE Main;
+VAR flag: BOOLEAN;
+VAR x: REAL;
+VAR y: LONGREAL;
+BEGIN
+END Main.
+"#,
+                        },
+                        SuccessCase {
+                                name: "named type alias declaration",
+                                source: r#"
+MODULE Main;
+TYPE Count = REAL;
+VAR x: Count;
+BEGIN
+    x := 1
+END Main.
+"#,
+                        },
+                        SuccessCase {
+                                name: "parameter shadows global type alias",
+                                source: r#"
+MODULE Main;
+TYPE Count = INTEGER;
+PROCEDURE P(Count: INTEGER);
+BEGIN
+    WriteInt(Count)
+END P;
+BEGIN
+END Main.
+"#,
+                        },
+                        SuccessCase {
+                                name: "typed formal params with VAR mode",
+                                source: r#"
+MODULE Main;
+VAR x;
+PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
+BEGIN
+    target := target + amount
+END Bump;
+BEGIN
+    x := 1;
+    Bump(x, 2)
+END Main.
+"#,
+                        },
+                        SuccessCase {
+                                name: "readint call expression",
+                                source: r#"
 MODULE Main;
 VAR x;
 BEGIN
-  x := 1;
-  x()
+    x := ReadInt()
 END Main.
-"#;
-        let err = semantic_error(source);
-        match err {
-            SemanticError::NotCallable { name } => assert_eq!(name, "x"),
-            other => panic!("expected NotCallable, got {other:?}"),
-        }
-    }
+"#,
+                        },
+                        SuccessCase {
+                                name: "eof call expression in if",
+                                source: r#"
+MODULE Main;
+BEGIN
+    IF EOF() THEN
+        WriteLn()
+    END
+END Main.
+"#,
+                        },
+                ];
 
-    #[test]
-    fn reports_arity_mismatch_for_procedure_call() {
-        let source = r#"
+                for case in cases {
+                    let module = parse_module(case.source)
+                        .unwrap_or_else(|err| panic!("case '{}' should parse, got: {err}", case.name));
+                    analyze(&module, None)
+                        .unwrap_or_else(|err| panic!("case '{}' should pass semantic analysis, got: {err}", case.name));
+                }
+        }
+
+        #[test]
+        fn semantic_error_cases() {
+                let cases = [
+                        ErrorCase {
+                                name: "not callable variable",
+                                source: r#"
+MODULE Main;
+VAR x;
+BEGIN
+    x := 1;
+    x()
+END Main.
+"#,
+                                code: "E012",
+                                message_contains: &["Symbol 'x' is not callable"],
+                        },
+                        ErrorCase {
+                                name: "procedure arity mismatch",
+                                source: r#"
 MODULE Main;
 PROCEDURE P(a, b);
 BEGIN
-  WriteInt(a + b)
+    WriteInt(a + b)
 END P;
 BEGIN
-  P(1)
+    P(1)
 END Main.
-"#;
-        let err = semantic_error(source);
-        match err {
-            SemanticError::ArityMismatch {
-                name,
-                expected,
-                got,
-            } => {
-                assert_eq!(name, "P");
-                assert_eq!(expected, 2);
-                assert_eq!(got, 1);
-            }
-            other => panic!("expected ArityMismatch, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn reports_procedure_end_name_mismatch() {
-        let source = r#"
+"#,
+                                code: "E006",
+                                message_contains: &["Procedure 'P' called with wrong arity", "expected 2, got 1"],
+                        },
+                        ErrorCase {
+                                name: "procedure end name mismatch",
+                                source: r#"
 MODULE Main;
 PROCEDURE P(a);
 BEGIN
-  WriteInt(a)
+    WriteInt(a)
 END Wrong;
 BEGIN
 END Main.
-"#;
-        let err = semantic_error(source);
-        match err {
-            SemanticError::ProcedureNameMismatch { expected, got } => {
-                assert_eq!(expected, "P");
-                assert_eq!(got, "Wrong");
-            }
-            other => panic!("expected ProcedureNameMismatch, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn reports_undefined_symbol_for_undeclared_assignment_target() {
-        let source = r#"
-MODULE Main;
-BEGIN
-  y := 1
-END Main.
-"#;
-        let err = semantic_error(source);
-        match err {
-            SemanticError::UndefinedSymbol { name } => assert_eq!(name, "y"),
-            other => panic!("expected UndefinedSymbol, got {other:?}"),
-        }
-    }
-
-        #[test]
-        fn reports_stable_error_code_for_undeclared_assignment_target() {
-            let source = r#"
+"#,
+                                code: "E013",
+                                message_contains: &["Procedure END name mismatch", "expected 'P', got 'Wrong'"],
+                        },
+                        ErrorCase {
+                                name: "undefined assignment target",
+                                source: r#"
 MODULE Main;
 BEGIN
     y := 1
 END Main.
-"#;
-            let err = semantic_error(source);
-            assert_eq!(err.code(), "E005");
-        }
+"#,
+                                code: "E005",
+                                message_contains: &["Undefined symbol usage: 'y'"],
+                        },
+                        ErrorCase {
+                                name: "string outside writestring",
+                                source: r#"
+MODULE Main;
+VAR x;
+BEGIN
+    x := "Hello"
+END Main.
+"#,
+                                code: "E011",
+                                message_contains: &["String literals are only supported"],
+                        },
+                        ErrorCase {
+                                name: "non-string writestring argument",
+                                source: r#"
+MODULE Main;
+BEGIN
+    WriteString(1)
+END Main.
+"#,
+                                code: "E007",
+                                message_contains: &["Builtin 'WriteString' received an invalid argument", "expected a string literal"],
+                        },
+                        ErrorCase {
+                                name: "writeln with args",
+                                source: r#"
+MODULE Main;
+BEGIN
+    WriteLn(1)
+END Main.
+"#,
+                                code: "E006",
+                                message_contains: &["Procedure 'WriteLn' called with wrong arity", "expected 0, got 1"],
+                        },
+                        ErrorCase {
+                                name: "unknown type reference",
+                                source: r#"
+MODULE Main;
+VAR x: Missing;
+BEGIN
+    x := 1
+END Main.
+"#,
+                                code: "E010",
+                                message_contains: &["Unknown type reference: 'Missing'"],
+                        },
+                        ErrorCase {
+                                name: "duplicate type declaration",
+                                source: r#"
+MODULE Main;
+TYPE Count = INTEGER;
+TYPE Count = INTEGER;
+BEGIN
+END Main.
+"#,
+                                code: "E004",
+                                message_contains: &["Duplicate symbol declaration: 'Count'"],
+                        },
+                        ErrorCase {
+                                name: "parameter shadows builtin type",
+                                source: r#"
+MODULE Main;
+PROCEDURE P(INTEGER: INTEGER);
+BEGIN
+    WriteInt(INTEGER)
+END P;
+BEGIN
+END Main.
+"#,
+                                code: "E004",
+                                message_contains: &["Duplicate symbol declaration: 'INTEGER'"],
+                        },
+                        ErrorCase {
+                                name: "parameter self-shadows type alias in declaration",
+                                source: r#"
+MODULE Main;
+TYPE Count = INTEGER;
+PROCEDURE P(Count: Count);
+BEGIN
+    WriteInt(Count)
+END P;
+BEGIN
+END Main.
+"#,
+                                code: "E004",
+                                message_contains: &["Duplicate symbol declaration: 'Count'"],
+                        },
+                        ErrorCase {
+                                name: "literal passed to VAR parameter",
+                                source: r#"
+MODULE Main;
+PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
+BEGIN
+END Bump;
+BEGIN
+    Bump(1, 2)
+END Main.
+"#,
+                                code: "E008",
+                                message_contains: &["Procedure 'Bump' received an invalid VAR argument", "position 1", "expected a variable designator"],
+                        },
+                        ErrorCase {
+                                name: "assign boolean to integer",
+                                source: r#"
+MODULE Main;
+VAR flag: BOOLEAN;
+VAR x: INTEGER;
+BEGIN
+    x := flag
+END Main.
+"#,
+                                code: "E009",
+                                message_contains: &["cannot assign BOOLEAN to INTEGER 'x'"],
+                        },
+                        ErrorCase {
+                                name: "assign real to integer",
+                                source: r#"
+MODULE Main;
+VAR src: REAL;
+VAR x: INTEGER;
+BEGIN
+    x := src
+END Main.
+"#,
+                                code: "E009",
+                                message_contains: &["cannot assign REAL to INTEGER 'x'"],
+                        },
+                        ErrorCase {
+                                name: "boolean arithmetic",
+                                source: r#"
+MODULE Main;
+VAR flag: BOOLEAN;
+VAR x: INTEGER;
+BEGIN
+    x := flag + 1
+END Main.
+"#,
+                                code: "E009",
+                                message_contains: &["arithmetic expressions require numeric operands"],
+                        },
+                        ErrorCase {
+                                name: "parameter type mismatch",
+                                source: r#"
+MODULE Main;
+VAR x: REAL;
+PROCEDURE UseInt(value: INTEGER);
+BEGIN
+END UseInt;
+BEGIN
+    UseInt(x)
+END Main.
+"#,
+                                code: "E009",
+                                message_contains: &["parameter 'value' expects INTEGER, got REAL"],
+                        },
+                        ErrorCase {
+                                name: "readint statement call",
+                                source: r#"
+MODULE Main;
+BEGIN
+    ReadInt()
+END Main.
+"#,
+                                code: "E007",
+                                message_contains: &["Builtin 'ReadInt' received an invalid argument", "must be used as a call expression"],
+                        },
+                        ErrorCase {
+                                name: "non-function builtin in call expression",
+                                source: r#"
+MODULE Main;
+VAR x;
+BEGIN
+    x := WriteInt(1)
+END Main.
+"#,
+                                code: "E007",
+                                message_contains: &["Builtin 'WriteInt' received an invalid argument", "currently support only ReadInt() and EOF()"],
+                        },
+                ];
 
-        #[test]
-        fn accepts_write_string_with_pascal_style_literal() {
-            let source = r#"
-    MODULE Main;
-    BEGIN
-      WriteString("Hello, ""Oberon""")
-    END Main.
-    "#;
-
-            let module = parse_module(source).expect("source should parse");
-            analyze(&module, None).expect("WriteString with a string literal should pass semantic analysis");
-        }
-
-        #[test]
-        fn rejects_string_literal_outside_write_string() {
-            let source = r#"
-    MODULE Main;
-    VAR x;
-    BEGIN
-      x := "Hello"
-    END Main.
-    "#;
-
-            let err = semantic_error(source);
-            match err {
-                SemanticError::UnsupportedStringLiteral => {}
-                other => panic!("expected UnsupportedStringLiteral, got {other:?}"),
-            }
-        }
-
-        #[test]
-        fn rejects_non_string_argument_to_write_string() {
-            let source = r#"
-    MODULE Main;
-    BEGIN
-      WriteString(1)
-    END Main.
-    "#;
-
-            let err = semantic_error(source);
-            match err {
-                SemanticError::InvalidBuiltinArgument { name, detail } => {
-                    assert_eq!(name, "WriteString");
-                    assert_eq!(detail, "expected a string literal");
-                }
-                other => panic!("expected InvalidBuiltinArgument, got {other:?}"),
-            }
-        }
-
-        #[test]
-        fn accepts_writeln_without_arguments() {
-            let source = r#"
-    MODULE Main;
-    BEGIN
-      WriteLn()
-    END Main.
-    "#;
-
-            let module = parse_module(source).expect("source should parse");
-            analyze(&module, None).expect("WriteLn without arguments should pass semantic analysis");
-        }
-
-        #[test]
-        fn rejects_writeln_with_arguments() {
-            let source = r#"
-    MODULE Main;
-    BEGIN
-      WriteLn(1)
-    END Main.
-    "#;
-
-            let err = semantic_error(source);
-            match err {
-                SemanticError::ArityMismatch {
-                    name,
-                    expected,
-                    got,
-                } => {
-                    assert_eq!(name, "WriteLn");
-                    assert_eq!(expected, 0);
-                    assert_eq!(got, 1);
-                }
-                other => panic!("expected ArityMismatch, got {other:?}"),
-            }
-        }
-
-        #[test]
-        fn accepts_typed_integer_variable_declaration() {
-            let source = r#"
-    MODULE Main;
-    VAR x: INTEGER;
-    BEGIN
-      x := 1
-    END Main.
-    "#;
-
-            let module = parse_module(source).expect("source should parse");
-            analyze(&module, None).expect("typed INTEGER variable should pass semantic analysis");
-        }
-
-        #[test]
-        fn accepts_builtin_boolean_real_and_longreal_declarations() {
-            let source = r#"
-    MODULE Main;
-    VAR flag: BOOLEAN;
-    VAR x: REAL;
-    VAR y: LONGREAL;
-    BEGIN
-    END Main.
-    "#;
-
-            let module = parse_module(source).expect("source should parse");
-            analyze(&module, None)
-                .expect("builtin BOOLEAN, REAL, and LONGREAL declarations should pass semantic analysis");
-        }
-
-        #[test]
-        fn accepts_named_type_alias_for_variable_declaration() {
-            let source = r#"
-    MODULE Main;
-        TYPE Count = REAL;
-    VAR x: Count;
-    BEGIN
-      x := 1
-    END Main.
-    "#;
-
-            let module = parse_module(source).expect("source should parse");
-            analyze(&module, None).expect("named type alias should pass semantic analysis");
-        }
-
-        #[test]
-        fn rejects_unknown_type_reference() {
-            let source = r#"
-    MODULE Main;
-    VAR x: Missing;
-    BEGIN
-      x := 1
-    END Main.
-    "#;
-
-            let err = semantic_error(source);
-            match err {
-                SemanticError::UnknownType { name } => assert_eq!(name, "Missing"),
-                other => panic!("expected UnknownType, got {other:?}"),
-            }
-        }
-
-        #[test]
-        fn rejects_duplicate_type_declaration() {
-            let source = r#"
-    MODULE Main;
-    TYPE Count = INTEGER;
-    TYPE Count = INTEGER;
-    BEGIN
-    END Main.
-    "#;
-
-            let err = semantic_error(source);
-            match err {
-                SemanticError::DuplicateSymbol { name } => assert_eq!(name, "Count"),
-                other => panic!("expected DuplicateSymbol, got {other:?}"),
-            }
-        }
-
-        #[test]
-        fn accepts_parameter_that_shadows_global_type_alias() {
-            let source = r#"
-    MODULE Main;
-    TYPE Count = INTEGER;
-    PROCEDURE P(Count: INTEGER);
-    BEGIN
-      WriteInt(Count)
-    END P;
-    BEGIN
-    END Main.
-    "#;
-
-            let module = parse_module(source).expect("source should parse");
-            analyze(&module, None)
-                .expect("procedure parameters should be allowed to shadow global type aliases");
-        }
-
-        #[test]
-        fn rejects_parameter_that_shadows_builtin_type_name() {
-            let source = r#"
-    MODULE Main;
-    PROCEDURE P(INTEGER: INTEGER);
-    BEGIN
-      WriteInt(INTEGER)
-    END P;
-    BEGIN
-    END Main.
-    "#;
-
-            let err = semantic_error(source);
-            match err {
-                SemanticError::DuplicateSymbol { name } => assert_eq!(name, "INTEGER"),
-                other => panic!("expected DuplicateSymbol, got {other:?}"),
-            }
-        }
-
-        #[test]
-        fn rejects_parameter_that_uses_its_shadowed_type_name_in_own_declaration() {
-            let source = r#"
-    MODULE Main;
-    TYPE Count = INTEGER;
-    PROCEDURE P(Count: Count);
-    BEGIN
-      WriteInt(Count)
-    END P;
-    BEGIN
-    END Main.
-    "#;
-
-            let err = semantic_error(source);
-            match err {
-                SemanticError::DuplicateSymbol { name } => assert_eq!(name, "Count"),
-                other => panic!("expected DuplicateSymbol, got {other:?}"),
-            }
-        }
-
-                #[test]
-                fn accepts_typed_formal_parameters_with_var_mode() {
-                        let source = r#"
-        MODULE Main;
-        VAR x;
-        PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
-        BEGIN
-            target := target + amount
-        END Bump;
-        BEGIN
-            x := 1;
-            Bump(x, 2)
-        END Main.
-        "#;
-
-                        let module = parse_module(source).expect("source should parse");
-                        analyze(&module, None)
-                                .expect("typed formal parameters with VAR mode should pass semantic analysis");
-                }
-
-                #[test]
-                fn rejects_literal_for_var_parameter_argument() {
-                        let source = r#"
-        MODULE Main;
-        PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
-        BEGIN
-        END Bump;
-        BEGIN
-            Bump(1, 2)
-        END Main.
-        "#;
-
-                        let err = semantic_error(source);
-                        match err {
-                                SemanticError::InvalidVarArgument {
-                                        name,
-                                        position,
-                                        detail,
-                                } => {
-                                        assert_eq!(name, "Bump");
-                                        assert_eq!(position, 1);
-                                        assert!(detail.contains("expected a variable designator"));
-                                }
-                                other => panic!("expected InvalidVarArgument, got {other:?}"),
+                for case in cases {
+                        let err = semantic_error(case.source);
+                        assert_eq!(err.code(), case.code, "unexpected code for case '{}'", case.name);
+                        let rendered = err.to_string();
+                        for needle in case.message_contains {
+                                assert!(
+                                        rendered.contains(needle),
+                                        "case '{}' expected message to contain '{}', got '{}'",
+                                        case.name,
+                                        needle,
+                                        rendered
+                                );
                         }
                 }
-
-                        #[test]
-                        fn rejects_assigning_boolean_to_integer_variable() {
-                            let source = r#"
-                    MODULE Main;
-                    VAR flag: BOOLEAN;
-                    VAR x: INTEGER;
-                    BEGIN
-                      x := flag
-                    END Main.
-                    "#;
-
-                            let err = semantic_error(source);
-                            match err {
-                                SemanticError::TypeMismatch { detail } => {
-                                    assert!(detail.contains("cannot assign BOOLEAN to INTEGER 'x'"));
-                                }
-                                other => panic!("expected TypeMismatch, got {other:?}"),
-                            }
-                        }
-
-                        #[test]
-                        fn rejects_assigning_real_to_integer_variable() {
-                            let source = r#"
-                    MODULE Main;
-                    VAR src: REAL;
-                    VAR x: INTEGER;
-                    BEGIN
-                      x := src
-                    END Main.
-                    "#;
-
-                            let err = semantic_error(source);
-                            match err {
-                                SemanticError::TypeMismatch { detail } => {
-                                    assert!(detail.contains("cannot assign REAL to INTEGER 'x'"));
-                                }
-                                other => panic!("expected TypeMismatch, got {other:?}"),
-                            }
-                        }
-
-                        #[test]
-                        fn rejects_non_numeric_boolean_arithmetic() {
-                            let source = r#"
-                    MODULE Main;
-                    VAR flag: BOOLEAN;
-                    VAR x: INTEGER;
-                    BEGIN
-                      x := flag + 1
-                    END Main.
-                    "#;
-
-                            let err = semantic_error(source);
-                            match err {
-                                SemanticError::TypeMismatch { detail } => {
-                                    assert!(detail.contains("arithmetic expressions require numeric operands"));
-                                }
-                                other => panic!("expected TypeMismatch, got {other:?}"),
-                            }
-                        }
-
-                        #[test]
-                        fn rejects_parameter_type_mismatch_for_non_var_argument() {
-                            let source = r#"
-                    MODULE Main;
-                    VAR x: REAL;
-                    PROCEDURE UseInt(value: INTEGER);
-                    BEGIN
-                    END UseInt;
-                    BEGIN
-                      UseInt(x)
-                    END Main.
-                    "#;
-
-                            let err = semantic_error(source);
-                            match err {
-                                SemanticError::TypeMismatch { detail } => {
-                                    assert!(detail.contains("parameter 'value' expects INTEGER, got REAL"));
-                                }
-                                other => panic!("expected TypeMismatch, got {other:?}"),
-                            }
-                        }
-
-                #[test]
-                fn accepts_readint_call_expression_in_assignment() {
-                        let source = r#"
-        MODULE Main;
-        VAR x;
-        BEGIN
-            x := ReadInt()
-        END Main.
-        "#;
-
-                        let module = parse_module(source).expect("source should parse");
-                        analyze(&module, None).expect("ReadInt call expression should pass semantic analysis");
-                }
-
-                #[test]
-                fn accepts_eof_call_expression_in_if_condition() {
-                        let source = r#"
-        MODULE Main;
-        BEGIN
-            IF EOF() THEN
-                WriteLn()
-            END
-        END Main.
-        "#;
-
-                        let module = parse_module(source).expect("source should parse");
-                        analyze(&module, None).expect("EOF call expression should pass semantic analysis");
-                }
-
-                #[test]
-                fn rejects_readint_as_statement_call() {
-                        let source = r#"
-        MODULE Main;
-        BEGIN
-            ReadInt()
-        END Main.
-        "#;
-
-                        let err = semantic_error(source);
-                        match err {
-                                SemanticError::InvalidBuiltinArgument { name, detail } => {
-                                        assert_eq!(name, "ReadInt");
-                                        assert!(detail.contains("must be used as a call expression"));
-                                }
-                                other => panic!("expected InvalidBuiltinArgument, got {other:?}"),
-                        }
-                }
-
-                #[test]
-                fn rejects_call_expression_for_non_function_builtin() {
-                        let source = r#"
-        MODULE Main;
-        VAR x;
-        BEGIN
-            x := WriteInt(1)
-        END Main.
-        "#;
-
-                        let err = semantic_error(source);
-                        match err {
-                                SemanticError::InvalidBuiltinArgument { name, detail } => {
-                                        assert_eq!(name, "WriteInt");
-                                        assert!(detail.contains("currently support only ReadInt() and EOF()"));
-                                }
-                                other => panic!("expected InvalidBuiltinArgument, got {other:?}"),
-                        }
-                }
+        }
 }
