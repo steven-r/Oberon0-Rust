@@ -6,6 +6,19 @@
   "baseBranches": [
     "dev"
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)examples/.*\\/oberon\\.toml$/",
+        "/(^|/)tests/.*\\/oberon\\.toml$/"
+      ],
+      "matchStrings": [
+        "(?<depName>\\w+)\\s*=\\s*\\{[^\\n}]*crate\\s*=\\s*\"(?<packageName>[^\"]+)\"[^\\n}]*version\\s*=\\s*\"(?<currentValue>[^\"]+)\"[^\\n}]*\\}"
+      ],
+      "datasourceTemplate": "crate"
+    }
+  ],
   "dependencyDashboard": true,
   "vulnerabilityAlerts": {
     "enabled": true,
