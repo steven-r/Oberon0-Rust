@@ -62,6 +62,16 @@ pub enum Token {
     Star,
     #[token("/")]
     Slash,
+    #[token("#")]
+    Hash,
+    #[token("<=")]
+    LessEqual,
+    #[token("<")]
+    Less,
+    #[token(">=")]
+    GreaterEqual,
+    #[token(">")]
+    Greater,
     #[token("&")]
     Ampersand,
     #[token("~")]
@@ -158,7 +168,7 @@ mod tests {
 
     #[test]
     fn scans_extended_operator_tokens() {
-        let source = "MODULE Main; BEGIN x := +a - ~b OR c DIV 2 MOD 3 & d / 4 * 5; END Main.";
+        let source = "MODULE Main; BEGIN x := +a - ~b OR c DIV 2 MOD 3 & d / 4 * 5; IF x # 0 THEN x := (x <= 10) + (x >= 1) + (x < 11) + (x > 0) END; END Main.";
         let tokens = scan(source).expect("scanner should accept extended operator syntax");
 
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwOr)));
@@ -168,6 +178,11 @@ mod tests {
         assert!(tokens.iter().any(|t| matches!(t.token, Token::Tilde)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::Plus)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::Minus)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Hash)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::LessEqual)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::GreaterEqual)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Less)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Greater)));
     }
 
     #[test]

@@ -386,6 +386,36 @@ fn infer_expr_type(
                                 Ok(Some(TypeRef::Integer))
                             }
                         }
+                        BinaryOp::Eq | BinaryOp::Ne => {
+                            let both_numeric =
+                                is_numeric_type(&left_type) && is_numeric_type(&right_type);
+                            let both_boolean =
+                                left_type == TypeRef::Boolean && right_type == TypeRef::Boolean;
+                            if !both_numeric && !both_boolean {
+                                return Err(SemanticError::TypeMismatch {
+                                    detail: format!(
+                                        "equality operators require matching numeric or BOOLEAN operands, got {} and {}",
+                                        format_type_name(&left_type),
+                                        format_type_name(&right_type)
+                                    ),
+                                }
+                                .into());
+                            }
+                            Ok(Some(TypeRef::Boolean))
+                        }
+                        BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+                            if !is_numeric_type(&left_type) || !is_numeric_type(&right_type) {
+                                return Err(SemanticError::TypeMismatch {
+                                    detail: format!(
+                                        "ordering relational operators require numeric operands, got {} and {}",
+                                        format_type_name(&left_type),
+                                        format_type_name(&right_type)
+                                    ),
+                                }
+                                .into());
+                            }
+                            Ok(Some(TypeRef::Boolean))
+                        }
                     }
                 }
                 _ => Ok(None),
@@ -934,6 +964,30 @@ BEGIN
 END Main.
 "#,
                         },
+                        SuccessCase {
+                                name: "relational operators with numeric operands",
+                                source: r#"
+MODULE Main;
+VAR b1: BOOLEAN;
+VAR b2: BOOLEAN;
+BEGIN
+    b1 := (1 + 2) = 3;
+    b2 := (4 # 5) & (2 <= 2) OR (3 > 2)
+END Main.
+"#,
+                        },
+                        SuccessCase {
+                                name: "boolean equality and inequality",
+                                source: r#"
+MODULE Main;
+VAR b1: BOOLEAN;
+VAR b2: BOOLEAN;
+BEGIN
+    b1 := b1 = b2;
+    b2 := b1 # b2
+END Main.
+"#,
+                        },
                 ];
 
                 for case in cases {
@@ -1246,6 +1300,19 @@ END Main.
                 code: "E012",
                 message_contains: &["operator '~' requires BOOLEAN operand"],
             },
+            ErrorCase {
+                name: "relational requires numeric operands",
+                source: r#"
+MODULE Main;
+VAR b1: BOOLEAN;
+VAR b2: BOOLEAN;
+BEGIN
+    b1 := b1 < b2
+END Main.
+"#,
+                code: "E012",
+                message_contains: &["ordering relational operators require numeric operands"],
+            },
                 ];
 
                 for case in cases {
@@ -1263,4 +1330,180 @@ END Main.
                         }
                 }
         }
+
+    #[derive(Clone, Copy)]
+    enum ScalarType {
+        Integer,
+        Real,
+        LongReal,
+        Boolean,
+    }
+
+    impl ScalarType {
+        fn name(self) -> &'static str {
+            match self {
+                ScalarType::Integer => "INTEGER",
+                ScalarType::Real => "REAL",
+                ScalarType::LongReal => "LONGREAL",
+                ScalarType::Boolean => "BOOLEAN",
+            }
+        }
+
+        fn var_name(self) -> &'static str {
+            match self {
+                ScalarType::Integer => "i",
+                ScalarType::Real => "r",
+                ScalarType::LongReal => "lr",
+                ScalarType::Boolean => "b",
+            }
+        }
+
+        fn is_numeric(self) -> bool {
+            matches!(self, ScalarType::Integer | ScalarType::Real | ScalarType::LongReal)
+        }
+    }
+
+    fn arithmetic_result_type(lhs: ScalarType, rhs: ScalarType) -> ScalarType {
+        if matches!(lhs, ScalarType::LongReal) || matches!(rhs, ScalarType::LongReal) {
+            ScalarType::LongReal
+        } else if matches!(lhs, ScalarType::Real) || matches!(rhs, ScalarType::Real) {
+            ScalarType::Real
+        } else {
+            ScalarType::Integer
+        }
+    }
+
+    fn matrix_source(result_type: ScalarType, expr: &str) -> String {
+        format!(
+            "MODULE Main;\nVAR i: INTEGER;\nVAR r: REAL;\nVAR lr: LONGREAL;\nVAR b: BOOLEAN;\nVAR out: {};\nBEGIN\n  out := {}\nEND Main.\n",
+            result_type.name(),
+            expr
+        )
+    }
+
+    #[test]
+    fn semantic_operator_type_matrix_is_fully_covered() {
+        let all_types = [
+            ScalarType::Integer,
+            ScalarType::Real,
+            ScalarType::LongReal,
+            ScalarType::Boolean,
+        ];
+
+        for operand in all_types {
+            let expr = format!("+{}", operand.var_name());
+            let source = matrix_source(operand, &expr);
+            let result = analyze(&parse_module(&source).expect("matrix unary + should parse"), None);
+            assert_eq!(
+                result.is_ok(),
+                operand.is_numeric(),
+                "unary '+' compatibility mismatch for {}",
+                operand.name()
+            );
+        }
+
+        for operand in all_types {
+            let expr = format!("-{}", operand.var_name());
+            let source = matrix_source(operand, &expr);
+            let result = analyze(&parse_module(&source).expect("matrix unary - should parse"), None);
+            assert_eq!(
+                result.is_ok(),
+                operand.is_numeric(),
+                "unary '-' compatibility mismatch for {}",
+                operand.name()
+            );
+        }
+
+        for operand in all_types {
+            let expr = format!("~{}", operand.var_name());
+            let source = matrix_source(ScalarType::Boolean, &expr);
+            let result = analyze(&parse_module(&source).expect("matrix unary ~ should parse"), None);
+            assert_eq!(
+                result.is_ok(),
+                matches!(operand, ScalarType::Boolean),
+                "unary '~' compatibility mismatch for {}",
+                operand.name()
+            );
+        }
+
+        for lhs in all_types {
+            for rhs in all_types {
+                let lhs_name = lhs.var_name();
+                let rhs_name = rhs.var_name();
+                let both_numeric = lhs.is_numeric() && rhs.is_numeric();
+
+                for op in ["+", "-", "*", "/"] {
+                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
+                    let source = matrix_source(arithmetic_result_type(lhs, rhs), &expr);
+                    let result = analyze(&parse_module(&source).expect("matrix arithmetic should parse"), None);
+                    assert_eq!(
+                        result.is_ok(),
+                        both_numeric,
+                        "arithmetic compatibility mismatch for {} {} {}",
+                        lhs.name(),
+                        op,
+                        rhs.name()
+                    );
+                }
+
+                for op in ["DIV", "MOD"] {
+                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
+                    let source = matrix_source(ScalarType::Integer, &expr);
+                    let result = analyze(&parse_module(&source).expect("matrix integer arithmetic should parse"), None);
+                    assert_eq!(
+                        result.is_ok(),
+                        matches!(lhs, ScalarType::Integer) && matches!(rhs, ScalarType::Integer),
+                        "{} compatibility mismatch for {} and {}",
+                        op,
+                        lhs.name(),
+                        rhs.name()
+                    );
+                }
+
+                for op in ["OR", "&"] {
+                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
+                    let source = matrix_source(ScalarType::Boolean, &expr);
+                    let result = analyze(&parse_module(&source).expect("matrix boolean op should parse"), None);
+                    assert_eq!(
+                        result.is_ok(),
+                        matches!(lhs, ScalarType::Boolean) && matches!(rhs, ScalarType::Boolean),
+                        "{} compatibility mismatch for {} and {}",
+                        op,
+                        lhs.name(),
+                        rhs.name()
+                    );
+                }
+
+                for op in ["=", "#"] {
+                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
+                    let source = matrix_source(ScalarType::Boolean, &expr);
+                    let result = analyze(&parse_module(&source).expect("matrix equality op should parse"), None);
+                    let expected = (lhs.is_numeric() && rhs.is_numeric())
+                        || (matches!(lhs, ScalarType::Boolean) && matches!(rhs, ScalarType::Boolean));
+                    assert_eq!(
+                        result.is_ok(),
+                        expected,
+                        "{} compatibility mismatch for {} and {}",
+                        op,
+                        lhs.name(),
+                        rhs.name()
+                    );
+                }
+
+                for op in ["<", "<=", ">", ">="] {
+                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
+                    let source = matrix_source(ScalarType::Boolean, &expr);
+                    let result = analyze(&parse_module(&source).expect("matrix ordering op should parse"), None);
+                    assert_eq!(
+                        result.is_ok(),
+                        both_numeric,
+                        "{} compatibility mismatch for {} and {}",
+                        op,
+                        lhs.name(),
+                        rhs.name()
+                    );
+                }
+            }
+        }
+    }
 }

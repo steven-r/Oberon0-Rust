@@ -702,6 +702,12 @@ fn format_binary_expr(op: BinaryOp, left: &str, right: &str, wrap: bool) -> Stri
         BinaryOp::IntDiv => format!("{} / {}", left, right),
         BinaryOp::Mod => format!("{} % {}", left, right),
         BinaryOp::And => format!("(({} != 0 && {} != 0) as i64)", left, right),
+        BinaryOp::Eq => format!("(({} == {}) as i64)", left, right),
+        BinaryOp::Ne => format!("(({} != {}) as i64)", left, right),
+        BinaryOp::Lt => format!("(({} < {}) as i64)", left, right),
+        BinaryOp::Le => format!("(({} <= {}) as i64)", left, right),
+        BinaryOp::Gt => format!("(({} > {}) as i64)", left, right),
+        BinaryOp::Ge => format!("(({} >= {}) as i64)", left, right),
     };
 
     if wrap {

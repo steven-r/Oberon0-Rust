@@ -359,9 +359,25 @@ fn parse_arg_list(arg_list: Pair<Rule>) -> Result<Vec<Expr>> {
 
 fn parse_expr(expr: Pair<Rule>) -> Result<Expr> {
     let mut inner = expr.into_inner();
+    let left = parse_simple_expr(inner.next().context("Empty expression")?)?;
+
+    if let Some(op) = inner.next() {
+        let right = parse_simple_expr(inner.next().context("Missing right relational operand")?)?;
+        Ok(Expr::Binary {
+            op: parse_rel_op(op)?,
+            left: Box::new(left),
+            right: Box::new(right),
+        })
+    } else {
+        Ok(left)
+    }
+}
+
+fn parse_simple_expr(expr: Pair<Rule>) -> Result<Expr> {
+    let mut inner = expr.into_inner();
     let mut unary_sign = None;
 
-    let mut next = inner.next().context("Empty expression")?;
+    let mut next = inner.next().context("Empty simple expression")?;
     if next.as_rule() == Rule::unary_sign {
         unary_sign = Some(parse_unary_sign(next)?);
         next = inner
@@ -493,6 +509,18 @@ fn parse_mul_op(op: Pair<Rule>) -> Result<BinaryOp> {
     }
 }
 
+fn parse_rel_op(op: Pair<Rule>) -> Result<BinaryOp> {
+    match op.as_str() {
+        "=" => Ok(BinaryOp::Eq),
+        "#" => Ok(BinaryOp::Ne),
+        "<" => Ok(BinaryOp::Lt),
+        "<=" => Ok(BinaryOp::Le),
+        ">" => Ok(BinaryOp::Gt),
+        ">=" => Ok(BinaryOp::Ge),
+        other => bail!("Unknown relational operator: {}", other),
+    }
+}
+
 fn parse_unary_sign(op: Pair<Rule>) -> Result<UnaryOp> {
     match op.as_str() {
         "+" => Ok(UnaryOp::Plus),
@@ -587,6 +615,9 @@ mod tests {
             "operator_not_missing_operand.ob0" => {
                 replace_required(source, "flag := ~", "flag := ~flag")
             }
+            "relational_missing_rhs.ob0" => {
+                replace_required(source, "b := 1 =", "b := 1 = 1")
+            }
             "procedure_missing_semicolon.ob0" => {
                 replace_required(source, "PROCEDURE P(x)\nBEGIN", "PROCEDURE P(x);\nBEGIN")
             }
@@ -614,6 +645,9 @@ mod tests {
             "operator_or_requires_boolean.ob0" => replace_required(source, "b := 1 OR 0", "b := b OR b"),
             "operator_unary_sign_requires_numeric.ob0" => {
                 replace_required(source, "x := +flag", "x := +1")
+            }
+            "relational_requires_numeric.ob0" => {
+                replace_required(source, "b1 := b1 < b2", "b1 := 1 < 1")
             }
             "procedure_call_arity_mismatch.ob0" => replace_required(source, "AddAndPrint(2)", "AddAndPrint(2, 3)"),
             "procedure_end_name_mismatch.ob0" => replace_required(source, "END WrongName;", "END Echo;"),
@@ -871,5 +905,43 @@ END Main.
         assert!(matches!(op, BinaryOp::And));
         assert!(matches!(left.as_ref(), Expr::Unary { op: UnaryOp::Not, .. }));
         assert!(matches!(right.as_ref(), Expr::Binary { op: BinaryOp::Or, .. }));
+    }
+
+    #[test]
+    fn parses_relational_operator_expression_tree() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+VAR b: BOOLEAN;
+BEGIN
+  b := (1 + 2) = 3;
+  b := 4 # 5;
+  b := 1 < 2;
+  b := 2 <= 2;
+  b := 3 > 2;
+  b := 3 >= 3
+END Main.
+"#,
+        )
+        .expect("relational operators program should parse");
+
+        let expected_ops = [
+            BinaryOp::Eq,
+            BinaryOp::Ne,
+            BinaryOp::Lt,
+            BinaryOp::Le,
+            BinaryOp::Gt,
+            BinaryOp::Ge,
+        ];
+
+        for (stmt, expected_op) in module.statements.iter().zip(expected_ops.iter()) {
+            let Statement::Assign { value, .. } = stmt else {
+                panic!("expected assignment statement");
+            };
+            let Expr::Binary { op, .. } = value else {
+                panic!("expected relational binary expression");
+            };
+            assert!(std::mem::discriminant(op) == std::mem::discriminant(expected_op));
+        }
     }
 }

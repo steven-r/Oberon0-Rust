@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - keep built-in scalar names reserved while allowing procedure parameters to shadow user-defined module-scope type names, except in declarations like `Count: Count` (no dedicated issue)
 - add optional procedure-local `VAR` sections before `BEGIN` and carry those local bindings through semantic analysis and lowering (no dedicated issue)
 - add Oberon operator support for `DIV`, `MOD`, `OR`, `&`, unary `~`, and unary signs in scanner, parser, semantic analysis, lowering, and code generation (#18)
+- add relational operators (`=`, `#`, `<`, `<=`, `>`, `>=`) across grammar, parser, semantic analysis, and code generation (#19)
 
 ### Documentation
 
@@ -28,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - add semantic coverage for user-defined type-name shadowing by parameters while rejecting built-in shadowing and `Count: Count` self-shadowing declarations (no dedicated issue)
 - add semantic and lowering coverage for procedure-local `VAR` declarations, including local shadowing constraints for built-in and user-defined type names (no dedicated issue)
 - add parser and semantic valid/invalid corpus coverage for extended operators, including dedicated single-fault repairs for new invalid cases (#18)
+- add parser/semantic/codegen coverage for relational operators, including invalid numeric-operand diagnostics and parser invalid repair cases (#19)
 
 ### Build
 

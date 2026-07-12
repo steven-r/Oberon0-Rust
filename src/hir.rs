@@ -130,7 +130,7 @@ pub enum HExpr {
         op: UnaryOp,
         value: Box<HExpr>,
     },
-    /// Binary arithmetic expression.
+    /// Binary expression.
     Binary {
         op: BinaryOp,
         left: Box<HExpr>,

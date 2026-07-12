@@ -259,7 +259,7 @@ The current compiler supports the Milestone A subset:
   - `IF ... THEN ... [ELSE ...] END`
   - `WHILE ... DO ... END`
 - Expressions with integer literals, identifiers, and parentheses
-- Operators: `+`, `-`, unary `+`, unary `-`, `*`, `/`, `DIV`, `MOD`, `OR`, `&`, unary `~`
+- Operators: `+`, `-`, unary `+`, unary `-`, `*`, `/`, `DIV`, `MOD`, `OR`, `&`, unary `~`, `=`, `#`, `<`, `<=`, `>`, `>=`
 
 Focused typed-declaration example:
 
@@ -268,6 +268,7 @@ Focused typed-declaration example:
 Detailed subset and planning documents:
 
 - docs/oberon0-v1-subset.md
+- docs/operator-type-compatibility-matrix.md
 - docs/milestone-a-backlog.md
 - docs/milestone-b-roadmap.md
 - docs/milestone-b-issue-backlog.md

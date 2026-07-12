@@ -33,9 +33,11 @@ while_stmt = { "WHILE" ~ expr ~ "DO" ~ stmt_list? ~ "END" }
 arg_list = { expr ~ ("," ~ expr)* }
 call_expr = { ident ~ "(" ~ arg_list? ~ ")" }
 
-expr = { unary_sign? ~ term ~ (add_op ~ term)* }
+expr = { simple_expr ~ (rel_op ~ simple_expr)? }
+simple_expr = { unary_sign? ~ term ~ (add_op ~ term)* }
 unary_sign = { "+" | "-" }
 add_op = { "+" | "-" | "OR" }
+rel_op = { "=" | "#" | "<=" | "<" | ">=" | ">" }
 term = { factor ~ (mul_op ~ factor)* }
 mul_op = { "*" | "/" | "DIV" | "MOD" | "&" }
 factor = { not_factor | primary_factor }

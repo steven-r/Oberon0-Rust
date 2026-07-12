@@ -1,0 +1,7 @@
+(* INVALID: ordering relational operators require numeric operands, BOOLEAN is not allowed *)
+MODULE Main;
+VAR b1: BOOLEAN;
+VAR b2: BOOLEAN;
+BEGIN
+  b1 := b1 < b2
+END Main.

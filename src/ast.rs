@@ -128,7 +128,7 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone, Copy)]
-/// Supported arithmetic operators in the MVP grammar.
+/// Supported binary operators in the current subset grammar.
 pub enum BinaryOp {
     Add,
     Sub,
@@ -138,6 +138,12 @@ pub enum BinaryOp {
     IntDiv,
     Mod,
     And,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 #[derive(Debug, Clone, Copy)]
