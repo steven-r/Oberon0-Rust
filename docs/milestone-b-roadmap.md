@@ -2,6 +2,10 @@
 
 This roadmap defines the next implementation phase after the completed Milestone A subset.
 
+Reference alignment snapshot:
+
+1. docs/wirth-page63-alignment-matrix.md
+
 Milestone B has two goals:
 
 1. Extend the language in ways that open a real path toward Oberon-style data modeling.
@@ -152,3 +156,40 @@ Definition of done:
 5. B7
 6. B5
 7. B6
+
+## Prioritized issue order (language-complete target)
+
+This priority list aligns implementation risk, dependency flow, and page-63 language coverage.
+
+Priority 0 (already done or in-progress baseline):
+
+1. #12 (`WriteLn`) and #13 (`ReadInt`/`EOF`) to complete the minimum IO baseline.
+
+Priority 1 (type system foundation):
+
+1. #5 (`TYPE` + typed `VAR` declarations)
+2. #6 (type information in symbols/HIR)
+3. #17 (builtin scalar types: `BOOLEAN`, `REAL`, `LONGREAL`)
+4. #22 (typed formal parameters with optional `VAR` mode)
+
+Priority 2 (expression and control-flow completeness):
+
+1. #18 (operators `DIV`, `MOD`, `&`, `OR`, unary `~`, unary sign)
+2. #19 (relational operators)
+3. #20 (`ELSIF`)
+4. #21 (`REPEAT ... UNTIL`)
+
+Priority 3 (structured data model):
+
+1. #7 (array type declarations)
+2. #8 (indexed designators)
+3. #9 (record type declarations)
+4. #10 (field-selection designators)
+5. #11 (type-checking consolidation)
+
+Priority 4 (IO and grammar parity refinements):
+
+1. #23 (`WriteChar`, `OpenInput`)
+2. #24 (`WriteInt(x, n)` width parameter)
+3. #25 (optional module `BEGIN`)
+4. #26 (`ProcedureCall ... "*"` form decision/implementation)

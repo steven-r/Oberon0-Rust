@@ -4,6 +4,17 @@ A minimal Oberon0 compiler prototype written in Rust.
 
 Compiler binary name: `oberon0c`.
 
+## Language reference baseline
+
+This project uses Niklaus Wirth's Compiler Construction books as the primary language-reference baseline for Oberon-0 grammar and staged compiler design:
+
+1. [Compiler Construction 1 (PDF)](https://people.inf.ethz.ch/wirth/CompilerConstruction/CompilerConstruction1.pdf)
+2. [Compiler Construction 2 (PDF)](https://people.inf.ethz.ch/wirth/CompilerConstruction/CompilerConstruction2.pdf)
+
+The concrete repository-level alignment snapshot is tracked in:
+
+- docs/wirth-page63-alignment-matrix.md
+
 ## AI-assisted development
 
 Large parts of this compiler were built with help from GitHub Copilot (GPT-5.3-Codex).
