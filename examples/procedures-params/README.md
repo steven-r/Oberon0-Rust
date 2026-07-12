@@ -1,10 +1,10 @@
 # Procedures with Parameters
 
-This example demonstrates user-defined procedure declarations and calls:
+This example demonstrates procedure-scope shadowing and state inspection:
 
-- procedure declaration with parameter list
-- arithmetic inside procedure body
-- procedure call with matching arity
+- module variable declaration
+- procedure parameter that shadows the module variable with the same name
+- different runtime values for module and procedure scope
 
 ## Source
 
@@ -13,11 +13,18 @@ This example demonstrates user-defined procedure declarations and calls:
 ## Run
 
 ```bash
-scripts/oberon0 examples/procedures-params --run
+scripts/oberon0 examples/procedures-params --emit-state --run
 ```
 
 ## Expected output
 
 ```text
+42
 7
+State: {"Show.x": 42, "x": 7}
 ```
+
+The final state shows both bindings separately:
+
+- `x` is the module variable
+- `Show.x` is the procedure parameter that shadows it inside `Show`

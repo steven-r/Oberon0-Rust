@@ -64,6 +64,10 @@ impl Resolver {
 pub fn lower_module(module: &Module) -> Result<HModule> {
     let mut resolver = Resolver::new();
     resolver.declare("WriteInt", SymbolKind::Procedure)?;
+    resolver.declare("WriteString", SymbolKind::Procedure)?;
+    resolver.declare("WriteLn", SymbolKind::Procedure)?;
+    resolver.declare("ReadInt", SymbolKind::Procedure)?;
+    resolver.declare("EOF", SymbolKind::Procedure)?;
 
     let imports = module
         .imports
@@ -250,11 +254,25 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
 fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
     match expr {
         Expr::Integer(value) => Ok(HExpr::Integer(*value)),
+        Expr::String(value) => Ok(HExpr::String(value.clone())),
         Expr::Variable(name) => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown identifier '{}'.", name))?;
             Ok(HExpr::Name(resolved))
+        }
+        Expr::Call { name, args } => {
+            let resolved = resolver
+                .resolve(name)
+                .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;
+            let lowered_args = args
+                .iter()
+                .map(|arg| lower_expr(arg, resolver))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(HExpr::Call {
+                name: resolved,
+                args: lowered_args,
+            })
         }
         Expr::Binary { op, left, right } => Ok(HExpr::Binary {
             op: *op,

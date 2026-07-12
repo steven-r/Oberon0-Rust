@@ -323,10 +323,28 @@ fn parse_factor(factor: Pair<Rule>) -> Result<Expr> {
                 .with_context(|| format!("Invalid integer: {}", inner.as_str()))?;
             Ok(Expr::Integer(value))
         }
+        Rule::string => Ok(Expr::String(parse_pascal_string(inner.as_str())?)),
+        Rule::call_expr => {
+            let mut parts = inner.into_inner();
+            let name = take_ident(parts.next(), "call expression name")?;
+            let args = match parts.next() {
+                Some(arg_list) => parse_arg_list(arg_list)?,
+                None => Vec::new(),
+            };
+            Ok(Expr::Call { name, args })
+        }
         Rule::ident => Ok(Expr::Variable(inner.as_str().to_string())),
         Rule::expr => parse_expr(inner),
         _ => bail!("Unknown factor: {:?}", inner.as_rule()),
     }
+}
+
+fn parse_pascal_string(raw: &str) -> Result<String> {
+    if raw.len() < 2 || !raw.starts_with('"') || !raw.ends_with('"') {
+        bail!("String literal is malformed: {}", raw);
+    }
+
+    Ok(raw[1..raw.len() - 1].replace("\"\"", "\""))
 }
 
 fn parse_add_op(op: Pair<Rule>) -> Result<BinaryOp> {
@@ -359,6 +377,8 @@ mod tests {
     use std::path::Path;
 
     use super::parse_module;
+    use crate::ast::{Expr, Statement};
+    use crate::manifest::ExternalManifest;
     use crate::scanner::scan;
     use crate::semantic::analyze;
 
@@ -431,5 +451,67 @@ mod tests {
                 "expected semantic failure for {name}, but analysis succeeded"
             );
         }
+    }
+
+    #[test]
+    fn all_examples_parse_and_analyze() {
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
+
+        for entry in fs::read_dir(&base).expect("failed to read examples directory") {
+            let entry = entry.expect("failed to read examples directory entry");
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+
+            let name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .expect("example directory name should be valid utf-8")
+                .to_string();
+            let source_path = path.join("src").join("Main.ob0");
+            if !source_path.is_file() {
+                continue;
+            }
+
+            let source = fs::read_to_string(&source_path)
+                .unwrap_or_else(|err| panic!("failed to read example source for {name}: {err}"));
+            scan(&source)
+                .unwrap_or_else(|err| panic!("example {name} should scan successfully: {err}"));
+            let module = parse_module(&source)
+                .unwrap_or_else(|err| panic!("example {name} should parse successfully: {err}"));
+
+            let manifest_path = path.join("oberon.toml");
+            let manifest = if manifest_path.is_file() {
+                Some(
+                    ExternalManifest::from_file(&manifest_path)
+                        .unwrap_or_else(|err| panic!("example {name} manifest should load: {err:#}")),
+                )
+            } else {
+                None
+            };
+
+            analyze(&module, manifest.as_ref())
+                .unwrap_or_else(|err| panic!("example {name} should pass semantic analysis: {err}"));
+        }
+    }
+
+    #[test]
+    fn parses_pascal_style_string_literal_argument() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+BEGIN
+  WriteString("Hello, ""Oberon""")
+END Main.
+"#,
+        )
+        .expect("string literal program should parse");
+
+        let Statement::Call { args, .. } = &module.statements[0] else {
+            panic!("expected top-level call statement");
+        };
+
+        assert!(matches!(args.first(), Some(Expr::String(value)) if value == "Hello, \"Oberon\""));
     }
 }

@@ -1,0 +1,12 @@
+MODULE Main;
+VAR hasInput;
+BEGIN
+  IF EOF() THEN
+    hasInput := 0
+  ELSE
+    hasInput := 1
+  END;
+
+  WriteInt(hasInput);
+  WriteLn()
+END Main.

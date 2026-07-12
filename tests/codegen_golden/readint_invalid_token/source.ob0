@@ -1,0 +1,6 @@
+MODULE Main;
+VAR x;
+BEGIN
+  x := ReadInt();
+  WriteInt(x)
+END Main.

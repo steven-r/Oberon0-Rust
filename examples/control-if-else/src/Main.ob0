@@ -3,8 +3,10 @@ VAR x;
 BEGIN
   x := 4;
   IF x - 4 THEN
-    WriteInt(1)
+    WriteInt(1);
+    WriteLn()
   ELSE
-    WriteInt(0)
+    WriteInt(0);
+    WriteLn()
   END
 END Main.

@@ -4,6 +4,17 @@ A minimal Oberon0 compiler prototype written in Rust.
 
 Compiler binary name: `oberon0c`.
 
+## Language reference baseline
+
+This project uses Niklaus Wirth's Compiler Construction books as the primary language-reference baseline for Oberon-0 grammar and staged compiler design:
+
+1. [Compiler Construction 1 (PDF)](https://people.inf.ethz.ch/wirth/CompilerConstruction/CompilerConstruction1.pdf)
+2. [Compiler Construction 2 (PDF)](https://people.inf.ethz.ch/wirth/CompilerConstruction/CompilerConstruction2.pdf)
+
+The concrete repository-level alignment snapshot is tracked in:
+
+- docs/wirth-page63-alignment-matrix.md
+
 ## AI-assisted development
 
 Large parts of this compiler were built with help from GitHub Copilot (GPT-5.3-Codex).
@@ -68,6 +79,13 @@ This repository uses:
 - Conventional Commits for commit messages
 - SemVer for versioning (`MAJOR.MINOR.PATCH`)
 - `pre-commit` hooks to enforce checks
+
+Project conventions and persistent team decisions are documented in:
+
+- docs/project-decisions.md
+- CONTRIBUTING.md
+- AGENTS.md
+- .github/copilot-instructions.md
 
 Set up hooks locally:
 
@@ -150,6 +168,10 @@ Compile from repository root:
 
         cargo run -- my-oberon-app/src/Main.ob0 --out-dir target/generated
 
+Force state output on for a one-off run without editing the manifest:
+
+    cargo run -- my-oberon-app/src/Main.ob0 --out-dir target/generated --emit-state
+
 This repository includes the same layout as a runnable example at:
 
     examples/hello-app/
@@ -198,6 +220,9 @@ Example `oberon.toml`:
     Math = { crate = "num-traits", version = "0.2" }
     IO = { crate = "termcolor", version = "1.4" }
 
+    [compiler]
+    emit_state = true
+
 Then your Oberon source can import those names:
 
     MODULE Main;
@@ -211,6 +236,8 @@ Notes:
 - `dependencies.<Name>` is the Oberon import name
 - `crate` is the Rust crate package name
 - `version` is passed into generated Cargo.toml
+- `compiler.emit_state = true` enables the generated `State: {...}` footer explicitly
+- `--emit-state` and `--no-emit-state` override the manifest for a single compiler run
 - Optional alias form in Oberon is supported: `IMPORT Local := External;`
 - See `examples/imports-manifest/` for a focused project example using this layout.
 
@@ -224,6 +251,7 @@ The current compiler supports the Milestone A subset:
   - `CONST` declarations
   - `VAR` declarations
   - `PROCEDURE` declarations with parameter lists
+- Procedure-local `VAR` declarations are not part of the current subset yet; procedure-scope shadowing examples therefore use parameters rather than local `VAR` blocks.
 - Statements:
   - assignment: `x := expr`
   - call: `Proc(...)` or `Proc`

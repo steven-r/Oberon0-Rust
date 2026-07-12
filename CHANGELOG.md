@@ -8,22 +8,28 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- enforce declarative symbol resolution for assignment targets in semantic analysis
-- enforce lowering invariant: assignment targets must already be resolved symbols
+- add Pascal-style string literals and `WriteString` builtin support across scanner, parser, semantic analysis, lowering, and code generation
+- add explicit state-output controls via `compiler.emit_state` in `oberon.toml` and one-shot CLI overrides (`--emit-state`, `--no-emit-state`)
+- extend generated runtime state output to include procedure-scope shadowing bindings under qualified keys (for example `Proc.x`)
+- enforce declarative assignment-target resolution in semantic analysis and keep the same invariant in lowering
+
+### Fixes
+
+- preserve module constant values during expression code generation
+- generate mutable Rust parameter bindings so reassigned Oberon0 procedure parameters compile correctly
 
 ### Documentation
 
-- add declarative semantics roadmap (D1-D6)
-- define declaration/scope/shadowing rules in language subset specification
+- document explicit state-output controls and current subset limits for procedure-local `VAR` declarations
+- add focused examples for manifest-backed imports and procedure-scope shadowing flows
+- expand language-planning documentation for declarative semantics and scope behavior
 
 ### Tests
 
-- add semantic regression for undeclared assignment target
-- add semantic invalid corpus case for undeclared assignment target
-- adapt semantic valid corpus to explicit declaration model
-- add lowering regression for unresolved assignment target invariant
-- assert stable E005 diagnostics for undeclared assignment target
-- align scanner keyword tokens with parser grammar for declaration/control-flow keywords
+- add parser and semantic corpus coverage for valid and invalid string literal cases
+- add codegen/runtime regressions for explicit state output control, shadowed bindings, and mutable reassigned procedure parameters
+- add end-to-end example coverage for string handling and new procedure-scope shadowing scenarios
+- strengthen declarative-scope regressions for undeclared assignment targets and stable `E005` diagnostics
 
 ### Chores
 

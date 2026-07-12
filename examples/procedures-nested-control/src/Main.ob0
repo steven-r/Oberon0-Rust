@@ -1,12 +1,15 @@
 MODULE Main;
+VAR current;
 PROCEDURE Countdown(start);
 BEGIN
   current := start;
   WHILE current DO
     IF current - 1 THEN
-      WriteInt(current)
+      WriteInt(current);
+      WriteLn()
     ELSE
-      WriteInt(100)
+      WriteInt(100);
+      WriteLn()
     END;
     current := current - 1
   END

@@ -12,6 +12,7 @@ pub fn generate_rust_project(
     module: &HModule,
     manifest: Option<&ExternalManifest>,
     out_root: &Path,
+    emit_state: bool,
 ) -> Result<PathBuf> {
     let project_dir = out_root.join(&module.name);
     let src_dir = project_dir.join("src");
@@ -19,7 +20,7 @@ pub fn generate_rust_project(
         .with_context(|| format!("Could not create directory: {}", src_dir.display()))?;
 
     let cargo_toml = generate_cargo_toml(module, manifest)?;
-    let main_rs = generate_main_rs(module);
+    let main_rs = generate_main_rs(module, emit_state);
 
     fs::write(project_dir.join("Cargo.toml"), cargo_toml)
         .with_context(|| format!("Could not write Cargo.toml: {}", project_dir.display()))?;
@@ -80,22 +81,96 @@ fn dependency_line(local_name: &str, binding: &CrateBinding) -> String {
     format!("{} = {{ {} }}", dep_name, fields.join(", "))
 }
 
-fn generate_main_rs(module: &HModule) -> String {
+fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     let mut out = String::new();
     let procedure_names = collect_procedure_names(module);
+    let module_constants = collect_module_constants(module);
+    let needs_module_state = statements_need_state_map(&module.statements, &procedure_names);
+    let tracks_procedure_state = emit_state && module_has_procedure_locals(module);
+    let needs_runtime_state = needs_module_state || tracks_procedure_state;
+    let show_state = emit_state && needs_runtime_state;
 
     out.push_str(&format!(
         "// Generated from Oberon0 module `{}`.\n",
         module.name
     ));
     out.push_str("// Comments preserve the mapping between Oberon0 names and generated Rust bindings.\n\n");
-    out.push_str("use std::collections::HashMap;\n\n");
+    out.push_str("use std::collections::BTreeMap;\n\n");
+    out.push_str("use std::io::Read;\n");
+    out.push_str("use std::sync::{Mutex, OnceLock};\n\n");
     out.push_str("/// Returns the current value of a module-level Oberon0 variable.\n");
     out.push_str("///\n");
     out.push_str("/// Generated programs keep module state in `vars`, keyed by the original Oberon0 name.\n");
     out.push_str("#[allow(dead_code)]\n");
-    out.push_str("fn get_var(vars: &HashMap<String, i64>, name: &str) -> i64 {\n");
+    out.push_str("fn get_var(vars: &BTreeMap<String, i64>, name: &str) -> i64 {\n");
     out.push_str("    *vars.get(name).unwrap_or(&0)\n");
+    out.push_str("}\n\n");
+
+    out.push_str("#[derive(Default)]\n");
+    out.push_str("struct InputState {\n");
+    out.push_str("    tokens: Vec<String>,\n");
+    out.push_str("    position: usize,\n");
+    out.push_str("    initialized: bool,\n");
+    out.push_str("}\n\n");
+
+    out.push_str("fn input_state() -> &'static Mutex<InputState> {\n");
+    out.push_str("    static STATE: OnceLock<Mutex<InputState>> = OnceLock::new();\n");
+    out.push_str("    STATE.get_or_init(|| Mutex::new(InputState::default()))\n");
+    out.push_str("}\n\n");
+
+    out.push_str("fn ensure_input_loaded(state: &mut InputState) {\n");
+    out.push_str("    if state.initialized {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("\n");
+    out.push_str("    let mut input = String::new();\n");
+    out.push_str("    std::io::stdin()\n");
+    out.push_str("        .read_to_string(&mut input)\n");
+    out.push_str("        .expect(\"Runtime IO error: failed to read stdin\");\n");
+    out.push_str("\n");
+    out.push_str("    state.tokens = input\n");
+    out.push_str("        .split_whitespace()\n");
+    out.push_str("        .map(|token| token.to_string())\n");
+    out.push_str("        .collect();\n");
+    out.push_str("    state.position = 0;\n");
+    out.push_str("    state.initialized = true;\n");
+    out.push_str("}\n\n");
+
+    out.push_str("fn read_int() -> i64 {\n");
+    out.push_str("    let mut state = input_state()\n");
+    out.push_str("        .lock()\n");
+    out.push_str("        .expect(\"Runtime IO error: input mutex poisoned\");\n");
+    out.push_str("    ensure_input_loaded(&mut state);\n");
+    out.push_str("\n");
+    out.push_str("    if state.position >= state.tokens.len() {\n");
+    out.push_str("        panic!(\"Runtime IO error: ReadInt() reached EOF\");\n");
+    out.push_str("    }\n");
+    out.push_str("\n");
+    out.push_str("    let token = state.tokens[state.position].clone();\n");
+    out.push_str("    state.position += 1;\n");
+    out.push_str("\n");
+    out.push_str("    token.parse::<i64>().unwrap_or_else(|err| {\n");
+    out.push_str("        panic!(\"Runtime IO error: ReadInt() failed to parse integer token '{}' ({})\", token, err)\n");
+    out.push_str("    })\n");
+    out.push_str("}\n\n");
+
+    out.push_str("fn eof() -> i64 {\n");
+    out.push_str("    let mut state = input_state()\n");
+    out.push_str("        .lock()\n");
+    out.push_str("        .expect(\"Runtime IO error: input mutex poisoned\");\n");
+    out.push_str("    ensure_input_loaded(&mut state);\n");
+    out.push_str("\n");
+    out.push_str("    if state.position >= state.tokens.len() {\n");
+    out.push_str("        1\n");
+    out.push_str("    } else {\n");
+    out.push_str("        0\n");
+    out.push_str("    }\n");
+    out.push_str("}\n\n");
+
+    out.push_str("/// Records the current value of a procedure-scoped Oberon0 variable.\n");
+    out.push_str("#[allow(dead_code)]\n");
+    out.push_str("fn set_procedure_var(vars: &mut BTreeMap<String, i64>, procedure: &str, name: &str, value: i64) {\n");
+    out.push_str("    vars.insert(format!(\"{}.{}\", procedure, name), value);\n");
     out.push_str("}\n\n");
 
     for declaration in &module.declarations {
@@ -112,7 +187,9 @@ fn generate_main_rs(module: &HModule) -> String {
                 params,
                 local_vars,
                 body,
+                &module_constants,
                 &procedure_names,
+                emit_state,
             ));
             out.push('\n');
         }
@@ -120,20 +197,29 @@ fn generate_main_rs(module: &HModule) -> String {
 
     out.push_str(&format!("/// Executes the Oberon0 module `{}`.\n", module.name));
     out.push_str("fn main() {\n");
-    out.push_str("    // Module-level Oberon0 variables live in this runtime state map.\n");
-    out.push_str("    let mut vars: HashMap<String, i64> = HashMap::new();\n");
+    if needs_runtime_state {
+        out.push_str("    // Runtime state keeps module variables and optional procedure-local snapshots.\n");
+        out.push_str("    let mut vars: BTreeMap<String, i64> = BTreeMap::new();\n");
+    }
 
     let main_ctx = FormatContext {
         locals: HashMap::new(),
+        constants: module_constants,
         procedures: &procedure_names,
-        vars_arg: "&mut vars",
+        vars_arg: if needs_runtime_state { "&mut vars" } else { "&mut BTreeMap::new()" },
+        procedure_name: None,
+        track_procedure_locals: false,
     };
 
     for stmt in &module.statements {
         out.push_str(&format_statement(stmt, "    ", &main_ctx));
     }
 
-    out.push_str("    println!(\"State: {:?}\", vars);\n");
+    if show_state {
+        out.push_str("    if !vars.is_empty() {\n");
+        out.push_str("        println!(\"State: {:?}\", vars);\n");
+        out.push_str("    }\n");
+    }
     out.push_str("}\n");
 
     out
@@ -141,8 +227,18 @@ fn generate_main_rs(module: &HModule) -> String {
 
 struct FormatContext<'a> {
     locals: HashMap<usize, String>,
+    constants: HashMap<usize, i64>,
     procedures: &'a HashSet<String>,
     vars_arg: &'a str,
+    procedure_name: Option<&'a str>,
+    track_procedure_locals: bool,
+}
+
+fn module_has_procedure_locals(module: &HModule) -> bool {
+    module.declarations.iter().any(|decl| match decl {
+        HDeclaration::Procedure { local_vars, .. } => !local_vars.is_empty(),
+        _ => false,
+    })
 }
 
 fn collect_procedure_names(module: &HModule) -> HashSet<String> {
@@ -156,29 +252,84 @@ fn collect_procedure_names(module: &HModule) -> HashSet<String> {
         .collect()
 }
 
+fn collect_module_constants(module: &HModule) -> HashMap<usize, i64> {
+    module
+        .declarations
+        .iter()
+        .filter_map(|decl| match decl {
+            HDeclaration::Const { id, value, .. } => Some((*id, *value)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn statements_need_state_map(stmts: &[HStatement], procedure_names: &HashSet<String>) -> bool {
+    stmts
+        .iter()
+        .any(|stmt| statement_needs_state_map(stmt, procedure_names))
+}
+
+fn statement_needs_state_map(stmt: &HStatement, procedure_names: &HashSet<String>) -> bool {
+    match stmt {
+        HStatement::Assign { .. } => true,
+        HStatement::Call { name, args } => {
+            procedure_names.contains(&name.name)
+                || args.iter().any(expr_needs_state_map)
+        }
+        HStatement::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            expr_needs_state_map(condition)
+                || statements_need_state_map(then_branch, procedure_names)
+                || else_branch
+                    .as_ref()
+                    .is_some_and(|branch| statements_need_state_map(branch, procedure_names))
+        }
+        HStatement::While { condition, body } => {
+            expr_needs_state_map(condition) || statements_need_state_map(body, procedure_names)
+        }
+    }
+}
+
+fn expr_needs_state_map(expr: &HExpr) -> bool {
+    match expr {
+        HExpr::Integer(_) | HExpr::String(_) => false,
+        HExpr::Name(ident) => ident.kind != crate::symbols::SymbolKind::Constant,
+        HExpr::Call { args, .. } => args.iter().any(expr_needs_state_map),
+        HExpr::Binary { left, right, .. } => expr_needs_state_map(left) || expr_needs_state_map(right),
+    }
+}
+
 fn format_procedure(
     name: &str,
     params: &[HParam],
     local_vars: &[HResolvedIdent],
     body: &[HStatement],
+    constants: &HashMap<usize, i64>,
     procedure_names: &HashSet<String>,
+    emit_state: bool,
 ) -> String {
     let mut out = String::new();
     let mut locals = HashMap::new();
 
     let mut signature_args = Vec::new();
-    signature_args.push("vars: &mut HashMap<String, i64>".to_string());
+    signature_args.push("vars: &mut BTreeMap<String, i64>".to_string());
 
     for param in params {
         let binding = format!("param_{}", param.id);
         locals.insert(param.id, binding.clone());
-        signature_args.push(format!("{}: i64", binding));
+        signature_args.push(format!("mut {}: i64", binding));
     }
 
     let ctx = FormatContext {
         locals,
+        constants: constants.clone(),
         procedures: procedure_names,
         vars_arg: "vars",
+        procedure_name: Some(name),
+        track_procedure_locals: emit_state,
     };
 
     out.push_str(&format!("/// Implements the Oberon0 procedure `{}`.\n", name));
@@ -196,12 +347,27 @@ fn format_procedure(
     out.push_str("#[allow(unused_variables)]\n");
     out.push_str(&format!("fn {}({}) {{\n", name, signature_args.join(", ")));
 
+    if emit_state {
+        for param in params {
+            out.push_str(&format!(
+                "    set_procedure_var(vars, \"{}\", \"{}\", param_{});\n",
+                name, param.name, param.id
+            ));
+        }
+    }
+
     for local in local_vars {
         out.push_str(&format!(
             "    // Local variable backing the Oberon0 `{}` binding.\n",
             local.name
         ));
         out.push_str(&format!("    let mut local_{}: i64 = 0;\n", local.id));
+        if emit_state {
+            out.push_str(&format!(
+                "    set_procedure_var(vars, \"{}\", \"{}\", local_{});\n",
+                name, local.name, local.id
+            ));
+        }
     }
 
     let mut procedure_ctx = ctx;
@@ -223,12 +389,22 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
     match stmt {
         HStatement::Assign { target, value } => {
             if let Some(binding) = ctx.locals.get(&target.id) {
-                format!(
+                let mut out = String::new();
+                out.push_str(&format!(
                     "{}{} = {};\n",
                     indent,
                     binding,
                     format_top_level_expr(value, ctx)
-                )
+                ));
+                if ctx.track_procedure_locals {
+                    if let Some(procedure_name) = ctx.procedure_name {
+                        out.push_str(&format!(
+                            "{}set_procedure_var(vars, \"{}\", \"{}\", {});\n",
+                            indent, procedure_name, target.name, binding
+                        ));
+                    }
+                }
+                out
             } else {
                 format!(
                     "{}vars.insert(\"{}\".to_string(), {});\n",
@@ -242,11 +418,22 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
             if name.name == "WriteInt" {
                 match args.first() {
                     Some(first) => format!(
-                        "{}println!(\"{{}}\", {});\n",
+                        "{}print!(\"{{}}\", {});\n",
                         indent,
                         format_top_level_expr(first, ctx)
                     ),
-                    None => format!("{}println!();\n", indent),
+                    None => format!("{}print!(\"\");\n", indent),
+                }
+            } else if name.name == "WriteLn" {
+                format!("{}println!();\n", indent)
+            } else if name.name == "WriteString" {
+                match args.first() {
+                    Some(first) => format!(
+                        "{}print!(\"{{}}\", {});\n",
+                        indent,
+                        format_top_level_expr(first, ctx)
+                    ),
+                    None => format!("{}print!(\"\");\n", indent),
                 }
             } else if ctx.procedures.contains(&name.name) {
                 let rendered_args = args
@@ -330,10 +517,31 @@ fn format_block(stmts: &[HStatement], indent: &str, ctx: &FormatContext<'_>) -> 
 fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
     match expr {
         HExpr::Integer(v) => v.to_string(),
-        HExpr::Name(ident) => match ctx.locals.get(&ident.id) {
-            Some(binding) => binding.clone(),
-            None => format!("get_var(&vars, \"{}\")", ident.name),
-        },
+        HExpr::String(value) => format!("{:?}", value),
+        HExpr::Name(ident) => {
+            if let Some(value) = ctx.constants.get(&ident.id) {
+                value.to_string()
+            } else {
+                match ctx.locals.get(&ident.id) {
+                    Some(binding) => binding.clone(),
+                    None => format!("get_var(&vars, \"{}\")", ident.name),
+                }
+            }
+        }
+        HExpr::Call { name, args } => {
+            if name.name == "ReadInt" {
+                "read_int()".to_string()
+            } else if name.name == "EOF" {
+                "eof()".to_string()
+            } else {
+                let rendered_args = args
+                    .iter()
+                    .map(|arg| format_expr(arg, ctx))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("/* unsupported call expr {}({}) */ 0", name.name, rendered_args)
+            }
+        }
         HExpr::Binary { op, left, right } => {
             let op_s = match op {
                 BinaryOp::Add => "+",
@@ -359,126 +567,6 @@ fn _validate_import_mapping(module: &HModule, manifest: &ExternalManifest) -> Re
     Ok(())
 }
 
+
 #[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use crate::ast::BinaryOp;
-    use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
-    use crate::manifest::{CrateBinding, ExternalManifest};
-    use crate::symbols::SymbolKind;
-
-    use super::{generate_cargo_toml, generate_main_rs};
-
-    fn ident(id: usize, name: &str, kind: SymbolKind) -> HResolvedIdent {
-        HResolvedIdent {
-            id,
-            name: name.to_string(),
-            kind,
-        }
-    }
-
-    #[test]
-    fn emits_procedure_function_and_call_from_main() {
-        let module = HModule {
-            name: "Main".to_string(),
-            end_name: "Main".to_string(),
-            imports: vec![],
-            declarations: vec![HDeclaration::Procedure {
-                id: 1,
-                name: "AddAndPrint".to_string(),
-                params: vec![HParam {
-                    id: 2,
-                    name: "a".to_string(),
-                }],
-                local_vars: vec![ident(3, "x", SymbolKind::Variable)],
-                body: vec![
-                    HStatement::Assign {
-                        target: ident(3, "x", SymbolKind::Variable),
-                        value: HExpr::Name(ident(2, "a", SymbolKind::Parameter)),
-                    },
-                    HStatement::Call {
-                        name: ident(4, "WriteInt", SymbolKind::Procedure),
-                        args: vec![HExpr::Name(ident(3, "x", SymbolKind::Variable))],
-                    },
-                ],
-                end_name: "AddAndPrint".to_string(),
-            }],
-            statements: vec![HStatement::Call {
-                name: ident(1, "AddAndPrint", SymbolKind::Procedure),
-                args: vec![HExpr::Integer(7)],
-            }],
-        };
-
-        let generated = generate_main_rs(&module);
-
-        assert!(generated.contains("// Generated from Oberon0 module `Main`."));
-        assert!(generated.contains("/// Returns the current value of a module-level Oberon0 variable."));
-        assert!(generated.contains("/// Implements the Oberon0 procedure `AddAndPrint`."));
-        assert!(generated.contains("/// - `param_2` corresponds to the Oberon0 parameter `a`."));
-        assert!(generated.contains("fn AddAndPrint(vars: &mut HashMap<String, i64>, param_2: i64)"));
-        assert!(generated.contains("// Local variable backing the Oberon0 `x` binding."));
-        assert!(generated.contains("let mut local_3: i64 = 0;"));
-        assert!(generated.contains("local_3 = param_2;"));
-        assert!(generated.contains("println!(\"{}\", local_3);"));
-        assert!(generated.contains("/// Executes the Oberon0 module `Main`."));
-        assert!(generated.contains("// Module-level Oberon0 variables live in this runtime state map."));
-        assert!(generated.contains("AddAndPrint(&mut vars, 7);"));
-    }
-
-    #[test]
-    fn emits_dependency_entries_with_package_and_features() {
-        let module = HModule {
-            name: "Main".to_string(),
-            end_name: "Main".to_string(),
-            imports: vec![HImportDecl {
-                local_name: "IO".to_string(),
-                external_name: "IO".to_string(),
-            }],
-            declarations: vec![],
-            statements: vec![],
-        };
-
-        let mut dependencies = BTreeMap::new();
-        dependencies.insert(
-            "IO".to_string(),
-            CrateBinding {
-                crate_name: "termcolor".to_string(),
-                version: "1.4".to_string(),
-                package: Some("termcolor".to_string()),
-                features: vec!["std".to_string()],
-            },
-        );
-        let manifest = ExternalManifest { dependencies };
-
-        let cargo_toml = generate_cargo_toml(&module, Some(&manifest))
-            .expect("cargo toml generation should succeed");
-
-        assert!(cargo_toml.contains("io = { version = \"1.4\", package = \"termcolor\", features = [\"std\"] }"));
-    }
-
-    #[test]
-    fn binary_top_level_expr_is_not_wrapped_with_outer_parentheses() {
-        let module = HModule {
-            name: "Main".to_string(),
-            end_name: "Main".to_string(),
-            imports: vec![],
-            declarations: vec![],
-            statements: vec![HStatement::Assign {
-                target: ident(10, "x", SymbolKind::Variable),
-                value: HExpr::Binary {
-                    op: BinaryOp::Add,
-                    left: Box::new(HExpr::Integer(1)),
-                    right: Box::new(HExpr::Binary {
-                        op: BinaryOp::Mul,
-                        left: Box::new(HExpr::Integer(2)),
-                        right: Box::new(HExpr::Integer(3)),
-                    }),
-                },
-            }],
-        };
-
-        let generated = generate_main_rs(&module);
-        assert!(generated.contains("vars.insert(\"x\".to_string(), 1 + (2 * 3));"));
-    }
-}
+mod tests;

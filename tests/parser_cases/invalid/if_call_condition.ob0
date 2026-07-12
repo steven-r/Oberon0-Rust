@@ -1,6 +1,6 @@
 MODULE Main;
 BEGIN
-  IF WriteInt(1) THEN
+  IF WriteInt(1 THEN
     WriteInt(2)
   END
 END Main.

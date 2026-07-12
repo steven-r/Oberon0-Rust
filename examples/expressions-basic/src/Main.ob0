@@ -1,7 +1,10 @@
 MODULE Main;
+VAR a, b;
 BEGIN
   a := 1 + 2 * 3;
   b := (1 + 2) * 3;
   WriteInt(a);
-  WriteInt(b)
+  WriteLn();
+  WriteInt(b);
+  WriteLn()
 END Main.

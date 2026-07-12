@@ -105,8 +105,15 @@ pub enum HStatement {
 pub enum HExpr {
     /// Integer literal.
     Integer(i64),
+    /// String literal after parser unescaping.
+    String(String),
     /// Reference to a resolved identifier binding.
     Name(HResolvedIdent),
+    /// Function-like call expression with resolved callee and arguments.
+    Call {
+        name: HResolvedIdent,
+        args: Vec<HExpr>,
+    },
     /// Binary arithmetic expression.
     Binary {
         op: BinaryOp,

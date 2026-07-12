@@ -23,5 +23,4 @@ scripts/oberon0 examples/hello-app --run
 
 ```text
 7
-State: {"x": 7}
 ```

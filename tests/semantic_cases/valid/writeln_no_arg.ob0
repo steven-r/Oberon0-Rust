@@ -1,0 +1,4 @@
+MODULE Main;
+BEGIN
+  WriteLn()
+END Main.
