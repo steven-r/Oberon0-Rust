@@ -1,3 +1,4 @@
+(* INVALID: typed variable references unknown type name *)
 MODULE Main;
 VAR x: Missing;
 BEGIN

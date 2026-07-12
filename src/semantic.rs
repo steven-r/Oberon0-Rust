@@ -6,7 +6,7 @@ use std::fmt;
 
 use anyhow::Result;
 
-use crate::ast::{Declaration, Expr, Module, ParamDecl, Statement, TypeRef};
+use crate::ast::{Declaration, Expr, LocalVarDecl, Module, ParamDecl, Statement, TypeRef};
 use crate::manifest::ExternalManifest;
 use crate::symbols::{SymbolKind, SymbolTable};
 
@@ -181,25 +181,37 @@ fn is_builtin_type_name(name: &str) -> bool {
     matches!(name, "INTEGER" | "BOOLEAN" | "REAL" | "LONGREAL")
 }
 
-fn validate_parameter_name(param: &ParamDecl, types: &HashMap<String, TypeRef>) -> Result<()> {
-    if is_builtin_type_name(&param.name) {
+fn validate_local_binding_name(
+    name: &str,
+    declared_type: Option<&TypeRef>,
+    types: &HashMap<String, TypeRef>,
+) -> Result<()> {
+    if is_builtin_type_name(name) {
         return Err(SemanticError::DuplicateSymbol {
-            name: param.name.clone(),
+            name: name.to_string(),
         }
         .into());
     }
 
-    if let Some(TypeRef::Named(type_name)) = &param.declared_type
-        && type_name == &param.name
+    if let Some(TypeRef::Named(type_name)) = declared_type
+        && type_name == name
         && types.contains_key(type_name)
     {
         return Err(SemanticError::DuplicateSymbol {
-            name: param.name.clone(),
+            name: name.to_string(),
         }
         .into());
     }
 
     Ok(())
+}
+
+fn validate_parameter_name(param: &ParamDecl, types: &HashMap<String, TypeRef>) -> Result<()> {
+    validate_local_binding_name(&param.name, param.declared_type.as_ref(), types)
+}
+
+fn validate_local_var_name(local_var: &LocalVarDecl, types: &HashMap<String, TypeRef>) -> Result<()> {
+    validate_local_binding_name(&local_var.name, local_var.declared_type.as_ref(), types)
 }
 
 fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Option<TypeRef> {
@@ -387,11 +399,22 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                 }
                 symbols.declare_with_type(name, SymbolKind::Variable, declared_type.clone())?;
             }
-            Declaration::Procedure { name, params, .. } => {
+            Declaration::Procedure {
+                name,
+                params,
+                local_vars,
+                ..
+            } => {
                 validate_declaration_name(name, &types)?;
                 for param in params {
                     validate_parameter_name(param, &types)?;
                     if let Some(type_ref) = &param.declared_type {
+                        validate_declared_type(type_ref, &types)?;
+                    }
+                }
+                for local_var in local_vars {
+                    validate_local_var_name(local_var, &types)?;
+                    if let Some(type_ref) = &local_var.declared_type {
                         validate_declared_type(type_ref, &types)?;
                     }
                 }
@@ -406,6 +429,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
         if let Declaration::Procedure {
             name,
             params,
+            local_vars,
             body,
             end_name,
         } = declaration
@@ -424,6 +448,13 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                     &param.name,
                     SymbolKind::Parameter,
                     param.declared_type.clone(),
+                )?;
+            }
+            for local_var in local_vars {
+                symbols.declare_with_type(
+                    &local_var.name,
+                    SymbolKind::Variable,
+                    local_var.declared_type.clone(),
                 )?;
             }
             for statement in body {
@@ -782,6 +813,22 @@ END Main.
 "#,
                         },
                         SuccessCase {
+                                name: "procedure-local var shadows user-defined type name",
+                                source: r#"
+MODULE Main;
+TYPE Count = REAL;
+PROCEDURE P;
+VAR Count: INTEGER;
+BEGIN
+    Count := 1;
+    WriteInt(Count)
+END P;
+BEGIN
+    P
+END Main.
+"#,
+                        },
+                        SuccessCase {
                                 name: "readint call expression",
                                 source: r#"
 MODULE Main;
@@ -950,6 +997,37 @@ BEGIN
     WriteInt(Count)
 END P;
 BEGIN
+END Main.
+"#,
+                                code: "E004",
+                                message_contains: &["Duplicate symbol declaration: 'Count'"],
+                        },
+                        ErrorCase {
+                                name: "procedure-local var shadows builtin type name",
+                                source: r#"
+MODULE Main;
+PROCEDURE P;
+VAR INTEGER: INTEGER;
+BEGIN
+END P;
+BEGIN
+    P
+END Main.
+"#,
+                                code: "E004",
+                                message_contains: &["Duplicate symbol declaration: 'INTEGER'"],
+                        },
+                        ErrorCase {
+                                name: "procedure-local var self-shadows type alias in declaration",
+                                source: r#"
+MODULE Main;
+TYPE Count = INTEGER;
+PROCEDURE P;
+VAR Count: Count;
+BEGIN
+END P;
+BEGIN
+    P
 END Main.
 "#,
                                 code: "E004",

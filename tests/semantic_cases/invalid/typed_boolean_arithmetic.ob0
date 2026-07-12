@@ -1,3 +1,4 @@
+(* INVALID: arithmetic expression uses non-numeric BOOLEAN operand *)
 MODULE Main;
 VAR flag: BOOLEAN;
 VAR x: INTEGER;

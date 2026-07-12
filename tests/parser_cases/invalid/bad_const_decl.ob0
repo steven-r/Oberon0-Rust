@@ -1,3 +1,4 @@
+(* INVALID: CONST declaration misses '=' between name and literal *)
 MODULE Main;
 CONST answer 42;
 BEGIN

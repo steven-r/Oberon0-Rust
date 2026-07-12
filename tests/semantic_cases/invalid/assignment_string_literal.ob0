@@ -1,5 +1,6 @@
+(* INVALID: string literals are only valid as WriteString arguments *)
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 BEGIN
   x := "Hello"
 END Main.

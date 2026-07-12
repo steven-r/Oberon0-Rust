@@ -1,3 +1,4 @@
+(* INVALID: WriteString builtin argument is not a string literal *)
 MODULE Main;
 BEGIN
   WriteString(1)

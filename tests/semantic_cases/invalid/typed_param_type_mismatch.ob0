@@ -1,3 +1,4 @@
+(* INVALID: procedure call passes REAL argument to INTEGER parameter *)
 MODULE Main;
 VAR x: REAL;
 PROCEDURE UseInt(value: INTEGER);

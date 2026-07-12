@@ -18,7 +18,7 @@ type_item = { ident ~ "=" ~ ident ~ ";" }
 var_section = { "VAR" ~ var_item+ }
 var_item = { ident_list ~ (":" ~ ident)? ~ ";" }
 ident_list = { ident ~ ("," ~ ident)* }
-procedure_decl = { "PROCEDURE" ~ ident ~ formal_params? ~ ";" ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ ";" }
+procedure_decl = { "PROCEDURE" ~ ident ~ formal_params? ~ ";" ~ var_section* ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ ";" }
 formal_params = { "(" ~ formal_param_section? ~ (";" ~ formal_param_section)* ~ ")" }
 formal_param_section = { var_modifier? ~ ident_list ~ (":" ~ ident)? }
 var_modifier = { "VAR" }

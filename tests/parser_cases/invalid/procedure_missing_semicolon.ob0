@@ -1,3 +1,4 @@
+(* INVALID: PROCEDURE header is missing semicolon before BEGIN *)
 MODULE Main;
 PROCEDURE P(x)
 BEGIN

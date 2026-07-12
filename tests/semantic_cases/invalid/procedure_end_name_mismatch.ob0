@@ -1,3 +1,4 @@
+(* INVALID: procedure END name does not match PROCEDURE name *)
 MODULE Main;
 PROCEDURE Echo(x);
 BEGIN

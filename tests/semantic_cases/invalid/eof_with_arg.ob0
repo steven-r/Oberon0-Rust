@@ -1,5 +1,6 @@
+(* INVALID: EOF builtin is called with arguments but expects arity 0 *)
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 BEGIN
   x := EOF(1)
 END Main.

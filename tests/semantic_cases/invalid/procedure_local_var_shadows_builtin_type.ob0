@@ -1,0 +1,9 @@
+(* INVALID: procedure-local variable name shadows reserved builtin type name *)
+MODULE Main;
+PROCEDURE P;
+VAR INTEGER: INTEGER;
+BEGIN
+END P;
+BEGIN
+  P
+END Main.

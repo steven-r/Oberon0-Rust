@@ -1,3 +1,4 @@
+(* INVALID: string literal is not terminated *)
 MODULE Main;
 BEGIN
   WriteString("Hello)

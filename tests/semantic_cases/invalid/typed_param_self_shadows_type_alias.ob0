@@ -1,3 +1,4 @@
+(* INVALID: parameter reuses its type-alias name in own declaration (Count: Count) *)
 MODULE Main;
 TYPE Count = INTEGER;
 PROCEDURE P(Count: Count);
