@@ -1,0 +1,213 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Detect merged release commit in this push range
+        id: merged_release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          range="${{ github.event.before }}..${{ github.sha }}"
+          release_subject="$(git log --format='%s' "$range" | grep -E '^chore\(release\): v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
+
+          if [[ -n "$release_subject" ]]; then
+            release_tag="${release_subject#chore(release): }"
+            echo "is_release_merge=true" >> "$GITHUB_OUTPUT"
+            echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release_merge=false" >> "$GITHUB_OUTPUT"
+            echo "release_tag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag and GitHub release for merged release commit
+        if: steps.merged_release.outputs.is_release_merge == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${{ steps.merged_release.outputs.release_tag }}"
+
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists locally."
+          else
+            git tag -a "$tag" -m "$tag"
+            git push origin "$tag"
+          fi
+
+          notes_file="$(mktemp)"
+          awk -v tag="$tag" '
+            $0 ~ "^## " tag " - " { print; capture=1; next }
+            capture && $0 ~ "^## " { exit }
+            capture { print }
+          ' CHANGELOG.md > "$notes_file"
+
+          if [[ ! -s "$notes_file" ]]; then
+            echo "$tag" > "$notes_file"
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "GitHub release $tag already exists."
+          else
+            gh release create "$tag" --title "$tag" --notes-file "$notes_file"
+          fi
+
+      - name: Determine whether a release is needed
+        id: decide
+        if: steps.merged_release.outputs.is_release_merge != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          last_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [[ -n "$last_tag" ]]; then
+            range="${last_tag}..HEAD"
+          else
+            range="HEAD"
+          fi
+
+          subjects_file="$(mktemp)"
+          bodies_file="$(mktemp)"
+          git log --format='%s' "$range" > "$subjects_file"
+          git log --format='%b' "$range" > "$bodies_file"
+
+          has_feat="false"
+          has_fix_like="false"
+          has_security_dep="false"
+          has_breaking="false"
+
+          if grep -Eiq '^feat(\([^)]*\))?(!)?: ' "$subjects_file"; then
+            has_feat="true"
+          fi
+
+          if grep -Eiq '^(fix|perf|revert)(\([^)]*\))?(!)?: ' "$subjects_file"; then
+            has_fix_like="true"
+          fi
+
+          if grep -Eiq '^(chore|build|ci|fix)\(deps[^)]*\): ' "$subjects_file" \
+            && { grep -Eiq '(security|vulnerab|\bcve\b)' "$subjects_file" || grep -Eiq '(security|vulnerab|\bcve\b)' "$bodies_file"; }; then
+            has_security_dep="true"
+          fi
+
+          if grep -Eiq '^[a-z]+(\([^)]*\))?!: ' "$subjects_file" || grep -Eiq 'BREAKING CHANGE:' "$bodies_file"; then
+            has_breaking="true"
+          fi
+
+          should_release="false"
+          bump_type=""
+
+          if [[ "$has_feat" == "true" || "$has_fix_like" == "true" || "$has_security_dep" == "true" ]]; then
+            should_release="true"
+            bump_type="patch"
+
+            if [[ "$has_feat" == "true" ]]; then
+              bump_type="minor"
+            fi
+
+            if [[ "$has_breaking" == "true" ]]; then
+              bump_type="major"
+            fi
+          fi
+
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+          echo "bump_type=$bump_type" >> "$GITHUB_OUTPUT"
+          echo "last_tag=$last_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Skip when no relevant commits exist
+        if: steps.merged_release.outputs.is_release_merge != 'true' && steps.decide.outputs.should_release != 'true'
+        run: |
+          echo "No release-relevant commits found since the last tag; skipping release."
+
+      - name: Skip release preparation when this push already merged a release commit
+        if: steps.merged_release.outputs.is_release_merge == 'true'
+        run: |
+          echo "Release commit detected in push range; tag/release path executed."
+
+      - name: Check for open release PR
+        if: steps.merged_release.outputs.is_release_merge != 'true' && steps.decide.outputs.should_release == 'true'
+        id: open_pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          existing_pr_number="$(gh pr list --base main --state open --json number,title --jq '.[] | select(.title | test("^chore\\(release\\): v")) | .number' | head -n1 || true)"
+          if [[ -n "$existing_pr_number" ]]; then
+            echo "has_open_release_pr=true" >> "$GITHUB_OUTPUT"
+            echo "open_release_pr_number=$existing_pr_number" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_open_release_pr=false" >> "$GITHUB_OUTPUT"
+            echo "open_release_pr_number=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip because a release PR is already open
+        if: steps.open_pr.outputs.has_open_release_pr == 'true'
+        run: |
+          echo "Open release PR already exists (#${{ steps.open_pr.outputs.open_release_pr_number }}); skipping new release PR creation."
+
+      - name: Configure git author
+        if: steps.merged_release.outputs.is_release_merge != 'true' && steps.decide.outputs.should_release == 'true' && steps.open_pr.outputs.has_open_release_pr != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run release script on release branch
+        if: steps.merged_release.outputs.is_release_merge != 'true' && steps.decide.outputs.should_release == 'true' && steps.open_pr.outputs.has_open_release_pr != 'true'
+        id: release_branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          branch_name="automation/release-${{ github.run_id }}-${{ github.run_attempt }}"
+          git checkout -b "$branch_name"
+
+          scripts/release.sh "${{ steps.decide.outputs.bump_type }}"
+
+          release_tag="$(git describe --tags --abbrev=0)"
+          git tag -d "$release_tag"
+
+          git push origin HEAD:"$branch_name"
+
+          echo "branch_name=$branch_name" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Open release pull request
+        if: steps.merged_release.outputs.is_release_merge != 'true' && steps.decide.outputs.should_release == 'true' && steps.open_pr.outputs.has_open_release_pr != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pr_title="chore(release): ${{ steps.release_branch.outputs.release_tag }}"
+          pr_body=$'Automated release PR generated after push to main.\n\nThis PR includes:\n- version bump\n- changelog update\n- release commit\n\nMerging this PR will trigger tag and GitHub Release creation in the same workflow.'
+
+          gh pr create \
+            --base main \
+            --head "${{ steps.release_branch.outputs.branch_name }}" \
+            --title "$pr_title" \
+            --body "$pr_body"
