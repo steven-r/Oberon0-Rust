@@ -3,13 +3,13 @@
   "extends": [
     "config:recommended"
   ],
-  "baseBranches": [
+  "baseBranchPatterns": [
     "dev"
   ],
   "dependencyDashboard": true,
   "vulnerabilityAlerts": {
     "enabled": true,
-    "baseBranches": [
+    "baseBranchPatterns": [
       "main"
     ],
     "automerge": true,
