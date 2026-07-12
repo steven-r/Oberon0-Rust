@@ -179,11 +179,20 @@ jobs:
         if: steps.merged_release.outputs.is_release_merge != 'true' && steps.decide.outputs.should_release == 'true' && steps.open_pr.outputs.has_open_release_pr != 'true'
         id: release_branch
         shell: bash
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
         run: |
           set -euo pipefail
 
           branch_name="automation/release-${{ github.run_id }}-${{ github.run_attempt }}"
           git checkout -b "$branch_name"
+
+          # Enforce repository-local identity for all commit operations in this step.
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
 
           scripts/release.sh "${{ steps.decide.outputs.bump_type }}"
 
