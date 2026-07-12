@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.7.0 - 2026-07-12
+
 ### Features
 
 - add `TYPE` declarations and typed `VAR` declarations for `INTEGER` and simple named aliases (#5)
@@ -34,6 +36,12 @@ All notable changes to this project will be documented in this file.
 
 - migrate Renovate configuration into `.github/renovate.json` and extend scanning to `oberon.toml` files under examples and tests (no dedicated issue)
 - switch release automation to a PR-based flow and harden changelog promotion, git identity handling, and release note extraction (no dedicated issue)
+
+# Changelog
+
+<!-- markdownlint-configure-file {"MD024": {"siblings_only": true}} -->
+
+All notable changes to this project will be documented in this file.
 
 ## v0.6.0 - 2026-07-12
 
