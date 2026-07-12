@@ -69,6 +69,13 @@ This repository uses:
 - SemVer for versioning (`MAJOR.MINOR.PATCH`)
 - `pre-commit` hooks to enforce checks
 
+Project conventions and persistent team decisions are documented in:
+
+- docs/project-decisions.md
+- CONTRIBUTING.md
+- AGENTS.md
+- .github/copilot-instructions.md
+
 Set up hooks locally:
 
     pre-commit install --hook-type pre-commit --hook-type commit-msg
