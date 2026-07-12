@@ -1,0 +1,6 @@
+MODULE Main;
+BEGIN
+  IF EOF() THEN
+    WriteLn()
+  END
+END Main.

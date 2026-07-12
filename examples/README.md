@@ -23,3 +23,5 @@ scripts/oberon0 <example-directory> --run
 - `procedures-nested-control`: procedure body with nested control flow
 - `shadowing-procedure-scope`: module-variable shadowing from procedure scope using the current subset's local parameter bindings
 - `shadowing-nested-control`: parameter-based shadowing combined with nested `WHILE` and `IF/ELSE` logic inside the procedure body
+- `readint-basic`: integer input with `ReadInt()` and output echo
+- `eof-check`: input-state branching with `EOF()` (`1` = EOF, `0` = input available)

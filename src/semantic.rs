@@ -1,8 +1,8 @@
 //! Semantic checks for name resolution, declaration validity, and call arity.
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
-use std::collections::HashMap;
 
 use anyhow::Result;
 
@@ -131,10 +131,14 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     symbols.declare("WriteInt", SymbolKind::Procedure)?;
     symbols.declare("WriteString", SymbolKind::Procedure)?;
     symbols.declare("WriteLn", SymbolKind::Procedure)?;
+    symbols.declare("ReadInt", SymbolKind::Procedure)?;
+    symbols.declare("EOF", SymbolKind::Procedure)?;
     let mut proc_arity: HashMap<String, Option<usize>> = HashMap::new();
     proc_arity.insert("WriteInt".to_string(), None);
     proc_arity.insert("WriteString".to_string(), Some(1));
     proc_arity.insert("WriteLn".to_string(), Some(0));
+    proc_arity.insert("ReadInt".to_string(), Some(0));
+    proc_arity.insert("EOF".to_string(), Some(0));
 
     for import in &module.imports {
         if symbols
@@ -224,6 +228,15 @@ fn analyze_statement(
             Ok(())
         }
         Statement::Call { name, args } => {
+            if name == "ReadInt" || name == "EOF" {
+                return Err(SemanticError::InvalidBuiltinArgument {
+                    name: name.clone(),
+                    detail: "must be used as a call expression (e.g. x := ReadInt(), IF EOF() THEN ...)"
+                        .to_string(),
+                }
+                .into());
+            }
+
             if name == "WriteString" {
                 if args.len() != 1 {
                     return Err(SemanticError::ArityMismatch {
@@ -306,6 +319,29 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
                 return Err(SemanticError::UndefinedSymbol { name: name.clone() }.into());
             }
             Ok(())
+        }
+        Expr::Call { name, args } => {
+            if name == "ReadInt" || name == "EOF" {
+                if !args.is_empty() {
+                    return Err(SemanticError::ArityMismatch {
+                        name: name.clone(),
+                        expected: 0,
+                        got: args.len(),
+                    }
+                    .into());
+                }
+                return Ok(());
+            }
+
+            if symbols.resolve(name).is_none() {
+                return Err(SemanticError::UndefinedSymbol { name: name.clone() }.into());
+            }
+
+            Err(SemanticError::InvalidBuiltinArgument {
+                name: name.clone(),
+                detail: "call expressions currently support only ReadInt() and EOF()".to_string(),
+            }
+            .into())
         }
         Expr::Binary { left, right, .. } => {
             analyze_expr(left, symbols)?;
@@ -503,4 +539,72 @@ END Main.
                 other => panic!("expected ArityMismatch, got {other:?}"),
             }
         }
+
+                #[test]
+                fn accepts_readint_call_expression_in_assignment() {
+                        let source = r#"
+        MODULE Main;
+        VAR x;
+        BEGIN
+            x := ReadInt()
+        END Main.
+        "#;
+
+                        let module = parse_module(source).expect("source should parse");
+                        analyze(&module, None).expect("ReadInt call expression should pass semantic analysis");
+                }
+
+                #[test]
+                fn accepts_eof_call_expression_in_if_condition() {
+                        let source = r#"
+        MODULE Main;
+        BEGIN
+            IF EOF() THEN
+                WriteLn()
+            END
+        END Main.
+        "#;
+
+                        let module = parse_module(source).expect("source should parse");
+                        analyze(&module, None).expect("EOF call expression should pass semantic analysis");
+                }
+
+                #[test]
+                fn rejects_readint_as_statement_call() {
+                        let source = r#"
+        MODULE Main;
+        BEGIN
+            ReadInt()
+        END Main.
+        "#;
+
+                        let err = semantic_error(source);
+                        match err {
+                                SemanticError::InvalidBuiltinArgument { name, detail } => {
+                                        assert_eq!(name, "ReadInt");
+                                        assert!(detail.contains("must be used as a call expression"));
+                                }
+                                other => panic!("expected InvalidBuiltinArgument, got {other:?}"),
+                        }
+                }
+
+                #[test]
+                fn rejects_call_expression_for_non_function_builtin() {
+                        let source = r#"
+        MODULE Main;
+        VAR x;
+        BEGIN
+            x := WriteInt(1)
+        END Main.
+        "#;
+
+                        let err = semantic_error(source);
+                        match err {
+                                SemanticError::InvalidBuiltinArgument { name, detail } => {
+                                        assert_eq!(name, "WriteInt");
+                                        assert!(detail.contains("currently support only ReadInt() and EOF()"));
+                                }
+                                other => panic!("expected InvalidBuiltinArgument, got {other:?}"),
+                        }
+                }
 }

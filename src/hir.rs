@@ -109,6 +109,11 @@ pub enum HExpr {
     String(String),
     /// Reference to a resolved identifier binding.
     Name(HResolvedIdent),
+    /// Function-like call expression with resolved callee and arguments.
+    Call {
+        name: HResolvedIdent,
+        args: Vec<HExpr>,
+    },
     /// Binary arithmetic expression.
     Binary {
         op: BinaryOp,
