@@ -324,6 +324,15 @@ fn parse_factor(factor: Pair<Rule>) -> Result<Expr> {
             Ok(Expr::Integer(value))
         }
         Rule::string => Ok(Expr::String(parse_pascal_string(inner.as_str())?)),
+        Rule::call_expr => {
+            let mut parts = inner.into_inner();
+            let name = take_ident(parts.next(), "call expression name")?;
+            let args = match parts.next() {
+                Some(arg_list) => parse_arg_list(arg_list)?,
+                None => Vec::new(),
+            };
+            Ok(Expr::Call { name, args })
+        }
         Rule::ident => Ok(Expr::Variable(inner.as_str().to_string())),
         Rule::expr => parse_expr(inner),
         _ => bail!("Unknown factor: {:?}", inner.as_rule()),

@@ -96,12 +96,75 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     ));
     out.push_str("// Comments preserve the mapping between Oberon0 names and generated Rust bindings.\n\n");
     out.push_str("use std::collections::BTreeMap;\n\n");
+    out.push_str("use std::io::Read;\n");
+    out.push_str("use std::sync::{Mutex, OnceLock};\n\n");
     out.push_str("/// Returns the current value of a module-level Oberon0 variable.\n");
     out.push_str("///\n");
     out.push_str("/// Generated programs keep module state in `vars`, keyed by the original Oberon0 name.\n");
     out.push_str("#[allow(dead_code)]\n");
     out.push_str("fn get_var(vars: &BTreeMap<String, i64>, name: &str) -> i64 {\n");
     out.push_str("    *vars.get(name).unwrap_or(&0)\n");
+    out.push_str("}\n\n");
+
+    out.push_str("#[derive(Default)]\n");
+    out.push_str("struct InputState {\n");
+    out.push_str("    tokens: Vec<String>,\n");
+    out.push_str("    position: usize,\n");
+    out.push_str("    initialized: bool,\n");
+    out.push_str("}\n\n");
+
+    out.push_str("fn input_state() -> &'static Mutex<InputState> {\n");
+    out.push_str("    static STATE: OnceLock<Mutex<InputState>> = OnceLock::new();\n");
+    out.push_str("    STATE.get_or_init(|| Mutex::new(InputState::default()))\n");
+    out.push_str("}\n\n");
+
+    out.push_str("fn ensure_input_loaded(state: &mut InputState) {\n");
+    out.push_str("    if state.initialized {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("\n");
+    out.push_str("    let mut input = String::new();\n");
+    out.push_str("    std::io::stdin()\n");
+    out.push_str("        .read_to_string(&mut input)\n");
+    out.push_str("        .expect(\"Runtime IO error: failed to read stdin\");\n");
+    out.push_str("\n");
+    out.push_str("    state.tokens = input\n");
+    out.push_str("        .split_whitespace()\n");
+    out.push_str("        .map(|token| token.to_string())\n");
+    out.push_str("        .collect();\n");
+    out.push_str("    state.position = 0;\n");
+    out.push_str("    state.initialized = true;\n");
+    out.push_str("}\n\n");
+
+    out.push_str("fn read_int() -> i64 {\n");
+    out.push_str("    let mut state = input_state()\n");
+    out.push_str("        .lock()\n");
+    out.push_str("        .expect(\"Runtime IO error: input mutex poisoned\");\n");
+    out.push_str("    ensure_input_loaded(&mut state);\n");
+    out.push_str("\n");
+    out.push_str("    if state.position >= state.tokens.len() {\n");
+    out.push_str("        panic!(\"Runtime IO error: ReadInt() reached EOF\");\n");
+    out.push_str("    }\n");
+    out.push_str("\n");
+    out.push_str("    let token = state.tokens[state.position].clone();\n");
+    out.push_str("    state.position += 1;\n");
+    out.push_str("\n");
+    out.push_str("    token.parse::<i64>().unwrap_or_else(|err| {\n");
+    out.push_str("        panic!(\"Runtime IO error: ReadInt() failed to parse integer token '{}' ({})\", token, err)\n");
+    out.push_str("    })\n");
+    out.push_str("}\n\n");
+
+    out.push_str("fn eof() -> i64 {\n");
+    out.push_str("    let mut state = input_state()\n");
+    out.push_str("        .lock()\n");
+    out.push_str("        .expect(\"Runtime IO error: input mutex poisoned\");\n");
+    out.push_str("    ensure_input_loaded(&mut state);\n");
+    out.push_str("\n");
+    out.push_str("    if state.position >= state.tokens.len() {\n");
+    out.push_str("        1\n");
+    out.push_str("    } else {\n");
+    out.push_str("        0\n");
+    out.push_str("    }\n");
     out.push_str("}\n\n");
 
     out.push_str("/// Records the current value of a procedure-scoped Oberon0 variable.\n");
@@ -234,6 +297,7 @@ fn expr_needs_state_map(expr: &HExpr) -> bool {
     match expr {
         HExpr::Integer(_) | HExpr::String(_) => false,
         HExpr::Name(ident) => ident.kind != crate::symbols::SymbolKind::Constant,
+        HExpr::Call { args, .. } => args.iter().any(expr_needs_state_map),
         HExpr::Binary { left, right, .. } => expr_needs_state_map(left) || expr_needs_state_map(right),
     }
 }
@@ -464,6 +528,20 @@ fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
                 }
             }
         }
+        HExpr::Call { name, args } => {
+            if name.name == "ReadInt" {
+                "read_int()".to_string()
+            } else if name.name == "EOF" {
+                "eof()".to_string()
+            } else {
+                let rendered_args = args
+                    .iter()
+                    .map(|arg| format_expr(arg, ctx))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("/* unsupported call expr {}({}) */ 0", name.name, rendered_args)
+            }
+        }
         HExpr::Binary { op, left, right } => {
             let op_s = match op {
                 BinaryOp::Add => "+",
@@ -651,6 +729,179 @@ mod tests {
 
         let generated = generate_main_rs(&module, false);
         assert!(generated.contains("println!();"));
+    }
+
+    #[test]
+    fn emits_readint_and_eof_call_expressions() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![HDeclaration::Var {
+                id: 1,
+                name: "x".to_string(),
+            }],
+            statements: vec![
+                HStatement::Assign {
+                    target: ident(1, "x", SymbolKind::Variable),
+                    value: HExpr::Call {
+                        name: ident(2, "ReadInt", SymbolKind::Procedure),
+                        args: vec![],
+                    },
+                },
+                HStatement::If {
+                    condition: HExpr::Call {
+                        name: ident(3, "EOF", SymbolKind::Procedure),
+                        args: vec![],
+                    },
+                    then_branch: vec![HStatement::Call {
+                        name: ident(4, "WriteLn", SymbolKind::Procedure),
+                        args: vec![],
+                    }],
+                    else_branch: None,
+                },
+            ],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(generated.contains("fn read_int() -> i64"));
+        assert!(generated.contains("fn eof() -> i64"));
+        assert!(generated.contains("vars.insert(\"x\".to_string(), read_int());"));
+        assert!(generated.contains("if eof() != 0 {"));
+    }
+
+    #[test]
+    fn runtime_readint_and_eof_follow_input_contract() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![HDeclaration::Var {
+                id: 1,
+                name: "x".to_string(),
+            }],
+            statements: vec![
+                HStatement::Assign {
+                    target: ident(1, "x", SymbolKind::Variable),
+                    value: HExpr::Call {
+                        name: ident(2, "ReadInt", SymbolKind::Procedure),
+                        args: vec![],
+                    },
+                },
+                HStatement::If {
+                    condition: HExpr::Call {
+                        name: ident(3, "EOF", SymbolKind::Procedure),
+                        args: vec![],
+                    },
+                    then_branch: vec![HStatement::Call {
+                        name: ident(4, "WriteInt", SymbolKind::Procedure),
+                        args: vec![HExpr::Integer(1)],
+                    }],
+                    else_branch: Some(vec![HStatement::Call {
+                        name: ident(5, "WriteInt", SymbolKind::Procedure),
+                        args: vec![HExpr::Integer(0)],
+                    }]),
+                },
+                HStatement::Call {
+                    name: ident(6, "WriteInt", SymbolKind::Procedure),
+                    args: vec![HExpr::Name(ident(1, "x", SymbolKind::Variable))],
+                },
+            ],
+        };
+
+        let out_root = temp_codegen_dir("readint_eof_runtime");
+        let project_dir = generate_rust_project(&module, None, &out_root, false)
+            .expect("project generation should succeed");
+
+        let mut child = std::process::Command::new("cargo")
+            .arg("run")
+            .current_dir(&project_dir)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("generated project should start");
+
+        {
+            use std::io::Write;
+            let stdin = child.stdin.as_mut().expect("stdin should be piped");
+            stdin
+                .write_all(b"42\n")
+                .expect("should write stdin for generated program");
+        }
+
+        let output = child
+            .wait_with_output()
+            .expect("generated project should finish");
+        assert!(
+            output.status.success(),
+            "generated project failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        assert_eq!(stdout, "142");
+
+        std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
+    }
+
+    #[test]
+    fn runtime_readint_fails_after_eof_is_reached() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![HDeclaration::Var {
+                id: 1,
+                name: "x".to_string(),
+            }],
+            statements: vec![
+                HStatement::If {
+                    condition: HExpr::Call {
+                        name: ident(2, "EOF", SymbolKind::Procedure),
+                        args: vec![],
+                    },
+                    then_branch: vec![HStatement::Call {
+                        name: ident(3, "WriteInt", SymbolKind::Procedure),
+                        args: vec![HExpr::Integer(1)],
+                    }],
+                    else_branch: Some(vec![HStatement::Call {
+                        name: ident(4, "WriteInt", SymbolKind::Procedure),
+                        args: vec![HExpr::Integer(0)],
+                    }]),
+                },
+                HStatement::Assign {
+                    target: ident(1, "x", SymbolKind::Variable),
+                    value: HExpr::Call {
+                        name: ident(5, "ReadInt", SymbolKind::Procedure),
+                        args: vec![],
+                    },
+                },
+            ],
+        };
+
+        let out_root = temp_codegen_dir("readint_after_eof_runtime");
+        let project_dir = generate_rust_project(&module, None, &out_root, false)
+            .expect("project generation should succeed");
+
+        let output = std::process::Command::new("cargo")
+            .arg("run")
+            .current_dir(&project_dir)
+            .output()
+            .expect("generated project should run");
+
+        assert!(
+            !output.status.success(),
+            "generated project should fail when ReadInt() is called after EOF"
+        );
+
+        let stderr = String::from_utf8(output.stderr).expect("stderr should be utf-8");
+        assert!(
+            stderr.contains("ReadInt() reached EOF"),
+            "expected runtime EOF message, got: {stderr}"
+        );
+
+        std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
     }
 
     #[test]

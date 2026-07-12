@@ -43,8 +43,8 @@ Status legend:
 | --- | --- | --- | --- | --- |
 | `WriteInt(x, n)` | Implemented as `WriteInt(x)` without width parameter | Partial | #24 | Covered by dedicated issue |
 | `WriteLn` | Implemented | Aligned | #12 | Covered and implemented |
-| `ReadInt(x)` | Planned as builtin input support | Missing | #13 | Covered by planned issue |
-| `eot()` / EOF check | Planned as `EOF()` | Missing | #13 | Covered by planned issue |
+| `ReadInt(x)` | Implemented as `ReadInt()` call expression (subset variant) | Partial | #13 | Implemented in subset; full p63 signature still differs |
+| `eot()` / EOF check | Implemented as `EOF()` call expression | Partial | #13 | Implemented with naming variant (`eot` vs `EOF`) |
 | `WriteChar(x)` | Not implemented | Missing | #23 | Covered by dedicated issue |
 | `OpenInput` | Not implemented | Missing | #23 | Covered by dedicated issue |
 | `LED(x)`, `Switch()` (teaching extensions) | Not implemented | Out of scope | n/a | Explicitly excluded from language scope |

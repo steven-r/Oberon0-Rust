@@ -18,8 +18,8 @@ It resolves issue #4 and provides an implementation target for follow-up issues.
 | `WriteInt` | Procedure | 1 | `INTEGER` | none | Implemented |
 | `WriteString` | Procedure | 1 | string literal (subset constraint) | none | Implemented |
 | `WriteLn` | Procedure | 0 | none | none | Implemented |
-| `ReadInt` | Function-like builtin | 0 | none | `INTEGER` | Planned |
-| `EOF` | Function-like builtin | 0 | none | `INTEGER` (`1` = EOF, `0` = not EOF) | Planned |
+| `ReadInt` | Function-like builtin | 0 | none | `INTEGER` | Implemented |
+| `EOF` | Function-like builtin | 0 | none | `INTEGER` (`1` = EOF, `0` = not EOF) | Implemented |
 
 Notes:
 
@@ -58,11 +58,11 @@ Code generation must map builtins to Rust behavior as follows:
 
 ## Follow-up execution split
 
-Implementation remains intentionally split:
+Implementation tracking status:
 
-1. #12: `WriteLn` behavior
-2. #13: `ReadInt` and `EOF` behavior
-3. #3: alignment of `WriteString` with the same builtin model
+1. #12: `WriteLn` behavior (implemented)
+2. #13: `ReadInt` and `EOF` behavior (implemented)
+3. #3: alignment of `WriteString` with the same builtin model (implemented)
 
 ## Out of scope for this decision
 

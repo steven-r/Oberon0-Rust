@@ -1,0 +1,5 @@
+MODULE Main;
+VAR x;
+BEGIN
+  x := ReadInt()
+END Main.

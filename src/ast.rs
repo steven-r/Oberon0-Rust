@@ -71,6 +71,8 @@ pub enum Expr {
     String(String),
     /// Reference to an identifier before semantic resolution.
     Variable(String),
+    /// Function-like call expression.
+    Call { name: String, args: Vec<Expr> },
     /// Binary arithmetic expression.
     Binary {
         op: BinaryOp,

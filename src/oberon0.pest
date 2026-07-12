@@ -26,9 +26,10 @@ if_stmt = { "IF" ~ expr ~ "THEN" ~ stmt_list? ~ else_section? ~ "END" }
 else_section = { "ELSE" ~ stmt_list? }
 while_stmt = { "WHILE" ~ expr ~ "DO" ~ stmt_list? ~ "END" }
 arg_list = { expr ~ ("," ~ expr)* }
+call_expr = { ident ~ "(" ~ arg_list? ~ ")" }
 
 expr = { term ~ (add_op ~ term)* }
 add_op = { "+" | "-" }
 term = { factor ~ (mul_op ~ factor)* }
 mul_op = { "*" | "/" }
-factor = { integer | string | ident | "(" ~ expr ~ ")" }
+factor = { integer | string | call_expr | ident | "(" ~ expr ~ ")" }

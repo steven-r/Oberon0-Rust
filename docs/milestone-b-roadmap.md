@@ -163,7 +163,7 @@ This priority list aligns implementation risk, dependency flow, and page-63 lang
 
 Priority 0 (already done or in-progress baseline):
 
-1. #12 (`WriteLn`) and #13 (`ReadInt`/`EOF`) to complete the minimum IO baseline.
+1. #12 (`WriteLn`) and #13 (`ReadInt`/`EOF`) completed the minimum IO baseline.
 
 Priority 1 (type system foundation):
 
