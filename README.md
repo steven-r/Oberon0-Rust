@@ -119,7 +119,7 @@ Generate and build immediately:
 
 Compile example source:
 
-    cargo run -- examples/hello-app/src/Main.ob0 --manifest examples/hello-app/oberon.toml --out-dir target/generated
+    cargo run -- examples/hello-app/src/Main.ob0 --out-dir target/generated
 
 Short wrapper command (project directory instead of full file arguments):
 
@@ -145,15 +145,29 @@ Recommended layout:
     my-oberon-app/
       src/
         Main.ob0
-      oberon.toml
 
 Compile from repository root:
 
-    cargo run -- my-oberon-app/src/Main.ob0 --manifest my-oberon-app/oberon.toml --out-dir target/generated
+        cargo run -- my-oberon-app/src/Main.ob0 --out-dir target/generated
 
 This repository includes the same layout as a runnable example at:
 
     examples/hello-app/
+
+If your project uses `IMPORT`, add an optional manifest file:
+
+        my-oberon-app/
+            src/
+                Main.ob0
+            oberon.toml
+
+Compile a manifest-backed project from repository root:
+
+        cargo run -- my-oberon-app/src/Main.ob0 --manifest my-oberon-app/oberon.toml --out-dir target/generated
+
+This repository includes a focused import/manifest example at:
+
+        examples/imports-manifest/
 
 Additional focused feature examples are listed in:
 
@@ -168,6 +182,7 @@ This creates a generated Rust project at:
 Minimal valid structure:
 
     MODULE Main;
+        VAR x;
     BEGIN
       x := 1 + 2;
       WriteInt(x);
@@ -197,6 +212,7 @@ Notes:
 - `crate` is the Rust crate package name
 - `version` is passed into generated Cargo.toml
 - Optional alias form in Oberon is supported: `IMPORT Local := External;`
+- See `examples/imports-manifest/` for a focused project example using this layout.
 
 ## Current language subset
 

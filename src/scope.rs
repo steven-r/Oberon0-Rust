@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 #[derive(Debug)]
+/// Stack of lexical scopes that resolves names from innermost to outermost.
 pub struct ScopedMap<T> {
     scopes: Vec<HashMap<String, T>>,
 }
@@ -12,24 +13,29 @@ impl<T> Default for ScopedMap<T> {
 }
 
 impl<T: Clone> ScopedMap<T> {
+    /// Creates a scoped map with a single root scope already active.
     pub fn new() -> Self {
         let mut map = Self::default();
         map.enter_scope();
         map
     }
 
+    /// Returns the zero-based depth of the current scope.
     pub fn depth(&self) -> usize {
         self.scopes.len().saturating_sub(1)
     }
 
+    /// Pushes a new child scope.
     pub fn enter_scope(&mut self) {
         self.scopes.push(HashMap::new());
     }
 
+    /// Pops the current scope.
     pub fn exit_scope(&mut self) {
         self.scopes.pop();
     }
 
+    /// Declares a name in the current scope and rejects same-scope duplicates.
     pub fn declare<E, F>(&mut self, name: &str, value: T, on_duplicate: F) -> Result<(), E>
     where
         F: FnOnce(&str) -> E,
@@ -47,6 +53,7 @@ impl<T: Clone> ScopedMap<T> {
         Ok(())
     }
 
+    /// Resolves a name by searching from the innermost scope outward.
     pub fn resolve(&self, name: &str) -> Option<&T> {
         self.scopes
             .iter()
@@ -54,6 +61,7 @@ impl<T: Clone> ScopedMap<T> {
             .find_map(|scope| scope.get(name))
     }
 
+    /// Clones all values declared directly in the current scope.
     pub fn current_scope_values(&self) -> Vec<T> {
         let scope = self
             .scopes

@@ -1,3 +1,5 @@
+//! Semantic checks for name resolution, declaration validity, and call arity.
+
 use std::error::Error;
 use std::fmt;
 use std::collections::HashMap;
@@ -9,6 +11,7 @@ use crate::manifest::ExternalManifest;
 use crate::symbols::{SymbolKind, SymbolTable};
 
 #[derive(Debug, Clone)]
+/// User-facing semantic failures reported after parsing succeeds.
 pub enum SemanticError {
     ModuleNameMismatch { expected: String, got: String },
     DuplicateImportAlias { alias: String },
@@ -25,6 +28,7 @@ pub enum SemanticError {
 }
 
 impl SemanticError {
+    /// Stable diagnostic code used in error messages and tests.
     pub fn code(&self) -> &'static str {
         match self {
             SemanticError::ModuleNameMismatch { .. } => "E001",
@@ -100,6 +104,7 @@ impl fmt::Display for SemanticError {
 
 impl Error for SemanticError {}
 
+/// Validates module structure, scope rules, and procedure calls before lowering.
 pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<()> {
     if module.name != module.end_name {
         return Err(SemanticError::ModuleNameMismatch {
@@ -184,6 +189,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     Ok(())
 }
 
+/// Validates one statement within the current symbol-table scope.
 fn analyze_statement(
     stmt: &Statement,
     symbols: &mut SymbolTable,
@@ -252,6 +258,7 @@ fn analyze_statement(
     }
 }
 
+/// Validates an expression and ensures every referenced symbol is defined.
 fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
     match expr {
         Expr::Integer(_) => Ok(()),

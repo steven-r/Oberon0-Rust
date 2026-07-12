@@ -1,3 +1,5 @@
+//! Command-line entry point for the Oberon0 to Rust compiler pipeline.
+
 mod ast;
 mod codegen;
 mod hir;
@@ -26,6 +28,7 @@ use semantic::analyze;
 #[derive(Parser, Debug)]
 #[command(name = "oberon0c")]
 #[command(about = "Minimal Oberon0 compiler targeting Rust/LLVM")]
+/// Command-line options for running the compiler pipeline.
 struct Cli {
     /// Path to the Oberon0 source file
     input: PathBuf,
@@ -43,6 +46,7 @@ struct Cli {
     build: bool,
 }
 
+/// Runs scanning, parsing, semantic analysis, lowering, and Rust code generation.
 fn main() -> Result<()> {
     let cli = Cli::parse();
 

@@ -1,3 +1,5 @@
+//! Parser from Oberon0 source text to the syntax tree in `ast`.
+
 use anyhow::{Context, Result, bail};
 use pest::Parser;
 use pest::iterators::Pair;
@@ -9,12 +11,14 @@ use crate::ast::{BinaryOp, Declaration, Expr, ImportDecl, Module, Statement};
 #[grammar = "oberon0.pest"]
 struct Oberon0Parser;
 
+/// Parses a complete Oberon0 module into the compiler AST.
 pub fn parse_module(source: &str) -> Result<Module> {
     let mut pairs = Oberon0Parser::parse(Rule::module, source).context("Invalid Oberon0 syntax")?;
     let module_pair = pairs.next().context("No module found")?;
     build_module(module_pair)
 }
 
+/// Builds a module AST node from the grammar's top-level parse pair.
 fn build_module(module_pair: Pair<Rule>) -> Result<Module> {
     let mut inner = module_pair.into_inner();
 
@@ -63,6 +67,7 @@ fn build_module(module_pair: Pair<Rule>) -> Result<Module> {
     })
 }
 
+/// Dispatches one declaration section to the matching AST builder.
 fn parse_declaration_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     let inner = section
         .into_inner()
@@ -77,6 +82,7 @@ fn parse_declaration_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     }
 }
 
+/// Parses a single procedure declaration, including its optional body.
 fn parse_procedure_decl(decl: Pair<Rule>) -> Result<Declaration> {
     let mut parts = decl.into_inner();
     let name = take_ident(parts.next(), "procedure declaration name")?;
@@ -111,6 +117,7 @@ fn parse_procedure_decl(decl: Pair<Rule>) -> Result<Declaration> {
     })
 }
 
+/// Parses the positional parameter list for a procedure declaration.
 fn parse_formal_params(params: Pair<Rule>) -> Result<Vec<String>> {
     let mut out = Vec::new();
     if let Some(ident_list) = params.into_inner().next() {
@@ -124,6 +131,7 @@ fn parse_formal_params(params: Pair<Rule>) -> Result<Vec<String>> {
     Ok(out)
 }
 
+/// Parses a `CONST` declaration section.
 fn parse_const_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     let mut out = Vec::new();
 
@@ -141,6 +149,7 @@ fn parse_const_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     Ok(out)
 }
 
+/// Parses a `VAR` declaration section.
 fn parse_var_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     let ident_list = section
         .into_inner()
@@ -160,6 +169,7 @@ fn parse_var_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     Ok(out)
 }
 
+/// Parses the optional module import section.
 fn parse_import_section(section: Pair<Rule>) -> Result<Vec<ImportDecl>> {
     section
         .into_inner()
@@ -167,6 +177,7 @@ fn parse_import_section(section: Pair<Rule>) -> Result<Vec<ImportDecl>> {
         .collect::<Result<Vec<_>>>()
 }
 
+/// Parses a single import item, including optional aliasing.
 fn parse_import_item(item: Pair<Rule>) -> Result<ImportDecl> {
     let mut inner = item.into_inner();
     let first = take_ident(inner.next(), "import name")?;
@@ -183,12 +194,14 @@ fn parse_import_item(item: Pair<Rule>) -> Result<ImportDecl> {
     })
 }
 
+/// Parses a sequence of statements from a grammar list node.
 fn parse_stmt_list(list: Pair<Rule>) -> Result<Vec<Statement>> {
     list.into_inner()
         .map(parse_statement)
         .collect::<Result<Vec<_>>>()
 }
 
+/// Parses a single statement node.
 fn parse_statement(stmt: Pair<Rule>) -> Result<Statement> {
     match stmt.as_rule() {
         Rule::assign_stmt => {

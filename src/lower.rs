@@ -1,3 +1,5 @@
+//! Lowers the parsed AST into a name-resolved HIR for code generation.
+
 use anyhow::Result;
 
 use crate::ast::{Declaration, Expr, Module, Statement};
@@ -6,12 +8,14 @@ use crate::scope::ScopedMap;
 use crate::symbols::SymbolKind;
 
 #[derive(Debug)]
+/// Tracks lexical scopes while assigning stable ids to resolved identifiers.
 struct Resolver {
     scopes: ScopedMap<HResolvedIdent>,
     next_id: usize,
 }
 
 impl Resolver {
+    /// Creates a resolver with a root scope and id counter starting at zero.
     fn new() -> Self {
         Self {
             scopes: ScopedMap::new(),
@@ -19,14 +23,17 @@ impl Resolver {
         }
     }
 
+    /// Enters a nested lexical scope.
     fn enter_scope(&mut self) {
         self.scopes.enter_scope();
     }
 
+    /// Exits the current lexical scope.
     fn exit_scope(&mut self) {
         self.scopes.exit_scope();
     }
 
+    /// Declares a resolved identifier and assigns it the next stable id.
     fn declare(&mut self, name: &str, kind: SymbolKind) -> Result<HResolvedIdent> {
         let resolved = HResolvedIdent {
             id: self.next_id,
@@ -42,15 +49,18 @@ impl Resolver {
         Ok(resolved)
     }
 
+    /// Resolves a name using lexical scoping rules.
     fn resolve(&self, name: &str) -> Option<HResolvedIdent> {
         self.scopes.resolve(name).cloned()
     }
 
+    /// Returns the symbols declared directly in the active scope.
     fn current_scope_symbols(&self) -> Vec<HResolvedIdent> {
         self.scopes.current_scope_values()
     }
 }
 
+/// Converts the parsed AST into HIR with resolved identifiers.
 pub fn lower_module(module: &Module) -> Result<HModule> {
     let mut resolver = Resolver::new();
     resolver.declare("WriteInt", SymbolKind::Procedure)?;
@@ -102,6 +112,7 @@ pub fn lower_module(module: &Module) -> Result<HModule> {
     })
 }
 
+/// Lowers one top-level declaration into its resolved HIR form.
 fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Result<HDeclaration> {
     match declaration {
         Declaration::Const { name, value } => {
@@ -170,6 +181,7 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
     }
 }
 
+/// Lowers one statement while preserving the current lexical scope.
 fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HStatement> {
     match statement {
         Statement::Assign { target, value } => {
@@ -234,6 +246,7 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
     }
 }
 
+/// Lowers one expression into its resolved HIR form.
 fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
     match expr {
         Expr::Integer(value) => Ok(HExpr::Integer(*value)),

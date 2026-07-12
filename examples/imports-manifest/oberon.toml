@@ -1,3 +1,2 @@
 [dependencies]
 Math = { crate = "num-traits", version = "0.2" }
-IO = { crate = "termcolor", version = "1.4" }

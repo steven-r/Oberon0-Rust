@@ -3,6 +3,7 @@ use logos::Logos;
 
 #[derive(Logos, Debug, Clone, PartialEq)]
 #[logos(skip r"[ \t\r\n\f]+")]
+/// Lexical tokens recognized by the Oberon0 scanner.
 pub enum Token {
     #[token("MODULE")]
     KwModule,
@@ -61,12 +62,17 @@ pub enum Token {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+/// Token annotated with its byte span in the original source file.
 pub struct SpannedToken {
+    /// Token kind and payload.
     pub token: Token,
+    /// Inclusive start byte offset.
     pub start: usize,
+    /// Exclusive end byte offset.
     pub end: usize,
 }
 
+/// Converts raw source text into a stream of spanned tokens.
 pub fn scan(source: &str) -> Result<Vec<SpannedToken>> {
     let mut lexer = Token::lexer(source);
     let mut out = Vec::new();

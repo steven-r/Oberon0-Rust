@@ -1,6 +1,7 @@
 MODULE Main;
+IMPORT Math;
 VAR x;
 BEGIN
-  x := 1 + 2 * 3;
+  x := 42;
   WriteInt(x);
 END Main.

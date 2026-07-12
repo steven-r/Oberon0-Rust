@@ -14,6 +14,7 @@ scripts/oberon0 <example-directory> --run
 ## Example list
 
 - `hello-app`: minimal end-to-end starter with expression and output
+- `imports-manifest`: import declarations plus `oberon.toml` crate mapping
 - `expressions-basic`: operator precedence and parenthesized expressions
 - `declarations-const-var`: `CONST` and `VAR` declarations
 - `control-if-else`: branching with `IF/ELSE`

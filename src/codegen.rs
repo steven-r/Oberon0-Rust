@@ -84,7 +84,15 @@ fn generate_main_rs(module: &HModule) -> String {
     let mut out = String::new();
     let procedure_names = collect_procedure_names(module);
 
+    out.push_str(&format!(
+        "// Generated from Oberon0 module `{}`.\n",
+        module.name
+    ));
+    out.push_str("// Comments preserve the mapping between Oberon0 names and generated Rust bindings.\n\n");
     out.push_str("use std::collections::HashMap;\n\n");
+    out.push_str("/// Returns the current value of a module-level Oberon0 variable.\n");
+    out.push_str("///\n");
+    out.push_str("/// Generated programs keep module state in `vars`, keyed by the original Oberon0 name.\n");
     out.push_str("#[allow(dead_code)]\n");
     out.push_str("fn get_var(vars: &HashMap<String, i64>, name: &str) -> i64 {\n");
     out.push_str("    *vars.get(name).unwrap_or(&0)\n");
@@ -110,7 +118,9 @@ fn generate_main_rs(module: &HModule) -> String {
         }
     }
 
+    out.push_str(&format!("/// Executes the Oberon0 module `{}`.\n", module.name));
     out.push_str("fn main() {\n");
+    out.push_str("    // Module-level Oberon0 variables live in this runtime state map.\n");
     out.push_str("    let mut vars: HashMap<String, i64> = HashMap::new();\n");
 
     let main_ctx = FormatContext {
@@ -171,11 +181,26 @@ fn format_procedure(
         vars_arg: "vars",
     };
 
+    out.push_str(&format!("/// Implements the Oberon0 procedure `{}`.\n", name));
+    if !params.is_empty() {
+        out.push_str("///\n");
+        out.push_str("/// Parameter bindings:\n");
+        for param in params {
+            out.push_str(&format!(
+                "/// - `param_{}` corresponds to the Oberon0 parameter `{}`.\n",
+                param.id, param.name
+            ));
+        }
+    }
     out.push_str("#[allow(non_snake_case)]\n");
     out.push_str("#[allow(unused_variables)]\n");
     out.push_str(&format!("fn {}({}) {{\n", name, signature_args.join(", ")));
 
     for local in local_vars {
+        out.push_str(&format!(
+            "    // Local variable backing the Oberon0 `{}` binding.\n",
+            local.name
+        ));
         out.push_str(&format!("    let mut local_{}: i64 = 0;\n", local.id));
     }
 
@@ -387,10 +412,17 @@ mod tests {
 
         let generated = generate_main_rs(&module);
 
+        assert!(generated.contains("// Generated from Oberon0 module `Main`."));
+        assert!(generated.contains("/// Returns the current value of a module-level Oberon0 variable."));
+        assert!(generated.contains("/// Implements the Oberon0 procedure `AddAndPrint`."));
+        assert!(generated.contains("/// - `param_2` corresponds to the Oberon0 parameter `a`."));
         assert!(generated.contains("fn AddAndPrint(vars: &mut HashMap<String, i64>, param_2: i64)"));
+        assert!(generated.contains("// Local variable backing the Oberon0 `x` binding."));
         assert!(generated.contains("let mut local_3: i64 = 0;"));
         assert!(generated.contains("local_3 = param_2;"));
         assert!(generated.contains("println!(\"{}\", local_3);"));
+        assert!(generated.contains("/// Executes the Oberon0 module `Main`."));
+        assert!(generated.contains("// Module-level Oberon0 variables live in this runtime state map."));
         assert!(generated.contains("AddAndPrint(&mut vars, 7);"));
     }
 
