@@ -1,2 +1,5 @@
 [dependencies]
 Math = { crate = "num-traits", version = "0.2" }
+
+[compiler]
+emit_state = true

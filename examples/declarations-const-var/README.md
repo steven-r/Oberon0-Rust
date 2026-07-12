@@ -20,5 +20,4 @@ scripts/oberon0 examples/declarations-const-var --run
 
 ```text
 36
-State: {"x": 12, "y": 36}
 ```

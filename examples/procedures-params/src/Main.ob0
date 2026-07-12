@@ -1,8 +1,11 @@
 MODULE Main;
-PROCEDURE AddAndPrint(a, b);
+VAR x;
+PROCEDURE Show(x);
 BEGIN
-  WriteInt(a + b)
-END AddAndPrint;
+  WriteInt(x)
+END Show;
 BEGIN
-  AddAndPrint(2, 5)
+  x := 7;
+  Show(42);
+  WriteInt(x)
 END Main.

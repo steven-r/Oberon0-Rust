@@ -12,6 +12,7 @@ pub fn generate_rust_project(
     module: &HModule,
     manifest: Option<&ExternalManifest>,
     out_root: &Path,
+    emit_state: bool,
 ) -> Result<PathBuf> {
     let project_dir = out_root.join(&module.name);
     let src_dir = project_dir.join("src");
@@ -19,7 +20,7 @@ pub fn generate_rust_project(
         .with_context(|| format!("Could not create directory: {}", src_dir.display()))?;
 
     let cargo_toml = generate_cargo_toml(module, manifest)?;
-    let main_rs = generate_main_rs(module);
+    let main_rs = generate_main_rs(module, emit_state);
 
     fs::write(project_dir.join("Cargo.toml"), cargo_toml)
         .with_context(|| format!("Could not write Cargo.toml: {}", project_dir.display()))?;
@@ -80,24 +81,33 @@ fn dependency_line(local_name: &str, binding: &CrateBinding) -> String {
     format!("{} = {{ {} }}", dep_name, fields.join(", "))
 }
 
-fn generate_main_rs(module: &HModule) -> String {
+fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     let mut out = String::new();
     let procedure_names = collect_procedure_names(module);
     let module_constants = collect_module_constants(module);
-    let needs_state_map = statements_need_state_map(&module.statements, &procedure_names);
+    let needs_module_state = statements_need_state_map(&module.statements, &procedure_names);
+    let tracks_procedure_state = emit_state && module_has_procedure_locals(module);
+    let needs_runtime_state = needs_module_state || tracks_procedure_state;
+    let show_state = emit_state && needs_runtime_state;
 
     out.push_str(&format!(
         "// Generated from Oberon0 module `{}`.\n",
         module.name
     ));
     out.push_str("// Comments preserve the mapping between Oberon0 names and generated Rust bindings.\n\n");
-    out.push_str("use std::collections::HashMap;\n\n");
+    out.push_str("use std::collections::BTreeMap;\n\n");
     out.push_str("/// Returns the current value of a module-level Oberon0 variable.\n");
     out.push_str("///\n");
     out.push_str("/// Generated programs keep module state in `vars`, keyed by the original Oberon0 name.\n");
     out.push_str("#[allow(dead_code)]\n");
-    out.push_str("fn get_var(vars: &HashMap<String, i64>, name: &str) -> i64 {\n");
+    out.push_str("fn get_var(vars: &BTreeMap<String, i64>, name: &str) -> i64 {\n");
     out.push_str("    *vars.get(name).unwrap_or(&0)\n");
+    out.push_str("}\n\n");
+
+    out.push_str("/// Records the current value of a procedure-scoped Oberon0 variable.\n");
+    out.push_str("#[allow(dead_code)]\n");
+    out.push_str("fn set_procedure_var(vars: &mut BTreeMap<String, i64>, procedure: &str, name: &str, value: i64) {\n");
+    out.push_str("    vars.insert(format!(\"{}.{}\", procedure, name), value);\n");
     out.push_str("}\n\n");
 
     for declaration in &module.declarations {
@@ -116,6 +126,7 @@ fn generate_main_rs(module: &HModule) -> String {
                 body,
                 &module_constants,
                 &procedure_names,
+                emit_state,
             ));
             out.push('\n');
         }
@@ -123,23 +134,25 @@ fn generate_main_rs(module: &HModule) -> String {
 
     out.push_str(&format!("/// Executes the Oberon0 module `{}`.\n", module.name));
     out.push_str("fn main() {\n");
-    if needs_state_map {
-        out.push_str("    // Module-level Oberon0 variables live in this runtime state map.\n");
-        out.push_str("    let mut vars: HashMap<String, i64> = HashMap::new();\n");
+    if needs_runtime_state {
+        out.push_str("    // Runtime state keeps module variables and optional procedure-local snapshots.\n");
+        out.push_str("    let mut vars: BTreeMap<String, i64> = BTreeMap::new();\n");
     }
 
     let main_ctx = FormatContext {
         locals: HashMap::new(),
         constants: module_constants,
         procedures: &procedure_names,
-        vars_arg: "&mut vars",
+        vars_arg: if needs_runtime_state { "&mut vars" } else { "&mut BTreeMap::new()" },
+        procedure_name: None,
+        track_procedure_locals: false,
     };
 
     for stmt in &module.statements {
         out.push_str(&format_statement(stmt, "    ", &main_ctx));
     }
 
-    if needs_state_map {
+    if show_state {
         out.push_str("    if !vars.is_empty() {\n");
         out.push_str("        println!(\"State: {:?}\", vars);\n");
         out.push_str("    }\n");
@@ -154,6 +167,15 @@ struct FormatContext<'a> {
     constants: HashMap<usize, i64>,
     procedures: &'a HashSet<String>,
     vars_arg: &'a str,
+    procedure_name: Option<&'a str>,
+    track_procedure_locals: bool,
+}
+
+fn module_has_procedure_locals(module: &HModule) -> bool {
+    module.declarations.iter().any(|decl| match decl {
+        HDeclaration::Procedure { local_vars, .. } => !local_vars.is_empty(),
+        _ => false,
+    })
 }
 
 fn collect_procedure_names(module: &HModule) -> HashSet<String> {
@@ -223,17 +245,18 @@ fn format_procedure(
     body: &[HStatement],
     constants: &HashMap<usize, i64>,
     procedure_names: &HashSet<String>,
+    emit_state: bool,
 ) -> String {
     let mut out = String::new();
     let mut locals = HashMap::new();
 
     let mut signature_args = Vec::new();
-    signature_args.push("vars: &mut HashMap<String, i64>".to_string());
+    signature_args.push("vars: &mut BTreeMap<String, i64>".to_string());
 
     for param in params {
         let binding = format!("param_{}", param.id);
         locals.insert(param.id, binding.clone());
-        signature_args.push(format!("{}: i64", binding));
+        signature_args.push(format!("mut {}: i64", binding));
     }
 
     let ctx = FormatContext {
@@ -241,6 +264,8 @@ fn format_procedure(
         constants: constants.clone(),
         procedures: procedure_names,
         vars_arg: "vars",
+        procedure_name: Some(name),
+        track_procedure_locals: emit_state,
     };
 
     out.push_str(&format!("/// Implements the Oberon0 procedure `{}`.\n", name));
@@ -258,12 +283,27 @@ fn format_procedure(
     out.push_str("#[allow(unused_variables)]\n");
     out.push_str(&format!("fn {}({}) {{\n", name, signature_args.join(", ")));
 
+    if emit_state {
+        for param in params {
+            out.push_str(&format!(
+                "    set_procedure_var(vars, \"{}\", \"{}\", param_{});\n",
+                name, param.name, param.id
+            ));
+        }
+    }
+
     for local in local_vars {
         out.push_str(&format!(
             "    // Local variable backing the Oberon0 `{}` binding.\n",
             local.name
         ));
         out.push_str(&format!("    let mut local_{}: i64 = 0;\n", local.id));
+        if emit_state {
+            out.push_str(&format!(
+                "    set_procedure_var(vars, \"{}\", \"{}\", local_{});\n",
+                name, local.name, local.id
+            ));
+        }
     }
 
     let mut procedure_ctx = ctx;
@@ -285,12 +325,22 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
     match stmt {
         HStatement::Assign { target, value } => {
             if let Some(binding) = ctx.locals.get(&target.id) {
-                format!(
+                let mut out = String::new();
+                out.push_str(&format!(
                     "{}{} = {};\n",
                     indent,
                     binding,
                     format_top_level_expr(value, ctx)
-                )
+                ));
+                if ctx.track_procedure_locals {
+                    if let Some(procedure_name) = ctx.procedure_name {
+                        out.push_str(&format!(
+                            "{}set_procedure_var(vars, \"{}\", \"{}\", {});\n",
+                            indent, procedure_name, target.name, binding
+                        ));
+                    }
+                }
+                out
             } else {
                 format!(
                     "{}vars.insert(\"{}\".to_string(), {});\n",
@@ -443,10 +493,10 @@ mod tests {
 
     use crate::ast::BinaryOp;
     use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
-    use crate::manifest::{CrateBinding, ExternalManifest};
+    use crate::manifest::{CompilerConfig, CrateBinding, ExternalManifest};
     use crate::symbols::SymbolKind;
 
-    use super::{generate_cargo_toml, generate_main_rs};
+    use super::{generate_cargo_toml, generate_main_rs, generate_rust_project};
 
     fn ident(id: usize, name: &str, kind: SymbolKind) -> HResolvedIdent {
         HResolvedIdent {
@@ -488,19 +538,21 @@ mod tests {
             }],
         };
 
-        let generated = generate_main_rs(&module);
+        let generated = generate_main_rs(&module, true);
 
         assert!(generated.contains("// Generated from Oberon0 module `Main`."));
         assert!(generated.contains("/// Returns the current value of a module-level Oberon0 variable."));
         assert!(generated.contains("/// Implements the Oberon0 procedure `AddAndPrint`."));
         assert!(generated.contains("/// - `param_2` corresponds to the Oberon0 parameter `a`."));
-        assert!(generated.contains("fn AddAndPrint(vars: &mut HashMap<String, i64>, param_2: i64)"));
+        assert!(generated.contains("fn AddAndPrint(vars: &mut BTreeMap<String, i64>, mut param_2: i64)"));
+        assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"a\", param_2);"));
         assert!(generated.contains("// Local variable backing the Oberon0 `x` binding."));
         assert!(generated.contains("let mut local_3: i64 = 0;"));
+        assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"x\", local_3);"));
         assert!(generated.contains("local_3 = param_2;"));
         assert!(generated.contains("println!(\"{}\", local_3);"));
         assert!(generated.contains("/// Executes the Oberon0 module `Main`."));
-        assert!(generated.contains("// Module-level Oberon0 variables live in this runtime state map."));
+        assert!(generated.contains("// Runtime state keeps module variables and optional procedure-local snapshots."));
         assert!(generated.contains("AddAndPrint(&mut vars, 7);"));
     }
 
@@ -527,7 +579,10 @@ mod tests {
                 features: vec!["std".to_string()],
             },
         );
-        let manifest = ExternalManifest { dependencies };
+        let manifest = ExternalManifest {
+            dependencies,
+            compiler: CompilerConfig::default(),
+        };
 
         let cargo_toml = generate_cargo_toml(&module, Some(&manifest))
             .expect("cargo toml generation should succeed");
@@ -556,7 +611,7 @@ mod tests {
             }],
         };
 
-        let generated = generate_main_rs(&module);
+        let generated = generate_main_rs(&module, false);
         assert!(generated.contains("vars.insert(\"x\".to_string(), 1 + (2 * 3));"));
     }
 
@@ -573,9 +628,9 @@ mod tests {
             }],
         };
 
-        let generated = generate_main_rs(&module);
+        let generated = generate_main_rs(&module, false);
         assert!(generated.contains("print!(\"{}\", \"Hello, \\\"Oberon\\\"\");"));
-        assert!(!generated.contains("let mut vars: HashMap<String, i64> = HashMap::new();"));
+        assert!(!generated.contains("let mut vars: BTreeMap<String, i64> = BTreeMap::new();"));
         assert!(!generated.contains("State: {:?}"));
     }
 
@@ -600,8 +655,332 @@ mod tests {
             }],
         };
 
-        let generated = generate_main_rs(&module);
+        let generated = generate_main_rs(&module, true);
         assert!(generated.contains("vars.insert(\"x\".to_string(), 10 + 2);"));
         assert!(!generated.contains("get_var(&vars, \"BASE\")"));
+    }
+
+    #[test]
+    fn emits_state_output_only_when_explicitly_enabled() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![HStatement::Assign {
+                target: ident(40, "x", SymbolKind::Variable),
+                value: HExpr::Integer(7),
+            }],
+        };
+
+        let disabled = generate_main_rs(&module, false);
+        assert!(!disabled.contains("State: {:?}"));
+        assert!(disabled.contains("let mut vars: BTreeMap<String, i64> = BTreeMap::new();"));
+
+        let enabled = generate_main_rs(&module, true);
+        assert!(enabled.contains("let mut vars: BTreeMap<String, i64> = BTreeMap::new();"));
+        assert!(enabled.contains("println!(\"State: {:?}\", vars);"));
+    }
+
+    #[test]
+    fn emits_state_map_for_procedure_locals_without_module_variables() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![HDeclaration::Procedure {
+                id: 1,
+                name: "P".to_string(),
+                params: vec![],
+                local_vars: vec![ident(2, "local", SymbolKind::Variable)],
+                body: vec![HStatement::Assign {
+                    target: ident(2, "local", SymbolKind::Variable),
+                    value: HExpr::Integer(9),
+                }],
+                end_name: "P".to_string(),
+            }],
+            statements: vec![HStatement::Call {
+                name: ident(1, "P", SymbolKind::Procedure),
+                args: vec![],
+            }],
+        };
+
+        let generated = generate_main_rs(&module, true);
+        assert!(generated.contains("let mut vars: BTreeMap<String, i64> = BTreeMap::new();"));
+        assert!(generated.contains("set_procedure_var(vars, \"P\", \"local\", local_2);"));
+    }
+
+    #[test]
+    fn emits_state_map_for_procedure_parameters_when_enabled() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![HDeclaration::Procedure {
+                id: 1,
+                name: "P".to_string(),
+                params: vec![HParam {
+                    id: 2,
+                    name: "x".to_string(),
+                }],
+                local_vars: vec![],
+                body: vec![],
+                end_name: "P".to_string(),
+            }],
+            statements: vec![HStatement::Call {
+                name: ident(1, "P", SymbolKind::Procedure),
+                args: vec![HExpr::Integer(9)],
+            }],
+        };
+
+        let generated = generate_main_rs(&module, true);
+        assert!(generated.contains("fn P(vars: &mut BTreeMap<String, i64>, mut param_2: i64)"));
+        assert!(generated.contains("set_procedure_var(vars, \"P\", \"x\", param_2);"));
+    }
+
+    #[test]
+    fn runtime_state_output_supports_reassigned_procedure_parameters() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![
+                HDeclaration::Var {
+                    id: 1,
+                    name: "x".to_string(),
+                },
+                HDeclaration::Procedure {
+                    id: 2,
+                    name: "Walk".to_string(),
+                    params: vec![HParam {
+                        id: 3,
+                        name: "x".to_string(),
+                    }],
+                    local_vars: vec![],
+                    body: vec![HStatement::While {
+                        condition: HExpr::Name(ident(3, "x", SymbolKind::Parameter)),
+                        body: vec![HStatement::Assign {
+                            target: ident(3, "x", SymbolKind::Parameter),
+                            value: HExpr::Binary {
+                                op: BinaryOp::Sub,
+                                left: Box::new(HExpr::Name(ident(3, "x", SymbolKind::Parameter))),
+                                right: Box::new(HExpr::Integer(1)),
+                            },
+                        }],
+                    }],
+                    end_name: "Walk".to_string(),
+                },
+            ],
+            statements: vec![
+                HStatement::Assign {
+                    target: ident(1, "x", SymbolKind::Variable),
+                    value: HExpr::Integer(3),
+                },
+                HStatement::Call {
+                    name: ident(2, "Walk", SymbolKind::Procedure),
+                    args: vec![HExpr::Integer(2)],
+                },
+            ],
+        };
+
+        let out_root = temp_codegen_dir("mutable_param_state");
+        let project_dir = generate_rust_project(&module, None, &out_root, true)
+            .expect("project generation should succeed");
+
+        let output = std::process::Command::new("cargo")
+            .arg("run")
+            .current_dir(&project_dir)
+            .output()
+            .expect("generated project should run");
+        assert!(output.status.success(), "generated project failed: {}", String::from_utf8_lossy(&output.stderr));
+
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        assert!(stdout.contains("State: {\"Walk.x\": 0, \"x\": 3}"));
+
+        std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
+    }
+
+    #[test]
+    fn runtime_state_output_shows_shadowed_module_and_procedure_parameter_values() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![
+                HDeclaration::Var {
+                    id: 1,
+                    name: "x".to_string(),
+                },
+                HDeclaration::Procedure {
+                    id: 2,
+                    name: "Show".to_string(),
+                    params: vec![HParam {
+                        id: 3,
+                        name: "x".to_string(),
+                    }],
+                    local_vars: vec![],
+                    body: vec![HStatement::Call {
+                        name: ident(4, "WriteInt", SymbolKind::Procedure),
+                        args: vec![HExpr::Name(ident(3, "x", SymbolKind::Parameter))],
+                    }],
+                    end_name: "Show".to_string(),
+                },
+            ],
+            statements: vec![
+                HStatement::Assign {
+                    target: ident(1, "x", SymbolKind::Variable),
+                    value: HExpr::Integer(7),
+                },
+                HStatement::Call {
+                    name: ident(2, "Show", SymbolKind::Procedure),
+                    args: vec![HExpr::Integer(42)],
+                },
+            ],
+        };
+
+        let out_root = temp_codegen_dir("shadowed_param_state");
+        let project_dir = generate_rust_project(&module, None, &out_root, true)
+            .expect("project generation should succeed");
+
+        let output = std::process::Command::new("cargo")
+            .arg("run")
+            .current_dir(&project_dir)
+            .output()
+            .expect("generated project should run");
+        assert!(output.status.success(), "generated project failed: {}", String::from_utf8_lossy(&output.stderr));
+
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        assert!(stdout.contains("42"));
+        assert!(stdout.contains("State: {\"Show.x\": 42, \"x\": 7}"));
+
+        std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
+    }
+
+    #[test]
+    fn runtime_state_output_shows_only_module_variables_when_enabled() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![HDeclaration::Procedure {
+                id: 1,
+                name: "P".to_string(),
+                params: vec![],
+                local_vars: vec![ident(2, "local", SymbolKind::Variable)],
+                body: vec![
+                    HStatement::Assign {
+                        target: ident(2, "local", SymbolKind::Variable),
+                        value: HExpr::Integer(9),
+                    },
+                    HStatement::Assign {
+                        target: ident(3, "x", SymbolKind::Variable),
+                        value: HExpr::Integer(7),
+                    },
+                ],
+                end_name: "P".to_string(),
+            }],
+            statements: vec![HStatement::Call {
+                name: ident(1, "P", SymbolKind::Procedure),
+                args: vec![],
+            }],
+        };
+
+        let out_root = temp_codegen_dir("state_enabled");
+        let manifest = ExternalManifest {
+            dependencies: BTreeMap::new(),
+            compiler: CompilerConfig { emit_state: true },
+        };
+        let project_dir = generate_rust_project(&module, Some(&manifest), &out_root, true)
+            .expect("project generation should succeed");
+
+        let output = std::process::Command::new("cargo")
+            .arg("run")
+            .current_dir(&project_dir)
+            .output()
+            .expect("generated project should run");
+        assert!(output.status.success(), "generated project failed: {}", String::from_utf8_lossy(&output.stderr));
+
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        assert!(stdout.contains("State: {\"P.local\": 9, \"x\": 7}"));
+
+        std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
+    }
+
+    #[test]
+    fn runtime_state_output_can_be_forced_on_without_manifest() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![HDeclaration::Procedure {
+                id: 1,
+                name: "P".to_string(),
+                params: vec![],
+                local_vars: vec![ident(2, "local", SymbolKind::Variable)],
+                body: vec![HStatement::Assign {
+                    target: ident(2, "local", SymbolKind::Variable),
+                    value: HExpr::Integer(9),
+                }],
+                end_name: "P".to_string(),
+            }],
+            statements: vec![HStatement::Call {
+                name: ident(1, "P", SymbolKind::Procedure),
+                args: vec![],
+            }],
+        };
+
+        let out_root = temp_codegen_dir("forced_state");
+        let project_dir = generate_rust_project(&module, None, &out_root, true)
+            .expect("project generation should succeed");
+
+        let output = std::process::Command::new("cargo")
+            .arg("run")
+            .current_dir(&project_dir)
+            .output()
+            .expect("generated project should run");
+        assert!(output.status.success(), "generated project failed: {}", String::from_utf8_lossy(&output.stderr));
+
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        assert!(stdout.contains("State: {\"P.local\": 9}"));
+
+        std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
+    }
+
+    #[test]
+    fn runtime_state_output_is_suppressed_by_default() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![HStatement::Assign {
+                target: ident(50, "x", SymbolKind::Variable),
+                value: HExpr::Integer(7),
+            }],
+        };
+
+        let out_root = temp_codegen_dir("state_disabled");
+        let project_dir = generate_rust_project(&module, None, &out_root, false)
+            .expect("project generation should succeed");
+
+        let output = std::process::Command::new("cargo")
+            .arg("run")
+            .current_dir(&project_dir)
+            .output()
+            .expect("generated project should run");
+        assert!(output.status.success(), "generated project failed: {}", String::from_utf8_lossy(&output.stderr));
+
+        let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+        assert!(!stdout.contains("State: {"));
+
+        std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
+    }
+
+    fn temp_codegen_dir(name: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("oberon0_codegen_{}_{}", name, nanos))
     }
 }

@@ -23,5 +23,4 @@ scripts/oberon0 examples/procedures-nested-control --run
 3
 2
 100
-State: {"current": 0}
 ```

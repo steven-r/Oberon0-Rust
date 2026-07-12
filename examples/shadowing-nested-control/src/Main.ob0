@@ -1,0 +1,22 @@
+MODULE Main;
+VAR x, sum;
+PROCEDURE Walk(x);
+BEGIN
+  sum := 0;
+  WHILE x DO
+    IF x - 1 THEN
+      sum := sum + x
+    ELSE
+      sum := sum + 100
+    END;
+    WriteInt(x);
+    x := x - 1
+  END
+END Walk;
+BEGIN
+  x := 3;
+  sum := 0;
+  Walk(3);
+  WriteInt(x);
+  WriteInt(sum)
+END Main.

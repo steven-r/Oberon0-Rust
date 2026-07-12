@@ -6,6 +6,7 @@ usage() {
 Usage:
   oberon0 <project-path> [--run]
   oberon0 <project-path> --source <module.ob0> [--run]
+  oberon0 <project-path> [--emit-state | --no-emit-state] [--run]
 
 Examples:
   oberon0 examples/hello-app
@@ -15,6 +16,7 @@ Examples:
 Behavior:
   - Resolves source file automatically as <project>/src/Main.ob0 unless --source is set.
   - Uses <project>/oberon.toml as manifest if present.
+  - CLI state flags override any compiler.emit_state value from the manifest.
   - Generates output under target/generated.
   - If --run is provided, builds generated project and runs it.
 EOF
@@ -28,6 +30,7 @@ fi
 PROJECT_PATH=""
 SOURCE_REL="src/Main.ob0"
 RUN_GENERATED=false
+STATE_FLAG=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,6 +48,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --run)
       RUN_GENERATED=true
+      ;;
+    --emit-state|--no-emit-state)
+      STATE_FLAG=("$1")
       ;;
     -* )
       echo "error: unknown option '$1'" >&2
@@ -82,6 +88,9 @@ fi
 CMD=(cargo run -- "$SOURCE_PATH" --out-dir "$REPO_ROOT/target/generated")
 if [[ -f "$MANIFEST_PATH" ]]; then
   CMD+=(--manifest "$MANIFEST_PATH")
+fi
+if [[ ${#STATE_FLAG[@]} -gt 0 ]]; then
+  CMD+=("${STATE_FLAG[@]}")
 fi
 if [[ "$RUN_GENERATED" == true ]]; then
   CMD+=(--build)

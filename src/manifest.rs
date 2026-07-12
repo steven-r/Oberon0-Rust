@@ -11,6 +11,17 @@ pub struct ExternalManifest {
     #[serde(default)]
     /// Import bindings keyed by the external import name.
     pub dependencies: BTreeMap<String, CrateBinding>,
+    #[serde(default)]
+    /// Optional compiler configuration applied during code generation.
+    pub compiler: CompilerConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+/// Optional compiler settings loaded from `oberon.toml`.
+pub struct CompilerConfig {
+    #[serde(default)]
+    /// Emits the generated `State: {...}` footer when true.
+    pub emit_state: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -67,6 +78,9 @@ mod tests {
 [dependencies]
 Math = { crate = "num-traits", version = "0.2" }
 IO = { crate = "termcolor", package = "termcolor", version = "1.4", features = ["std"] }
+
+[compiler]
+emit_state = true
 "#;
         fs::write(&path, content).expect("failed to write temp manifest");
 
@@ -77,6 +91,7 @@ IO = { crate = "termcolor", package = "termcolor", version = "1.4", features = [
 
         let io = manifest.resolve("IO").expect("IO binding should exist");
         assert_eq!(io.features, vec!["std"]);
+        assert!(manifest.compiler.emit_state);
 
         fs::remove_file(&path).expect("failed to remove temp manifest");
     }
@@ -89,6 +104,21 @@ IO = { crate = "termcolor", package = "termcolor", version = "1.4", features = [
 
         let result = ExternalManifest::from_file(&path);
         assert!(result.is_err(), "invalid TOML should fail");
+
+        fs::remove_file(&path).expect("failed to remove temp manifest");
+    }
+
+    #[test]
+    fn manifest_defaults_state_output_to_disabled() {
+        let path = temp_manifest_path("default_flags");
+        let content = r#"
+[dependencies]
+Math = { crate = "num-traits", version = "0.2" }
+"#;
+        fs::write(&path, content).expect("failed to write temp manifest");
+
+        let manifest = ExternalManifest::from_file(&path).expect("manifest should parse");
+        assert!(!manifest.compiler.emit_state);
 
         fs::remove_file(&path).expect("failed to remove temp manifest");
     }
