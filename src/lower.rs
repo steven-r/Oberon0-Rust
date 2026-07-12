@@ -65,6 +65,7 @@ pub fn lower_module(module: &Module) -> Result<HModule> {
     let mut resolver = Resolver::new();
     resolver.declare("WriteInt", SymbolKind::Procedure)?;
     resolver.declare("WriteString", SymbolKind::Procedure)?;
+    resolver.declare("WriteLn", SymbolKind::Procedure)?;
 
     let imports = module
         .imports

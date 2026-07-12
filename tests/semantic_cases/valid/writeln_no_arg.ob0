@@ -1,7 +1,4 @@
 MODULE Main;
-VAR x;
 BEGIN
-  x := 1 + 2 * 3;
-  WriteInt(x);
   WriteLn()
 END Main.

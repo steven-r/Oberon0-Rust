@@ -2,10 +2,12 @@ MODULE Main;
 VAR x;
 PROCEDURE Show(x);
 BEGIN
-  WriteInt(x)
+  WriteInt(x);
+  WriteLn()
 END Show;
 BEGIN
   x := 7;
   Show(42);
-  WriteInt(x)
+  WriteInt(x);
+  WriteLn()
 END Main.

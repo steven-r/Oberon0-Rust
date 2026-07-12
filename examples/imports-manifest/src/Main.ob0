@@ -4,4 +4,5 @@ VAR x;
 BEGIN
   x := 42;
   WriteInt(x);
+  WriteLn()
 END Main.

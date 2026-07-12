@@ -4,5 +4,6 @@ VAR x, y;
 BEGIN
   x := BASE + 2;
   y := x * 3;
-  WriteInt(y)
+  WriteInt(y);
+  WriteLn()
 END Main.
