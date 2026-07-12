@@ -50,6 +50,46 @@ fi
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+normalize_markdown_spacing() {
+  local input_file="$1"
+  awk '
+    BEGIN { blank = 0 }
+    {
+      if ($0 ~ /^[[:space:]]*$/) {
+        blank++
+        if (blank <= 1) {
+          print ""
+        }
+      } else {
+        blank = 0
+        print
+      }
+    }
+  ' "$input_file"
+}
+
+trim_outer_blank_lines() {
+  local input_file="$1"
+  awk '
+    { lines[NR] = $0 }
+    END {
+      start = 1
+      while (start <= NR && lines[start] ~ /^[[:space:]]*$/) {
+        start++
+      }
+
+      finish = NR
+      while (finish >= start && lines[finish] ~ /^[[:space:]]*$/) {
+        finish--
+      }
+
+      for (i = start; i <= finish; i++) {
+        print lines[i]
+      }
+    }
+  ' "$input_file"
+}
+
 current_version="$(grep -E '^version = "[0-9]+\.[0-9]+\.[0-9]+"$' Cargo.toml | head -n1 | sed -E 's/version = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/')"
 if [[ -z "$current_version" ]]; then
   echo "Failed to read version from Cargo.toml" >&2
@@ -79,14 +119,48 @@ if git rev-parse "$new_tag" >/dev/null 2>&1; then
   exit 1
 fi
 
-last_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+if [[ ! -f CHANGELOG.md ]]; then
+  cat > CHANGELOG.md <<'EOF'
+# Changelog
 
-tmp_section="$(mktemp)"
-if [[ -n "$last_tag" ]]; then
-  scripts/changelog.sh --from-tag "$last_tag" --to-ref HEAD --title "$new_tag" --output "$tmp_section"
-else
-  scripts/changelog.sh --to-ref HEAD --title "$new_tag" --output "$tmp_section"
+All notable changes to this project will be documented in this file.
+
+## Unreleased
+
+EOF
 fi
+
+if ! grep -q '^## Unreleased$' CHANGELOG.md; then
+  echo "CHANGELOG.md must contain a '## Unreleased' section before creating a release" >&2
+  exit 1
+fi
+
+tmp_unreleased_raw="$(mktemp)"
+tmp_unreleased_body="$(mktemp)"
+tmp_prefix="$(mktemp)"
+tmp_suffix="$(mktemp)"
+
+awk '
+  BEGIN { capture = 0 }
+  /^## Unreleased$/ { capture = 1; next }
+  capture && /^## / { exit }
+  capture { print }
+' CHANGELOG.md > "$tmp_unreleased_raw"
+
+trim_outer_blank_lines "$tmp_unreleased_raw" > "$tmp_unreleased_body"
+
+if [[ ! -s "$tmp_unreleased_body" ]]; then
+  echo "CHANGELOG.md Unreleased section is empty; update it before creating a release" >&2
+  exit 1
+fi
+
+release_date="$(date +%Y-%m-%d)"
+tmp_section="$(mktemp)"
+{
+  printf "## %s - %s\n\n" "$new_tag" "$release_date"
+  cat "$tmp_unreleased_body"
+  printf "\n"
+} > "$tmp_section"
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "Dry run completed. Proposed version: ${new_version}" >&2
@@ -96,24 +170,29 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
-if [[ ! -f CHANGELOG.md ]]; then
-  cat > CHANGELOG.md <<'EOF'
-# Changelog
+awk '
+  /^## Unreleased$/ { exit }
+  { print }
+' CHANGELOG.md > "$tmp_prefix"
 
-All notable changes to this project will be documented in this file.
-
-EOF
-fi
+awk '
+  BEGIN { capture = 0 }
+  /^## Unreleased$/ { capture = 1; next }
+  capture && /^## / { print; capture = 0; next }
+  !capture { print }
+' CHANGELOG.md > "$tmp_suffix"
 
 new_changelog="$(mktemp)"
 {
-  head -n 3 CHANGELOG.md
-  printf "\n"
+  cat "$tmp_prefix"
+  printf "## Unreleased\n\n"
   cat "$tmp_section"
-  printf "\n"
-  tail -n +4 CHANGELOG.md
+  cat "$tmp_suffix"
 } > "$new_changelog"
-mv "$new_changelog" CHANGELOG.md
+
+normalized_changelog="$(mktemp)"
+normalize_markdown_spacing "$new_changelog" > "$normalized_changelog"
+mv "$normalized_changelog" CHANGELOG.md
 
 sed -i -E "0,/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"$/s//version = \"${new_version}\"/" Cargo.toml
 sed -i -E "s/^Current value: \`[0-9]+\.[0-9]+\.[0-9]+\`$/Current value: \`${new_version}\`/" VERSIONING.md
