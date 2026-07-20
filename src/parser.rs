@@ -32,7 +32,7 @@ fn build_module(module_pair: Pair<Rule>) -> Result<Module> {
         let imports = parse_import_section(next)?;
         next = inner
             .next()
-            .context("Unexpected end before declarations or BEGIN block")?;
+            .context("Unexpected end before declarations, module body, or END name")?;
         imports
     } else {
         Vec::new()
@@ -43,7 +43,7 @@ fn build_module(module_pair: Pair<Rule>) -> Result<Module> {
         declarations.extend(parse_declaration_section(next)?);
         next = inner
             .next()
-            .context("Unexpected end before BEGIN block")?;
+            .context("Unexpected end before module body or END name")?;
     }
 
     let begin_pair = next;
