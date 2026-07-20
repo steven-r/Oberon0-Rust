@@ -245,7 +245,7 @@ Notes:
 
 The current compiler supports the Milestone A subset:
 
-- `MODULE ... END ... .`
+- `MODULE ... [BEGIN ...] END ... .`
 - Optional `IMPORT` section
 - Declarations include `CONST`, `TYPE`, `VAR`, and `PROCEDURE` declarations.
 - `TYPE` declarations currently support built-in scalar targets `INTEGER`, `BOOLEAN`, `REAL`, `LONGREAL` and simple named aliases.

@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- allow declaration-only modules to omit the top-level `BEGIN` block while preserving existing module-body parsing (#25)
+
+### Documentation
+
+- document optional top-level module `BEGIN` blocks in the README and subset/alignment docs (#25)
+
+### Tests
+
+- add parser and semantic corpus coverage for declaration-only and minimal modules without `BEGIN` (#25)
+
 ## v0.7.0 - 2026-07-12
 
 ### Features

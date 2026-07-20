@@ -6,7 +6,7 @@ ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 integer = @{ ASCII_DIGIT+ }
 string = @{ "\"" ~ ("\"\"" | (!("\"" | NEWLINE) ~ ANY))* ~ "\"" }
 
-module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ declaration_section* ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ "." ~ EOI }
+module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ declaration_section* ~ ("BEGIN" ~ stmt_list?)? ~ "END" ~ ident ~ "." ~ EOI }
 import_section = { "IMPORT" ~ import_item ~ ("," ~ import_item)* ~ ";" }
 import_item = { ident ~ (":=" ~ ident)? }
 

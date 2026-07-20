@@ -17,8 +17,8 @@ A source unit must follow this shape:
 ```oberon
 MODULE <Ident>;
 [IMPORT ... ;]
-BEGIN
-  [statement-list]
+[BEGIN
+  [statement-list]]
 END <Ident>.
 ```
 
@@ -26,7 +26,8 @@ Rules:
 
 1. The `END` identifier must match the `MODULE` identifier.
 2. `IMPORT` is optional.
-3. Empty statement list is allowed.
+3. The module `BEGIN` block is optional for declaration-only modules.
+4. Empty statement list is allowed when `BEGIN` is present.
 
 ## Imports
 
