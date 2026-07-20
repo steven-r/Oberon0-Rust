@@ -14,3 +14,7 @@ Apply these repository conventions when generating code or text:
 - Before committing, ensure that CHANGELOG.md Unreleased is updated for the next release, if needed.
 - Also ensure that README.md, examples/README.md, and touched example expected outputs reflect any new or changed behavior.
 - Keep repository examples runnable when touched.
+- Do not perform coding or file-editing work in cloud-hosted, remote, or agent-managed environments without the repository owner's explicit consent.
+- If consent for the execution environment has not been clearly given, stop and ask before making changes, committing, or pushing.
+- Prefer providing patches or instructions for the owner to apply locally over making remote edits without consent.
+- Treat lack of explicit consent as a hard stop for implementation work.
