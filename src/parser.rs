@@ -511,11 +511,29 @@ fn parse_pascal_string(raw: &str) -> Result<String> {
 /// Returns (Optional<module>, name).
 fn parse_qualified_ident(pair: Pair<Rule>) -> Result<(Option<String>, String)> {
     let mut inner = pair.into_inner();
+
     let first = take_ident(inner.next(), "first part of identifier")?;
 
-    if let Some(second_pair) = inner.next() {
-        let second = second_pair.as_str().to_string();
-        Ok((Some(first), second))
+    // If there's a second pair, it might be the "." operator (which we skip) or the second ident
+    // When parsing "B.IntType", the structure is: ident("B") ~ ("." ~ ident("IntType"))?
+    // This gives us: ident, ".", ident as inner pairs
+    // So we need to skip the "." operator and get the next ident
+    if let Some(next_pair) = inner.next() {
+        // This could be a rule (like ".") or an ident
+        if next_pair.as_rule() == Rule::ident {
+            // Simple case: just "module" followed by another "ident" (shouldn't happen with current grammar)
+            Ok((Some(first), next_pair.as_str().to_string()))
+        } else {
+            // Expected case: "." operator followed by ident
+            // Try to get the next ident
+            if let Some(second) = inner.next() {
+                let name = take_ident(Some(second), "second part of identifier")?;
+                Ok((Some(first), name))
+            } else {
+                // Just in case, return first as name
+                Ok((None, first))
+            }
+        }
     } else {
         Ok((None, first))
     }
@@ -532,8 +550,12 @@ fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeRef> {
         "LONGREAL" if module.is_none() => Ok(TypeRef::LongReal),
         _ => {
             match module {
-                Some(mod_name) => Ok(TypeRef::Qualified { module: mod_name, name }),
-                None => Ok(TypeRef::Named(name)),
+                Some(mod_name) => {
+                    Ok(TypeRef::Qualified { module: mod_name, name })
+                },
+                None => {
+                    Ok(TypeRef::Named(name))
+                },
             }
         }
     }
@@ -545,7 +567,16 @@ fn parse_type_ref_name(name: String) -> TypeRef {
         "BOOLEAN" => TypeRef::Boolean,
         "REAL" => TypeRef::Real,
         "LONGREAL" => TypeRef::LongReal,
-        _ => TypeRef::Named(name),
+        _ => {
+            // Check if it's a qualified name (contains a dot)
+            if let Some(dot_pos) = name.find('.') {
+                let module = name[..dot_pos].to_string();
+                let type_name = name[dot_pos + 1..].to_string();
+                TypeRef::Qualified { module, name: type_name }
+            } else {
+                TypeRef::Named(name)
+            }
+        }
     }
 }
 
@@ -722,6 +753,9 @@ mod tests {
             }
             "qualified_call_member_unresolved.ob0" => {
                 replace_required(source, "B.HELLO", "WriteLn()")
+            }
+            "qualified_call_non_exported.ob0" => {
+                replace_required(source, "B.NonExportedProcedure()", "WriteLn()")
             }
             "qualified_type_reference_unsupported.ob0" => {
                 replace_required(source, "VAR x: B.IntType;", "VAR x: INTEGER;")

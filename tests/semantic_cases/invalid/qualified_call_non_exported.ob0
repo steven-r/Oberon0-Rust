@@ -1,0 +1,6 @@
+(* INVALID: using a procedure that is not exported from an imported module *)
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+    B.NonExportedProcedure()
+END Main.
