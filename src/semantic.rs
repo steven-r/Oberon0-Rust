@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::ast::{
     BinaryOp, Declaration, Expr, LocalVarDecl, Module, ParamDecl, Statement, TypeRef, UnaryOp,
@@ -160,6 +160,7 @@ fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) 
                 TypeRef::Real => "REAL".to_string(),
                 TypeRef::LongReal => "LONGREAL".to_string(),
                 TypeRef::Named(name) => name.clone(),
+                TypeRef::Qualified { module, name } => format!("{}.{}", module, name),
             },
         }
         .into());
@@ -226,6 +227,10 @@ fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Opt
             Some(target) => resolve_type_ref(target, types),
             None => None,
         },
+        TypeRef::Qualified { module: _, name: _ } => {
+            // Qualified types require inter-module visibility resolution, not yet implemented
+            None
+        }
     }
 }
 
@@ -250,6 +255,7 @@ fn format_type_name(type_ref: &TypeRef) -> &'static str {
         TypeRef::Real => "REAL",
         TypeRef::LongReal => "LONGREAL",
         TypeRef::Named(_) => "<named>",
+        TypeRef::Qualified { .. } => "<qualified>",
     }
 }
 
@@ -274,7 +280,10 @@ fn infer_expr_type(
 
             Ok(resolve_symbol_type(symbols, name).and_then(|type_ref| resolve_type_ref(&type_ref, types)))
         }
-        Expr::Call { name, args } => {
+        Expr::QualifiedVariable { module: _, name: _ } => {
+            bail!("Qualified variables not yet supported in semantic analysis")
+        }
+        Expr::Call { module: _, name, args } => {
             if name == "ReadInt" || name == "EOF" {
                 if !args.is_empty() {
                     return Err(SemanticError::ArityMismatch {
@@ -480,7 +489,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                 validate_declaration_name(name, &types)?;
                 symbols.declare(name, SymbolKind::Constant)?;
             }
-            Declaration::Type { name, target } => {
+            Declaration::Type { name, target, .. } => {
                 validate_declaration_name(name, &types)?;
                 validate_declared_type(target, &types)?;
                 symbols.declare_with_type(name, SymbolKind::TypeName, Some(target.clone()))?;
@@ -530,6 +539,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
             local_vars,
             body,
             end_name,
+            is_exported: _,
         } = declaration
         {
             if name != end_name {
@@ -641,7 +651,7 @@ fn analyze_statement(
             }
             Ok(())
         }
-        Statement::Call { name, args } => {
+        Statement::Call { module: _, name, args } => {
             if name == "ReadInt" || name == "EOF" {
                 return Err(SemanticError::InvalidBuiltinArgument {
                     name: name.clone(),
@@ -775,7 +785,11 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             }
             Ok(())
         }
-        Expr::Call { name, args } => {
+        Expr::QualifiedVariable { module: _, name: _ } => {
+            // Qualified variable resolution not yet supported in analysis
+            Ok(())
+        }
+        Expr::Call { module: _, name, args } => {
             if name == "ReadInt" || name == "EOF" {
                 if !args.is_empty() {
                     return Err(SemanticError::ArityMismatch {
@@ -1301,6 +1315,31 @@ END Main.
                 message_contains: &["operator '~' requires BOOLEAN operand"],
             },
             ErrorCase {
+                name: "qualified call member unresolved",
+                source: r#"
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+    B.HELLO
+END Main.
+"#,
+                code: "E005",
+                message_contains: &["Undefined symbol usage: 'HELLO'"],
+            },
+            ErrorCase {
+                name: "qualified type reference unsupported",
+                source: r#"
+MODULE Main;
+IMPORT B := ModuleB;
+VAR x: B.IntType;
+BEGIN
+    x := 1
+END Main.
+"#,
+                code: "E013",
+                message_contains: &["Unknown type reference: 'B.IntType'"],
+            },
+            ErrorCase {
                 name: "relational requires numeric operands",
                 source: r#"
 MODULE Main;
@@ -1330,6 +1369,47 @@ END Main.
                         }
                 }
         }
+
+    #[test]
+    #[ignore = "Issue #26: cross-module exported-member resolution is not implemented yet"]
+    fn issue26_expected_qualified_exported_procedure_call_passes() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+    B.HELLO
+END Main.
+"#,
+        )
+        .expect("source should parse");
+
+        // Expected behavior once issue #26 is implemented:
+        // - resolve B.HELLO via imported module alias B
+        // - require HELLO to be exported from ModuleB
+        analyze(&module, None).expect("qualified exported procedure call should be accepted");
+    }
+
+    #[test]
+    #[ignore = "Issue #26: qualified exported type resolution is not implemented yet"]
+    fn issue26_expected_qualified_exported_type_reference_passes() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+IMPORT B := ModuleB;
+VAR x: B.IntType;
+BEGIN
+    x := 1
+END Main.
+"#,
+        )
+        .expect("source should parse");
+
+        // Expected behavior once issue #26 is implemented:
+        // - resolve B.IntType via imported module alias B
+        // - require IntType to be exported from ModuleB
+        analyze(&module, None).expect("qualified exported type reference should be accepted");
+    }
 
     #[derive(Clone, Copy)]
     enum ScalarType {

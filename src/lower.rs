@@ -1,6 +1,6 @@
 //! Lowers the parsed AST into a name-resolved HIR for code generation.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::ast::{Declaration, Expr, Module, Statement};
 use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
@@ -132,7 +132,7 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
                 value: *value,
             })
         }
-        Declaration::Type { name, target } => {
+        Declaration::Type { name, target, .. } => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown type '{}'.", name))?;
@@ -161,6 +161,7 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
             local_vars,
             body,
             end_name,
+            ..
         } => {
             let resolved_proc = resolver
                 .resolve(name)
@@ -225,7 +226,7 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
                 value: lower_expr(value, resolver)?,
             })
         }
-        Statement::Call { name, args } => {
+        Statement::Call { name, args, .. } => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;
@@ -279,13 +280,16 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
     match expr {
         Expr::Integer(value) => Ok(HExpr::Integer(*value)),
         Expr::String(value) => Ok(HExpr::String(value.clone())),
+        Expr::QualifiedVariable { module: _, name: _ } => {
+            bail!("Qualified variables are not yet supported in code generation")
+        }
         Expr::Variable(name) => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown identifier '{}'.", name))?;
             Ok(HExpr::Name(resolved))
         }
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, module: _ } => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;

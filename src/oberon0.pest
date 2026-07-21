@@ -3,6 +3,7 @@ COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
 keyword = { "MODULE" | "IMPORT" | "CONST" | "TYPE" | "VAR" | "PROCEDURE" | "BEGIN" | "END" | "IF" | "THEN" | "ELSE" | "WHILE" | "DO" | "OR" | "DIV" | "MOD" }
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+export_marker = { "*" }
 integer = @{ ASCII_DIGIT+ }
 string = @{ "\"" ~ ("\"\"" | (!("\"" | NEWLINE) ~ ANY))* ~ "\"" }
 
@@ -14,24 +15,25 @@ declaration_section = { const_section | type_section | var_section | procedure_d
 const_section = { "CONST" ~ const_item+ }
 const_item = { ident ~ "=" ~ integer ~ ";" }
 type_section = { "TYPE" ~ type_item+ }
-type_item = { ident ~ "=" ~ ident ~ ";" }
+type_item = { ident ~ export_marker? ~ "=" ~ type_ref ~ ";" }
+type_ref = { qualified_ident }
+qualified_ident = { ident ~ ("." ~ ident)? }
 var_section = { "VAR" ~ var_item+ }
-var_item = { ident_list ~ (":" ~ ident)? ~ ";" }
+var_item = { ident_list ~ (":" ~ type_ref)? ~ ";" }
 ident_list = { ident ~ ("," ~ ident)* }
-procedure_decl = { "PROCEDURE" ~ ident ~ formal_params? ~ ";" ~ var_section* ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ ";" }
+procedure_decl = { "PROCEDURE" ~ ident ~ export_marker? ~ formal_params? ~ ";" ~ var_section* ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ ";" }
 formal_params = { "(" ~ formal_param_section? ~ (";" ~ formal_param_section)* ~ ")" }
-formal_param_section = { var_modifier? ~ ident_list ~ (":" ~ ident)? }
+formal_param_section = { var_modifier? ~ ident_list ~ (":" ~ type_ref)? }
 var_modifier = { "VAR" }
 
 stmt_list = { (statement ~ ";")* ~ statement? }
 statement = _{ assign_stmt | call_stmt | if_stmt | while_stmt }
 assign_stmt = { ident ~ ":=" ~ expr }
-call_stmt = { ident ~ ("(" ~ arg_list? ~ ")")? }
+call_stmt = { qualified_ident ~ ("(" ~ arg_list? ~ ")")? }
 if_stmt = { "IF" ~ expr ~ "THEN" ~ stmt_list? ~ else_section? ~ "END" }
 else_section = { "ELSE" ~ stmt_list? }
 while_stmt = { "WHILE" ~ expr ~ "DO" ~ stmt_list? ~ "END" }
 arg_list = { expr ~ ("," ~ expr)* }
-call_expr = { ident ~ "(" ~ arg_list? ~ ")" }
 
 expr = { simple_expr ~ (rel_op ~ simple_expr)? }
 simple_expr = { unary_sign? ~ term ~ (add_op ~ term)* }
@@ -42,4 +44,5 @@ term = { factor ~ (mul_op ~ factor)* }
 mul_op = { "*" | "/" | "DIV" | "MOD" | "&" }
 factor = { not_factor | primary_factor }
 not_factor = { "~" ~ factor }
-primary_factor = { integer | string | call_expr | ident | "(" ~ expr ~ ")" }
+primary_factor = { integer | string | call_or_var | "(" ~ expr ~ ")" }
+call_or_var = { qualified_ident ~ ("(" ~ arg_list? ~ ")")? }

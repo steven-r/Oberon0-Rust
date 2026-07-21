@@ -91,11 +91,21 @@ fn parse_procedure_decl(decl: Pair<Rule>) -> Result<Declaration> {
     let mut parts = decl.into_inner();
     let name = take_ident(parts.next(), "procedure declaration name")?;
 
-    let mut params = Vec::new();
-    let mut local_vars = Vec::new();
+    // Check for export marker "*"
+    let mut is_exported = false;
     let mut next = parts
         .next()
         .context("Missing data in procedure declaration")?;
+
+    if next.as_rule() == Rule::export_marker {
+        is_exported = true;
+        next = parts
+            .next()
+            .context("Missing data after procedure export marker")?;
+    }
+
+    let mut params = Vec::new();
+    let mut local_vars = Vec::new();
 
     if next.as_rule() == Rule::formal_params {
         params = parse_formal_params(next)?;
@@ -127,6 +137,7 @@ fn parse_procedure_decl(decl: Pair<Rule>) -> Result<Declaration> {
         local_vars,
         body,
         end_name,
+        is_exported,
     })
 }
 
@@ -215,8 +226,18 @@ fn parse_type_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     for item in section.into_inner() {
         let mut parts = item.into_inner();
         let name = take_ident(parts.next(), "type name")?;
-        let target = parse_type_ref_name(take_ident(parts.next(), "type target")?);
-        out.push(Declaration::Type { name, target });
+
+        // Check for export marker "*"
+        let mut is_exported = false;
+        let mut type_ref_pair = parts.next().context("Missing type reference")?;
+
+        if type_ref_pair.as_rule() == Rule::export_marker {
+            is_exported = true;
+            type_ref_pair = parts.next().context("Missing type reference after export marker")?;
+        }
+
+        let target = parse_type_ref(type_ref_pair)?;
+        out.push(Declaration::Type { name, target, is_exported });
     }
 
     Ok(out)
@@ -290,12 +311,13 @@ fn parse_statement(stmt: Pair<Rule>) -> Result<Statement> {
         }
         Rule::call_stmt => {
             let mut parts = stmt.into_inner();
-            let name = take_ident(parts.next(), "procedure name")?;
+            let qualified_pair = parts.next().context("Missing procedure name in call")?;
+            let (module, name) = parse_qualified_ident(qualified_pair)?;
             let args = match parts.next() {
                 Some(arg_list) => parse_arg_list(arg_list)?,
                 None => Vec::new(),
             };
-            Ok(Statement::Call { name, args })
+            Ok(Statement::Call { module, name, args })
         }
         Rule::if_stmt => {
             let mut parts = stmt.into_inner();
@@ -456,14 +478,20 @@ fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
             Ok(Expr::Integer(value))
         }
         Rule::string => Ok(Expr::String(parse_pascal_string(inner.as_str())?)),
-        Rule::call_expr => {
+        Rule::call_or_var => {
             let mut parts = inner.into_inner();
-            let name = take_ident(parts.next(), "call expression name")?;
-            let args = match parts.next() {
-                Some(arg_list) => parse_arg_list(arg_list)?,
-                None => Vec::new(),
-            };
-            Ok(Expr::Call { name, args })
+            let qualified_pair = parts.next().context("Missing qualified identifier")?;
+            let (module, name) = parse_qualified_ident(qualified_pair)?;
+
+            if let Some(arg_list) = parts.next() {
+                let args = parse_arg_list(arg_list)?;
+                Ok(Expr::Call { module, name, args })
+            } else {
+                match module {
+                    Some(mod_name) => Ok(Expr::QualifiedVariable { module: mod_name, name }),
+                    None => Ok(Expr::Variable(name)),
+                }
+            }
         }
         Rule::ident => Ok(Expr::Variable(inner.as_str().to_string())),
         Rule::expr => parse_expr(inner),
@@ -477,6 +505,38 @@ fn parse_pascal_string(raw: &str) -> Result<String> {
     }
 
     Ok(raw[1..raw.len() - 1].replace("\"\"", "\""))
+}
+
+/// Parses a qualified identifier (module.name or just name).
+/// Returns (Optional<module>, name).
+fn parse_qualified_ident(pair: Pair<Rule>) -> Result<(Option<String>, String)> {
+    let mut inner = pair.into_inner();
+    let first = take_ident(inner.next(), "first part of identifier")?;
+
+    if let Some(second_pair) = inner.next() {
+        let second = second_pair.as_str().to_string();
+        Ok((Some(first), second))
+    } else {
+        Ok((None, first))
+    }
+}
+
+fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeRef> {
+    let qualified = pair.into_inner().next().context("Missing qualified_ident in type_ref")?;
+    let (module, name) = parse_qualified_ident(qualified)?;
+
+    match name.as_str() {
+        "INTEGER" if module.is_none() => Ok(TypeRef::Integer),
+        "BOOLEAN" if module.is_none() => Ok(TypeRef::Boolean),
+        "REAL" if module.is_none() => Ok(TypeRef::Real),
+        "LONGREAL" if module.is_none() => Ok(TypeRef::LongReal),
+        _ => {
+            match module {
+                Some(mod_name) => Ok(TypeRef::Qualified { module: mod_name, name }),
+                None => Ok(TypeRef::Named(name)),
+            }
+        }
+    }
 }
 
 fn parse_type_ref_name(name: String) -> TypeRef {
@@ -615,6 +675,9 @@ mod tests {
             "operator_not_missing_operand.ob0" => {
                 replace_required(source, "flag := ~", "flag := ~flag")
             }
+            "qualified_member_missing_name.ob0" => {
+                replace_required(source, "B.", "B")
+            }
             "relational_missing_rhs.ob0" => {
                 replace_required(source, "b := 1 =", "b := 1 = 1")
             }
@@ -656,6 +719,12 @@ mod tests {
             }
             "procedure_local_var_shadows_builtin_type.ob0" => {
                 replace_required(source, "VAR INTEGER: INTEGER;", "VAR value: INTEGER;")
+            }
+            "qualified_call_member_unresolved.ob0" => {
+                replace_required(source, "B.HELLO", "WriteLn()")
+            }
+            "qualified_type_reference_unsupported.ob0" => {
+                replace_required(source, "VAR x: B.IntType;", "VAR x: INTEGER;")
             }
             "readint_statement_call.ob0" => r#"
 MODULE Main;
@@ -865,6 +934,101 @@ END Main.
         };
 
         assert!(matches!(args.first(), Some(Expr::String(value)) if value == "Hello, \"Oberon\""));
+    }
+
+    #[test]
+    fn parses_export_markers_and_qualified_type_refs() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+IMPORT B := ModuleB;
+TYPE
+  LocalType* = B.IntType;
+PROCEDURE Hello*;
+BEGIN
+  WriteLn()
+END Hello;
+BEGIN
+END Main.
+"#,
+        )
+        .expect("module with export markers and qualified type refs should parse");
+
+        assert_eq!(module.imports.len(), 1);
+        assert_eq!(module.imports[0].local_name, "B");
+        assert_eq!(module.imports[0].external_name, "ModuleB");
+
+        let type_decl = module
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                crate::ast::Declaration::Type {
+                    name,
+                    target,
+                    is_exported,
+                } => Some((name, target, is_exported)),
+                _ => None,
+            })
+            .expect("expected a type declaration");
+        assert_eq!(type_decl.0, "LocalType");
+        assert!(*type_decl.2);
+        assert!(matches!(
+            type_decl.1,
+            crate::ast::TypeRef::Qualified { module, name }
+            if module == "B" && name == "IntType"
+        ));
+
+        let proc_decl = module
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                crate::ast::Declaration::Procedure {
+                    name,
+                    is_exported,
+                    ..
+                } => Some((name, is_exported)),
+                _ => None,
+            })
+            .expect("expected a procedure declaration");
+        assert_eq!(proc_decl.0, "Hello");
+        assert!(*proc_decl.1);
+    }
+
+    #[test]
+    fn parses_qualified_call_and_qualified_variable_expression() {
+        let parsed = parse_module(
+            r#"
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+  B.HELLO;
+  x := B.value
+END Main.
+"#,
+        )
+        .expect("module with qualified names should parse");
+
+        let Statement::Call {
+            module,
+            name,
+            args,
+        } = &parsed.statements[0]
+        else {
+            panic!("expected first statement to be a call");
+        };
+        assert_eq!(module.as_deref(), Some("B"));
+        assert_eq!(name, "HELLO");
+        assert!(args.is_empty());
+
+        let Statement::Assign { target, value } = &parsed.statements[1] else {
+            panic!("expected second statement to be an assignment");
+        };
+        assert_eq!(target, "x");
+        assert!(matches!(
+            value,
+            Expr::QualifiedVariable { module, name }
+            if module == "B" && name == "value"
+        ));
     }
 
     #[test]

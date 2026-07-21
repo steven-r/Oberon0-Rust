@@ -1,0 +1,11 @@
+MODULE ModuleB;
+
+TYPE IntType* = INTEGER;
+
+PROCEDURE HELLO*;
+  WriteInt(42);
+END HELLO;
+
+BEGIN
+  WriteInt(10);
+END ModuleB.

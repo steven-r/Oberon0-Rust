@@ -9,14 +9,20 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - allow declaration-only modules to omit the top-level `BEGIN` block while preserving existing module-body parsing (#25)
+- add export markers (`*`) on type and procedure declarations to prepare visibility controls for cross-module access (#26)
+- parse qualified identifiers (`Module.Name`) in expressions, calls, and type references to prepare for cross-module reference resolution (#26)
 
 ### Documentation
 
 - document optional top-level module `BEGIN` blocks in the README and subset/alignment docs (#25)
+- document Issue #26 expected behavior for qualified names and export markers in dedicated specification (#26)
 
 ### Tests
 
 - add parser and semantic corpus coverage for declaration-only and minimal modules without `BEGIN` (#25)
+- add parser unit tests for export markers and qualified expressions with AST verification (#26)
+- add parser/semantic corpus coverage for qualified-name syntax validation and current-state error diagnostics (#26)
+- add semantic unit tests documenting future Issue #26 expected behavior via ignored target tests (#26)
 
 ## v0.7.0 - 2026-07-12
 

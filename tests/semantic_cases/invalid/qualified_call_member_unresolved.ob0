@@ -1,0 +1,6 @@
+(* INVALID: qualified procedure calls currently do not resolve imported module members *)
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+  B.HELLO
+END Main.
