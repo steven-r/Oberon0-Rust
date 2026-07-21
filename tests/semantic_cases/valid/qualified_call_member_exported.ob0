@@ -1,4 +1,4 @@
-(* INVALID: qualified procedure calls currently do not resolve imported module members *)
+(* VALID: qualified procedure calls with exported procedures are resolved across module boundaries *)
 MODULE Main;
 IMPORT B := ModuleB;
 BEGIN

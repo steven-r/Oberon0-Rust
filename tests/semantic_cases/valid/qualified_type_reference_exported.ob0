@@ -1,4 +1,4 @@
-(* INVALID: qualified type references are not yet resolved across module boundaries *)
+(* VALID: qualified type references with exported types are resolved across module boundaries *)
 MODULE Main;
 IMPORT B := ModuleB;
 VAR x: B.IntType;
