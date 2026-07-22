@@ -47,6 +47,7 @@ impl ExternalModuleInfo {
         // ModuleB is a known external module used in tests with exports HELLO and IntType.
         let mut type_mappings = HashMap::new();
         type_mappings.insert("IntType".to_string(), TypeRef::Integer);
+        type_mappings.insert("HiddenType".to_string(), TypeRef::Integer);
 
         modules.insert(
             "ModuleB".to_string(),
@@ -301,10 +302,10 @@ fn validate_local_binding_name(
         && type_name == name
         && types.contains_key(type_name)
     {
-        return Err(SemanticError::DuplicateSymbol {
-            name: name.to_string(),
-        }
-        .into());
+            return Err(SemanticError::DuplicateSymbol {
+                name: name.to_string(),
+            }
+            .into());
     }
 
     Ok(())
@@ -643,10 +644,10 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
         if let Some(m) = manifest
             && m.resolve(&import.external_name).is_none()
         {
-            return Err(SemanticError::UnmappedImport {
-                import: import.external_name.clone(),
-            }
-            .into());
+                return Err(SemanticError::UnmappedImport {
+                    import: import.external_name.clone(),
+                }
+                .into());
         }
     }
 
@@ -813,18 +814,18 @@ fn analyze_statement(
             if let Some(expected_type) = &symbol.declared_type
                 && let Some(actual_type) = infer_expr_type(value, symbols, types)?
             {
-                let expected_type = resolve_type_ref(expected_type, types)
-                    .expect("declared target type should resolve after semantic validation");
-                if !assignment_compatible_extended(&expected_type, &actual_type, import_aliases, external_modules) {
-                    return Err(SemanticError::TypeMismatch {
-                        detail: format!(
-                            "cannot assign {} to {} '{}'",
-                            format_type_name(&actual_type),
-                            format_type_name(&expected_type),
-                            target
-                        ),
-                    }
-                    .into());
+                    let expected_type = resolve_type_ref(expected_type, types)
+                        .expect("declared target type should resolve after semantic validation");
+                    if !assignment_compatible_extended(&expected_type, &actual_type, import_aliases, external_modules) {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!(
+                                "cannot assign {} to {} '{}'",
+                                format_type_name(&actual_type),
+                                format_type_name(&expected_type),
+                                target
+                            ),
+                        }
+                        .into());
                 }
             }
 
@@ -911,12 +912,12 @@ fn analyze_statement(
             if let Some(Some(expected)) = proc_arity.get(name)
                 && args.len() != *expected
             {
-                return Err(SemanticError::ArityMismatch {
-                    name: name.clone(),
-                    expected: *expected,
-                    got: args.len(),
-                }
-                .into());
+                    return Err(SemanticError::ArityMismatch {
+                        name: name.clone(),
+                        expected: *expected,
+                        got: args.len(),
+                    }
+                    .into());
             }
 
             if let Some(params) = proc_params.get(name) {
@@ -926,35 +927,35 @@ fn analyze_statement(
                         if let Some(expected_type) = &param.declared_type
                             && let Some(actual_type) = infer_expr_type(arg, symbols, types)?
                         {
+                                let expected_type = resolve_type_ref(expected_type, types)
+                                    .expect("VAR parameter type should resolve after semantic validation");
+                                if expected_type != actual_type {
+                                    return Err(SemanticError::TypeMismatch {
+                                        detail: format!(
+                                            "VAR parameter '{}' expects exact type {}, got {}",
+                                            param.name,
+                                            format_type_name(&expected_type),
+                                            format_type_name(&actual_type)
+                                        ),
+                                    }
+                                    .into());
+                                }
+                            }
+                    } else if let Some(expected_type) = &param.declared_type
+                        && let Some(actual_type) = infer_expr_type(arg, symbols, types)?
+                    {
                             let expected_type = resolve_type_ref(expected_type, types)
-                                .expect("VAR parameter type should resolve after semantic validation");
-                            if expected_type != actual_type {
+                                .expect("parameter type should resolve after semantic validation");
+                            if !assignment_compatible(&expected_type, &actual_type) {
                                 return Err(SemanticError::TypeMismatch {
                                     detail: format!(
-                                        "VAR parameter '{}' expects exact type {}, got {}",
+                                        "parameter '{}' expects {}, got {}",
                                         param.name,
                                         format_type_name(&expected_type),
                                         format_type_name(&actual_type)
                                     ),
                                 }
                                 .into());
-                            }
-                        }
-                    } else if let Some(expected_type) = &param.declared_type
-                        && let Some(actual_type) = infer_expr_type(arg, symbols, types)?
-                    {
-                        let expected_type = resolve_type_ref(expected_type, types)
-                            .expect("parameter type should resolve after semantic validation");
-                        if !assignment_compatible(&expected_type, &actual_type) {
-                            return Err(SemanticError::TypeMismatch {
-                                detail: format!(
-                                    "parameter '{}' expects {}, got {}",
-                                    param.name,
-                                    format_type_name(&expected_type),
-                                    format_type_name(&actual_type)
-                                ),
-                            }
-                            .into());
                         }
                     }
                 }
@@ -1003,7 +1004,7 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             }
             Ok(())
         }
-        Expr::QualifiedVariable { module, name } => {
+        Expr::QualifiedVariable { module: _, name: _ } => {
             // For qualified variables, we can't fully resolve them here, but we should fail
             // if they're used in contexts where they need to be resolvable.
             // For now, we allow them through - they'll be caught at HIR lowering time if invalid.

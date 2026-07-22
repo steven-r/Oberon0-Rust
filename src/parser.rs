@@ -479,12 +479,18 @@ fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
         }
         Rule::string => Ok(Expr::String(parse_pascal_string(inner.as_str())?)),
         Rule::call_or_var => {
+            // `arg_list` is optional and does not produce a pair for empty calls like `ReadInt()`,
+            // so we must detect call syntax from the raw text to preserve zero-arg calls.
+            let is_call_syntax = inner.as_str().contains('(');
             let mut parts = inner.into_inner();
             let qualified_pair = parts.next().context("Missing qualified identifier")?;
             let (module, name) = parse_qualified_ident(qualified_pair)?;
 
-            if let Some(arg_list) = parts.next() {
-                let args = parse_arg_list(arg_list)?;
+            if is_call_syntax {
+                let args = match parts.next() {
+                    Some(arg_list) => parse_arg_list(arg_list)?,
+                    None => Vec::new(),
+                };
                 Ok(Expr::Call { module, name, args })
             } else {
                 match module {
@@ -697,6 +703,7 @@ mod tests {
                 "WriteString(\"Hello,\nOberon\")",
                 "WriteString(\"Hello, Oberon\")",
             ),
+            "import_leading_dot_module.ob0" => replace_required(source, "IMPORT .Module;", "IMPORT ModuleB;"),
             "if_call_condition.ob0" => replace_required(source, "IF WriteInt(1 THEN", "IF 1 THEN"),
             "if_missing_end.ob0" => replace_required(source, "WriteInt(1)\nEND Main.", "WriteInt(1)\n  END\nEND Main."),
             "missing_module_dot.ob0" => format!("{}.", source.trim_end()),
@@ -816,6 +823,8 @@ END Main.
             "writestring_too_many_args.ob0" => {
                 replace_required(source, "WriteString(\"Hello\", \"World\")", "WriteString(\"Hello\")")
             }
+            "qualified_call_unknown_alias.ob0" => replace_required(source, "C.HELLO()", "B.HELLO()"),
+            "qualified_type_reference_non_exported.ob0" => replace_required(source, "B.HiddenType", "B.IntType"),
             other => panic!("missing semantic invalid repair mapping for {other}"),
         }
     }
@@ -1062,6 +1071,41 @@ END Main.
             value,
             Expr::QualifiedVariable { module, name }
             if module == "B" && name == "value"
+        ));
+    }
+
+    #[test]
+    fn parses_zero_arg_call_expressions_as_calls() {
+        let parsed = parse_module(
+            r#"
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+  x := ReadInt();
+  IF EOF() THEN
+    x := 1
+  END
+END Main.
+"#,
+        )
+        .expect("module with zero-arg call expressions should parse");
+
+        let Statement::Assign { value, .. } = &parsed.statements[0] else {
+            panic!("expected first statement to be an assignment");
+        };
+        assert!(matches!(
+            value,
+            Expr::Call { module: None, name, args }
+            if name == "ReadInt" && args.is_empty()
+        ));
+
+        let Statement::If { condition, .. } = &parsed.statements[1] else {
+            panic!("expected second statement to be an IF statement");
+        };
+        assert!(matches!(
+            condition,
+            Expr::Call { module: None, name, args }
+            if name == "EOF" && args.is_empty()
         ));
     }
 
