@@ -35,7 +35,7 @@ All notable changes to this project will be documented in this file.
 
 ### CI
 
-- enforce CI coverage gates with `cargo llvm-cov` total line coverage >90% and changed-line coverage >95% against `main`
+- enforce CI coverage gates with `cargo llvm-cov` total line coverage >90% and Rust changed-line coverage >95% against `main`
 
 ## v0.7.0 - 2026-07-12
 

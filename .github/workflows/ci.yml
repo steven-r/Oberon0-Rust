@@ -54,7 +54,12 @@ jobs:
       - name: Enforce changed-line coverage (>95%)
         run: |
           git fetch origin main --depth=1
-          diff-cover coverage.xml --compare-branch=origin/main --fail-under=95
+          diff-cover coverage.xml \
+            --compare-branch=origin/main \
+            --fail-under=95 \
+            --include="src/**/*.rs" \
+            --include="tests/**/*.rs" \
+            --markdown-report=diff-cover.md
 
       - name: Smoke test minimal example
         run: scripts/oberon0 examples/hello-app --run
