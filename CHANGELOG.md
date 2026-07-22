@@ -33,6 +33,10 @@ All notable changes to this project will be documented in this file.
 - add parser and semantic invalid corpus edge cases for malformed import syntax and qualified-name visibility/alias resolution checks (#26)
 - add semantic invalid corpus coverage for unsupported qualified variable expressions with single-fault repair mapping (#26)
 
+### CI
+
+- enforce CI coverage gates with `cargo llvm-cov` total line coverage >90% and changed-line coverage >95% against `main`
+
 ## v0.7.0 - 2026-07-12
 
 ### Features
