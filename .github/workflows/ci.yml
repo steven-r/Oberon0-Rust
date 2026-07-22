@@ -54,12 +54,16 @@ jobs:
       - name: Enforce changed-line coverage (>95%)
         run: |
           git fetch origin main --depth=1
+          RUST_CHANGED_LINES=$(git diff --name-only origin/main...HEAD -- '*.rs' | wc -l)
+          if [[ "$RUST_CHANGED_LINES" -eq 0 ]]; then
+            echo "No Rust source changes detected against origin/main; skipping changed-line coverage gate."
+            exit 0
+          fi
+
           diff-cover coverage.xml \
             --compare-branch=origin/main \
             --fail-under=95 \
-            --include="src/**/*.rs" \
-            --include="tests/**/*.rs" \
-            --markdown-report=diff-cover.md
+            --format markdown:diff-cover.md
 
       - name: Smoke test minimal example
         run: scripts/oberon0 examples/hello-app --run
