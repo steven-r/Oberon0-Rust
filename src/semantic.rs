@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use crate::ast::{
     BinaryOp, Declaration, Expr, LocalVarDecl, Module, ParamDecl, Statement, TypeRef, UnaryOp,
@@ -94,6 +94,10 @@ pub enum SemanticError {
         module: String,
         name: String,
     },
+    UnsupportedQualifiedVariable {
+        module: String,
+        name: String,
+    },
 }
 
 impl SemanticError {
@@ -114,6 +118,7 @@ impl SemanticError {
             SemanticError::TypeMismatch { .. } => "E012",
             SemanticError::UnknownType { .. } => "E013",
             SemanticError::NonExportedMember { .. } => "E014",
+            SemanticError::UnsupportedQualifiedVariable { .. } => "E015",
         }
     }
 }
@@ -206,6 +211,15 @@ impl fmt::Display for SemanticError {
                     self.code(),
                     name,
                     module
+                )
+            }
+            SemanticError::UnsupportedQualifiedVariable { module, name } => {
+                write!(
+                    f,
+                    "[{}] Qualified variable reference '{}.{}' is not yet supported in expressions",
+                    self.code(),
+                    module,
+                    name
                 )
             }
         }
@@ -438,8 +452,12 @@ fn infer_expr_type(
 
             Ok(resolve_symbol_type(symbols, name).and_then(|type_ref| resolve_type_ref(&type_ref, types)))
         }
-        Expr::QualifiedVariable { module: _, name: _ } => {
-            bail!("Qualified variables not yet supported in semantic analysis")
+        Expr::QualifiedVariable { module, name } => {
+            Err(SemanticError::UnsupportedQualifiedVariable {
+                module: module.clone(),
+                name: name.clone(),
+            }
+            .into())
         }
         Expr::Call { module: _, name, args } => {
             if name == "ReadInt" || name == "EOF" {
@@ -1004,12 +1022,13 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             }
             Ok(())
         }
-        Expr::QualifiedVariable { module: _, name: _ } => {
-            // For qualified variables, we can't fully resolve them here, but we should fail
-            // if they're used in contexts where they need to be resolvable.
-            // For now, we allow them through - they'll be caught at HIR lowering time if invalid.
-            Ok(())
-        }
+        Expr::QualifiedVariable { module, name } => Err(
+            SemanticError::UnsupportedQualifiedVariable {
+                module: module.clone(),
+                name: name.clone(),
+            }
+            .into(),
+        ),
         Expr::Call { module: _, name, args } => {
             if name == "ReadInt" || name == "EOF" {
                 if !args.is_empty() {

@@ -15,11 +15,13 @@ All notable changes to this project will be documented in this file.
 ### Fixes
 
 - parse zero-argument call expressions like `ReadInt()` and `EOF()` as call nodes (not variable references), restoring expected runtime IO behavior and golden-case outcomes (#26)
+- reject qualified variable expressions (for example `B.value`) during semantic analysis with explicit `E015`, avoiding late lowering failures (#26)
 
 ### Documentation
 
 - document optional top-level module `BEGIN` blocks in the README and subset/alignment docs (#25)
 - document Issue #26 expected behavior for qualified names and export markers in dedicated specification (#26)
+- add dedicated module-translation workflow documentation for import/manifest-based projects, including current limits (#26)
 
 ### Tests
 
@@ -29,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - add semantic unit tests documenting future Issue #26 expected behavior via ignored target tests (#26)
 - add parser regression coverage for zero-argument call-expression parsing (`ReadInt()`, `EOF()`) to prevent lowering/codegen regressions (#26)
 - add parser and semantic invalid corpus edge cases for malformed import syntax and qualified-name visibility/alias resolution checks (#26)
+- add semantic invalid corpus coverage for unsupported qualified variable expressions with single-fault repair mapping (#26)
 
 ## v0.7.0 - 2026-07-12
 

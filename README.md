@@ -240,6 +240,7 @@ Notes:
 - `--emit-state` and `--no-emit-state` override the manifest for a single compiler run
 - Optional alias form in Oberon is supported: `IMPORT Local := External;`
 - See `examples/imports-manifest/` for a focused project example using this layout.
+- For the current multi-module translation workflow and limits, see `docs/module-translation-workflow.md`.
 
 ## Current language subset
 

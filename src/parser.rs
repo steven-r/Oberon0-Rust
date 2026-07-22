@@ -825,6 +825,9 @@ END Main.
             }
             "qualified_call_unknown_alias.ob0" => replace_required(source, "C.HELLO()", "B.HELLO()"),
             "qualified_type_reference_non_exported.ob0" => replace_required(source, "B.HiddenType", "B.IntType"),
+            "qualified_variable_reference_unsupported.ob0" => {
+                replace_required(source, "x := B.value", "x := 1")
+            }
             other => panic!("missing semantic invalid repair mapping for {other}"),
         }
     }
