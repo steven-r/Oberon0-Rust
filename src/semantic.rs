@@ -1062,7 +1062,10 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-        use super::{SemanticError, analyze};
+    use std::collections::BTreeMap;
+
+    use super::{SemanticError, analyze};
+    use crate::manifest::{CompilerConfig, ExternalManifest};
     use crate::parser::parse_module;
 
         struct SuccessCase {
@@ -1078,10 +1081,137 @@ mod tests {
         }
 
     fn semantic_error(source: &str) -> SemanticError {
+        semantic_error_with_manifest(source, None)
+    }
+
+    fn semantic_error_with_manifest(source: &str, manifest: Option<&ExternalManifest>) -> SemanticError {
         let module = parse_module(source).expect("source should parse for semantic test");
-        let err = analyze(&module, None).expect_err("semantic analysis should fail");
+        let err = analyze(&module, manifest).expect_err("semantic analysis should fail");
         err.downcast::<SemanticError>()
             .expect("error should downcast to SemanticError")
+    }
+
+    #[test]
+    fn semantic_error_code_and_display_cover_all_variants() {
+        let cases = vec![
+            (
+                SemanticError::ModuleNameMismatch {
+                    expected: "Main".to_string(),
+                    got: "Wrong".to_string(),
+                },
+                "E001",
+                "Module name mismatch at END",
+            ),
+            (
+                SemanticError::DuplicateImportAlias {
+                    alias: "B".to_string(),
+                },
+                "E002",
+                "Duplicate import alias",
+            ),
+            (
+                SemanticError::UnmappedImport {
+                    import: "ModuleB".to_string(),
+                },
+                "E003",
+                "not mapped to a crate",
+            ),
+            (
+                SemanticError::DuplicateSymbol {
+                    name: "Count".to_string(),
+                },
+                "E004",
+                "Duplicate symbol declaration",
+            ),
+            (
+                SemanticError::UndefinedSymbol {
+                    name: "x".to_string(),
+                },
+                "E005",
+                "Undefined symbol usage",
+            ),
+            (
+                SemanticError::ArityMismatch {
+                    name: "P".to_string(),
+                    expected: 2,
+                    got: 1,
+                },
+                "E006",
+                "called with wrong arity",
+            ),
+            (
+                SemanticError::InvalidBuiltinArgument {
+                    name: "WriteString".to_string(),
+                    detail: "expected a string literal".to_string(),
+                },
+                "E007",
+                "received an invalid argument",
+            ),
+            (SemanticError::UnsupportedStringLiteral, "E008", "String literals are only supported"),
+            (
+                SemanticError::NotCallable {
+                    name: "x".to_string(),
+                },
+                "E009",
+                "is not callable",
+            ),
+            (
+                SemanticError::ProcedureNameMismatch {
+                    expected: "P".to_string(),
+                    got: "Wrong".to_string(),
+                },
+                "E010",
+                "Procedure END name mismatch",
+            ),
+            (
+                SemanticError::InvalidVarArgument {
+                    name: "Bump".to_string(),
+                    position: 1,
+                    detail: "expected a variable designator".to_string(),
+                },
+                "E011",
+                "invalid VAR argument",
+            ),
+            (
+                SemanticError::TypeMismatch {
+                    detail: "cannot assign REAL to INTEGER 'x'".to_string(),
+                },
+                "E012",
+                "Type mismatch",
+            ),
+            (
+                SemanticError::UnknownType {
+                    name: "Missing".to_string(),
+                },
+                "E013",
+                "Unknown type reference",
+            ),
+            (
+                SemanticError::NonExportedMember {
+                    module: "ModuleB".to_string(),
+                    name: "HiddenType".to_string(),
+                },
+                "E014",
+                "is not exported from module",
+            ),
+            (
+                SemanticError::UnsupportedQualifiedVariable {
+                    module: "B".to_string(),
+                    name: "value".to_string(),
+                },
+                "E015",
+                "Qualified variable reference",
+            ),
+        ];
+
+        for (err, expected_code, expected_fragment) in cases {
+            assert_eq!(err.code(), expected_code);
+            assert!(
+                err.to_string().contains(expected_fragment),
+                "display string should contain '{expected_fragment}', got '{}'",
+                err
+            );
+        }
     }
 
     #[test]
@@ -1584,6 +1714,103 @@ END Main.
                         }
                 }
         }
+
+    #[test]
+    fn semantic_import_and_qualified_resolution_error_paths_are_covered() {
+        let empty_manifest = ExternalManifest {
+            dependencies: BTreeMap::new(),
+            compiler: CompilerConfig { emit_state: false },
+        };
+
+        let unmapped_import = semantic_error_with_manifest(
+            r#"
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+END Main.
+"#,
+            Some(&empty_manifest),
+        );
+        assert_eq!(unmapped_import.code(), "E003");
+
+        let duplicate_alias = semantic_error(
+            r#"
+MODULE Main;
+IMPORT B := ModuleB, B := ModuleC;
+BEGIN
+END Main.
+"#,
+        );
+        assert_eq!(duplicate_alias.code(), "E002");
+
+        let missing_alias_for_qualified_type = semantic_error(
+            r#"
+MODULE Main;
+VAR x: B.IntType;
+BEGIN
+    x := 1
+END Main.
+"#,
+        );
+        assert_eq!(missing_alias_for_qualified_type.code(), "E013");
+
+        let unknown_external_module = semantic_error(
+            r#"
+MODULE Main;
+IMPORT B := MissingModule;
+VAR x: B.IntType;
+BEGIN
+    x := 1
+END Main.
+"#,
+        );
+        assert_eq!(unknown_external_module.code(), "E013");
+
+        let non_exported_qualified_type = semantic_error(
+            r#"
+MODULE Main;
+IMPORT B := ModuleB;
+VAR x: B.HiddenType;
+BEGIN
+    x := 1
+END Main.
+"#,
+        );
+        assert_eq!(non_exported_qualified_type.code(), "E014");
+
+        let non_exported_qualified_call = semantic_error(
+            r#"
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+    B.HiddenProc
+END Main.
+"#,
+        );
+        assert_eq!(non_exported_qualified_call.code(), "E014");
+    }
+
+    #[test]
+    fn semantic_var_parameter_rejects_non_assignable_binding() {
+        let err = semantic_error(
+            r#"
+MODULE Main;
+CONST c = 1;
+PROCEDURE Bump(VAR target: INTEGER);
+BEGIN
+END Bump;
+BEGIN
+    Bump(c)
+END Main.
+"#,
+        );
+
+        assert_eq!(err.code(), "E011");
+        assert!(
+            err.to_string().contains("is not an assignable variable binding"),
+            "expected assignable-binding VAR diagnostic, got '{err}'"
+        );
+    }
 
     #[test]
     fn issue26_expected_qualified_exported_procedure_call_passes() {
