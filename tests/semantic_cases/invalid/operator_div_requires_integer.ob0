@@ -1,0 +1,7 @@
+(* INVALID: DIV requires INTEGER operands, but src is REAL *)
+MODULE Main;
+VAR src: REAL;
+VAR x: INTEGER;
+BEGIN
+  x := src DIV 2
+END Main.

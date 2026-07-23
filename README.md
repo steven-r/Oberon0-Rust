@@ -240,12 +240,13 @@ Notes:
 - `--emit-state` and `--no-emit-state` override the manifest for a single compiler run
 - Optional alias form in Oberon is supported: `IMPORT Local := External;`
 - See `examples/imports-manifest/` for a focused project example using this layout.
+- For the current multi-module translation workflow and limits, see `docs/module-translation-workflow.md`.
 
 ## Current language subset
 
 The current compiler supports the Milestone A subset:
 
-- `MODULE ... END ... .`
+- `MODULE ... [BEGIN ...] END ... .`
 - Optional `IMPORT` section
 - Declarations include `CONST`, `TYPE`, `VAR`, and `PROCEDURE` declarations.
 - `TYPE` declarations currently support built-in scalar targets `INTEGER`, `BOOLEAN`, `REAL`, `LONGREAL` and simple named aliases.
@@ -259,7 +260,7 @@ The current compiler supports the Milestone A subset:
   - `IF ... THEN ... [ELSE ...] END`
   - `WHILE ... DO ... END`
 - Expressions with integer literals, identifiers, and parentheses
-- Operators: `+`, `-`, `*`, `/`
+- Operators: `+`, `-`, unary `+`, unary `-`, `*`, `/`, `DIV`, `MOD`, `OR`, `&`, unary `~`, `=`, `#`, `<`, `<=`, `>`, `>=`
 
 Focused typed-declaration example:
 
@@ -268,6 +269,7 @@ Focused typed-declaration example:
 Detailed subset and planning documents:
 
 - docs/oberon0-v1-subset.md
+- docs/operator-type-compatibility-matrix.md
 - docs/milestone-a-backlog.md
 - docs/milestone-b-roadmap.md
 - docs/milestone-b-issue-backlog.md

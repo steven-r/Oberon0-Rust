@@ -1,0 +1,6 @@
+(* INVALID: unknown module aliases must fail semantic resolution *)
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+    C.HELLO()
+END Main.

@@ -6,6 +6,37 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- allow declaration-only modules to omit the top-level `BEGIN` block while preserving existing module-body parsing (#25)
+- add export markers (`*`) on type and procedure declarations to prepare visibility controls for cross-module access (#26)
+- parse qualified identifiers (`Module.Name`) in expressions, calls, and type references to prepare for cross-module reference resolution (#26)
+
+### Fixes
+
+- parse zero-argument call expressions like `ReadInt()` and `EOF()` as call nodes (not variable references), restoring expected runtime IO behavior and golden-case outcomes (#26)
+- reject qualified variable expressions (for example `B.value`) during semantic analysis with explicit `E015`, avoiding late lowering failures (#26)
+
+### Documentation
+
+- document optional top-level module `BEGIN` blocks in the README and subset/alignment docs (#25)
+- document Issue #26 expected behavior for qualified names and export markers in dedicated specification (#26)
+- add dedicated module-translation workflow documentation for import/manifest-based projects, including current limits (#26)
+
+### Tests
+
+- add parser and semantic corpus coverage for declaration-only and minimal modules without `BEGIN` (#25)
+- add parser unit tests for export markers and qualified expressions with AST verification (#26)
+- add parser/semantic corpus coverage for qualified-name syntax validation and current-state error diagnostics (#26)
+- add semantic unit tests documenting future Issue #26 expected behavior via ignored target tests (#26)
+- add parser regression coverage for zero-argument call-expression parsing (`ReadInt()`, `EOF()`) to prevent lowering/codegen regressions (#26)
+- add parser and semantic invalid corpus edge cases for malformed import syntax and qualified-name visibility/alias resolution checks (#26)
+- add semantic invalid corpus coverage for unsupported qualified variable expressions with single-fault repair mapping (#26)
+
+### CI
+
+- enforce CI coverage gates with `cargo llvm-cov` total line coverage >90% and Rust changed-line coverage >95% against `main`
+
 ## v0.7.0 - 2026-07-12
 
 ### Features
@@ -15,11 +46,14 @@ All notable changes to this project will be documented in this file.
 - add built-in scalar declaration support for `BOOLEAN`, `REAL`, and `LONGREAL` alongside `INTEGER` (#17)
 - keep built-in scalar names reserved while allowing procedure parameters to shadow user-defined module-scope type names, except in declarations like `Count: Count` (no dedicated issue)
 - add optional procedure-local `VAR` sections before `BEGIN` and carry those local bindings through semantic analysis and lowering (no dedicated issue)
+- add Oberon operator support for `DIV`, `MOD`, `OR`, `&`, unary `~`, and unary signs in scanner, parser, semantic analysis, lowering, and code generation (#18)
+- add relational operators (`=`, `#`, `<`, `<=`, `>`, `>=`) across grammar, parser, semantic analysis, and code generation (#19)
 
 ### Documentation
 
 - align contributor guidance across repository docs with the project decision log (no dedicated issue)
 - document built-in scalar declaration support in the README, roadmap, and typed-declarations example (#17)
+- document extended operator coverage in the root README and examples index, and add a focused `operators-extended` example (#18)
 
 ### Tests
 
@@ -27,6 +61,8 @@ All notable changes to this project will be documented in this file.
 - add semantic coverage for `BOOLEAN`, `REAL`, and `LONGREAL` declaration support (#17)
 - add semantic coverage for user-defined type-name shadowing by parameters while rejecting built-in shadowing and `Count: Count` self-shadowing declarations (no dedicated issue)
 - add semantic and lowering coverage for procedure-local `VAR` declarations, including local shadowing constraints for built-in and user-defined type names (no dedicated issue)
+- add parser and semantic valid/invalid corpus coverage for extended operators, including dedicated single-fault repairs for new invalid cases (#18)
+- add parser/semantic/codegen coverage for relational operators, including invalid numeric-operand diagnostics and parser invalid repair cases (#19)
 
 ### Build
 

@@ -1,0 +1,5 @@
+(* INVALID: import clauses must start with an identifier, not a leading dot *)
+MODULE Main;
+IMPORT .Module;
+BEGIN
+END Main.

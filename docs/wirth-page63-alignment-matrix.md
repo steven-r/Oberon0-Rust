@@ -35,7 +35,7 @@ Status legend:
 | Scalar types `BOOLEAN`, `REAL`, `LONGREAL` | Not implemented yet | Missing | #17 | Covered by dedicated issue |
 | `FormalParameters` with typed sections and optional `VAR` | Untyped ident list only; no `VAR` mode | Partial | #22, #5 | Covered by dedicated issue |
 | `ProcedureBody = declarations [BEGIN ...] END` | Procedure body supports statements only; no local declarations | Partial | #16 | Covered by explicit issue |
-| `module` with optional `BEGIN` | Current grammar requires `BEGIN` | Partial | #25 | Covered by dedicated issue |
+| `module` with optional `BEGIN` | Implemented | Aligned | #25 | Supported for declaration-only modules and normal module bodies |
 
 ## Predefined procedure/function alignment
 

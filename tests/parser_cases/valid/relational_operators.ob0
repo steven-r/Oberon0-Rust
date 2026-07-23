@@ -1,0 +1,10 @@
+MODULE Main;
+VAR b: BOOLEAN;
+BEGIN
+  b := (1 + 2) = 3;
+  b := 4 # 5;
+  b := 1 < 2;
+  b := 2 <= 2;
+  b := 3 > 2;
+  b := 3 >= 3
+END Main.

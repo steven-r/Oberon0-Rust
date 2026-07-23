@@ -2,7 +2,7 @@
     use std::fs;
     use std::path::Path;
 
-    use crate::ast::BinaryOp;
+    use crate::ast::{BinaryOp, UnaryOp};
     use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
     use crate::lower::lower_module;
     use crate::manifest::{CompilerConfig, CrateBinding, ExternalManifest};
@@ -131,6 +131,117 @@
 
         let generated = generate_main_rs(&module, false);
         assert!(generated.contains("vars.insert(\"x\".to_string(), 1 + (2 * 3));"));
+    }
+
+    #[test]
+    fn emits_extended_unary_and_binary_operators() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![HStatement::Assign {
+                target: ident(10, "x", SymbolKind::Variable),
+                value: HExpr::Binary {
+                    op: BinaryOp::And,
+                    left: Box::new(HExpr::Unary {
+                        op: UnaryOp::Not,
+                        value: Box::new(HExpr::Binary {
+                            op: BinaryOp::Or,
+                            left: Box::new(HExpr::Integer(1)),
+                            right: Box::new(HExpr::Integer(0)),
+                        }),
+                    }),
+                    right: Box::new(HExpr::Binary {
+                        op: BinaryOp::Mod,
+                        left: Box::new(HExpr::Binary {
+                            op: BinaryOp::IntDiv,
+                            left: Box::new(HExpr::Unary {
+                                op: UnaryOp::Minus,
+                                value: Box::new(HExpr::Integer(7)),
+                            }),
+                            right: Box::new(HExpr::Integer(2)),
+                        }),
+                        right: Box::new(HExpr::Integer(3)),
+                    }),
+                },
+            }],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(generated.contains("(1 != 0 || 0 != 0) as i64"));
+        assert!(generated.contains("== 0) as i64"));
+        assert!(generated.contains("(-7) / 2"));
+        assert!(generated.contains("% 3"));
+        assert!(generated.contains("&&"));
+    }
+
+    #[test]
+    fn emits_relational_operators_as_boolean_i64() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Eq,
+                        left: Box::new(HExpr::Integer(1)),
+                        right: Box::new(HExpr::Integer(1)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Ne,
+                        left: Box::new(HExpr::Integer(1)),
+                        right: Box::new(HExpr::Integer(2)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Lt,
+                        left: Box::new(HExpr::Integer(2)),
+                        right: Box::new(HExpr::Integer(3)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Le,
+                        left: Box::new(HExpr::Integer(2)),
+                        right: Box::new(HExpr::Integer(2)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Gt,
+                        left: Box::new(HExpr::Integer(3)),
+                        right: Box::new(HExpr::Integer(2)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Ge,
+                        left: Box::new(HExpr::Integer(3)),
+                        right: Box::new(HExpr::Integer(3)),
+                    },
+                },
+            ],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(generated.contains("(1 == 1) as i64"));
+        assert!(generated.contains("(1 != 2) as i64"));
+        assert!(generated.contains("(2 < 3) as i64"));
+        assert!(generated.contains("(2 <= 2) as i64"));
+        assert!(generated.contains("(3 > 2) as i64"));
+        assert!(generated.contains("(3 >= 3) as i64"));
     }
 
     #[test]

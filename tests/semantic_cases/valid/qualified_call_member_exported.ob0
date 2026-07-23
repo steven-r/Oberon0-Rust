@@ -1,0 +1,6 @@
+(* VALID: qualified procedure calls with exported procedures are resolved across module boundaries *)
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+  B.HELLO
+END Main.

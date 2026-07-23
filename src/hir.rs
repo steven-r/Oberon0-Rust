@@ -2,7 +2,7 @@
 
 //! Lowered, name-resolved representation used by code generation.
 
-use crate::ast::{BinaryOp, TypeRef};
+use crate::ast::{BinaryOp, TypeRef, UnaryOp};
 use crate::symbols::SymbolKind;
 
 #[derive(Debug, Clone)]
@@ -125,7 +125,12 @@ pub enum HExpr {
         name: HResolvedIdent,
         args: Vec<HExpr>,
     },
-    /// Binary arithmetic expression.
+    /// Unary expression.
+    Unary {
+        op: UnaryOp,
+        value: Box<HExpr>,
+    },
+    /// Binary expression.
     Binary {
         op: BinaryOp,
         left: Box<HExpr>,

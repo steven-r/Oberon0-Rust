@@ -29,3 +29,5 @@ State: {"x": 42}
 ## What to inspect
 
 After generation, inspect `target/generated/Main/Cargo.toml` to see the dependency emitted from `oberon.toml`.
+
+For the full current workflow and known limits of translating module-based projects, see `docs/module-translation-workflow.md`.

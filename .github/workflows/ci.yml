@@ -14,26 +14,56 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.x"
 
       - name: Install pre-commit
         run: python -m pip install --upgrade pip pre-commit
 
+      - name: Install coverage tooling
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install diff coverage tooling
+        run: python -m pip install --upgrade diff-cover
+
       - name: Run repository hooks
         run: pre-commit run --all-files --show-diff-on-failure
 
       - name: Run full test suite
         run: cargo test
+
+      - name: Enforce total line coverage (>90%)
+        run: cargo llvm-cov --workspace --all-targets --fail-under-lines 90
+
+      - name: Generate Cobertura coverage report
+        run: cargo llvm-cov --workspace --all-targets --cobertura --output-path coverage.xml
+
+      - name: Enforce changed-line coverage (>95%)
+        run: |
+          git fetch origin main --depth=1
+          RUST_CHANGED_LINES=$(git diff --name-only origin/main...HEAD -- '*.rs' | wc -l)
+          if [[ "$RUST_CHANGED_LINES" -eq 0 ]]; then
+            echo "No Rust source changes detected against origin/main; skipping changed-line coverage gate."
+            exit 0
+          fi
+
+          diff-cover coverage.xml \
+            --compare-branch=origin/main \
+            --fail-under=95 \
+            --format markdown:diff-cover.md
 
       - name: Smoke test minimal example
         run: scripts/oberon0 examples/hello-app --run

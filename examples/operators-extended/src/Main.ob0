@@ -1,0 +1,16 @@
+MODULE Main;
+VAR x: INTEGER;
+VAR y: INTEGER;
+VAR flagA: BOOLEAN;
+VAR flagB: BOOLEAN;
+VAR flagOut: BOOLEAN;
+BEGIN
+  x := -1 + (+2) * (7 DIV 3);
+  y := 7 MOD 3;
+  flagA := ~flagA;
+  flagB := flagA OR flagB;
+  flagOut := flagA & flagB;
+  WriteInt(x + y);
+  WriteLn();
+  WriteInt(flagOut)
+END Main.

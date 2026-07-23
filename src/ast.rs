@@ -58,6 +58,8 @@ pub enum TypeRef {
     LongReal,
     /// Named type alias or user-defined type reference.
     Named(String),
+    /// Qualified type reference (e.g., B.T for module B's exported type T).
+    Qualified { module: String, name: String },
 }
 
 #[derive(Debug, Clone)]
@@ -66,7 +68,11 @@ pub enum Statement {
     /// Assigns the evaluated expression to an existing identifier.
     Assign { target: String, value: Expr },
     /// Invokes a built-in, imported, or user-defined procedure.
-    Call { name: String, args: Vec<Expr> },
+    Call {
+        module: Option<String>,
+        name: String,
+        args: Vec<Expr>,
+    },
     /// Conditional branch with an optional `ELSE` block.
     If {
         condition: Expr,
@@ -87,7 +93,11 @@ pub enum Declaration {
     /// Constant declaration with an integer literal value.
     Const { name: String, value: i64 },
     /// Named type alias declaration.
-    Type { name: String, target: TypeRef },
+    Type {
+        name: String,
+        target: TypeRef,
+        is_exported: bool,
+    },
     /// Mutable variable declaration, optionally with a declared type.
     Var {
         name: String,
@@ -100,6 +110,7 @@ pub enum Declaration {
         local_vars: Vec<LocalVarDecl>,
         body: Vec<Statement>,
         end_name: String,
+        is_exported: bool,
     },
 }
 
@@ -112,8 +123,19 @@ pub enum Expr {
     String(String),
     /// Reference to an identifier before semantic resolution.
     Variable(String),
+    /// Qualified variable reference (e.g., B.T).
+    QualifiedVariable { module: String, name: String },
     /// Function-like call expression.
-    Call { name: String, args: Vec<Expr> },
+    Call {
+        module: Option<String>,
+        name: String,
+        args: Vec<Expr>,
+    },
+    /// Unary expression.
+    Unary {
+        op: UnaryOp,
+        value: Box<Expr>,
+    },
     /// Binary arithmetic expression.
     Binary {
         op: BinaryOp,
@@ -123,10 +145,28 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone, Copy)]
-/// Supported arithmetic operators in the MVP grammar.
+/// Supported binary operators in the current subset grammar.
 pub enum BinaryOp {
     Add,
     Sub,
+    Or,
     Mul,
     Div,
+    IntDiv,
+    Mod,
+    And,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+#[derive(Debug, Clone, Copy)]
+/// Supported unary operators in the current subset.
+pub enum UnaryOp {
+    Plus,
+    Minus,
+    Not,
 }

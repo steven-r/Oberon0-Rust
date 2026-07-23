@@ -1,0 +1,7 @@
+(* INVALID: qualified type references must respect export visibility *)
+MODULE Main;
+IMPORT B := ModuleB;
+VAR x: B.HiddenType;
+BEGIN
+    x := 1
+END Main.

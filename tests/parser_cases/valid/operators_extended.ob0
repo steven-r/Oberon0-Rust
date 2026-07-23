@@ -1,0 +1,7 @@
+MODULE Main;
+VAR x: INTEGER;
+VAR flag: BOOLEAN;
+BEGIN
+  x := -1 + (+2) * (7 DIV 3) MOD 2;
+  flag := ~(x OR 0) & (1 OR 0)
+END Main.
