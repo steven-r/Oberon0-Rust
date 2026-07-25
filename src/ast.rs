@@ -163,7 +163,7 @@ pub enum BinaryOp {
     Ge,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Supported unary operators in the current subset.
 pub enum UnaryOp {
     Plus,

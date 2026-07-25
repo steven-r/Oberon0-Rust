@@ -1,6 +1,6 @@
 MODULE Main;
 CONST answer = 42;
-VAR x, y;
+VAR x, y: INTEGER;
 BEGIN
   x := answer;
   y := x + 1;

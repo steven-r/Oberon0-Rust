@@ -1284,7 +1284,7 @@ END Main.
                                 name: "typed formal params with VAR mode",
                                 source: r#"
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
 BEGIN
     target := target + amount
@@ -1315,7 +1315,7 @@ END Main.
                                 name: "readint call expression",
                                 source: r#"
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 BEGIN
     x := ReadInt()
 END Main.
@@ -1389,7 +1389,7 @@ END Main.
                                 name: "not callable variable",
                                 source: r#"
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 BEGIN
     x := 1;
     x()
@@ -1442,7 +1442,7 @@ END Main.
                                 name: "string outside writestring",
                                 source: r#"
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 BEGIN
     x := "Hello"
 END Main.
@@ -1639,7 +1639,7 @@ END Main.
                                 name: "non-function builtin in call expression",
                                 source: r#"
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 BEGIN
     x := WriteInt(1)
 END Main.

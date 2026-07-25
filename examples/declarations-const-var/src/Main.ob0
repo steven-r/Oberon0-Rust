@@ -1,6 +1,6 @@
 MODULE Main;
 CONST BASE = 10;
-VAR x, y;
+VAR x, y: INTEGER;
 BEGIN
   x := BASE + 2;
   y := x * 3;

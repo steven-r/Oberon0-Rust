@@ -1,5 +1,5 @@
 MODULE Main;
-VAR hasInput;
+VAR hasInput: INTEGER;
 BEGIN
   IF EOF() THEN
     hasInput := 0

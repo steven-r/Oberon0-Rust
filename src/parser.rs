@@ -635,6 +635,7 @@ fn take_ident(pair: Option<Pair<Rule>>, label: &str) -> Result<String> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use std::fs;
     use std::path::Path;
@@ -921,6 +922,7 @@ END Main.
     }
 
     #[test]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     fn all_examples_parse_and_analyze() {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
 
@@ -1087,6 +1089,8 @@ BEGIN
   x := ReadInt();
   IF EOF() THEN
     x := 1
+  ELSE
+    x := 2
   END
 END Main.
 "#,

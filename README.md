@@ -166,7 +166,7 @@ Recommended layout:
 
 Compile from repository root:
 
-        cargo run -- my-oberon-app/src/Main.ob0 --out-dir target/generated
+    cargo run -- my-oberon-app/src/Main.ob0 --out-dir target/generated
 
 Force state output on for a one-off run without editing the manifest:
 
@@ -178,18 +178,18 @@ This repository includes the same layout as a runnable example at:
 
 If your project uses `IMPORT`, add an optional manifest file:
 
-        my-oberon-app/
+    my-oberon-app/
             src/
                 Main.ob0
             oberon.toml
 
 Compile a manifest-backed project from repository root:
 
-        cargo run -- my-oberon-app/src/Main.ob0 --manifest my-oberon-app/oberon.toml --out-dir target/generated
+    cargo run -- my-oberon-app/src/Main.ob0 --manifest my-oberon-app/oberon.toml --out-dir target/generated
 
 This repository includes a focused import/manifest example at:
 
-        examples/imports-manifest/
+    examples/imports-manifest/
 
 Additional focused feature examples are listed in:
 
@@ -204,7 +204,7 @@ This creates a generated Rust project at:
 Minimal valid structure:
 
     MODULE Main;
-        VAR x;
+        VAR x: INTEGER;
     BEGIN
       x := 1 + 2;
       WriteInt(x);

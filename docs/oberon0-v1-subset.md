@@ -66,7 +66,7 @@ Valid shadowing:
 
 ```oberon
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 PROCEDURE P(x);
 BEGIN
   x := x + 1
@@ -90,7 +90,7 @@ Invalid redeclaration in same scope:
 
 ```oberon
 MODULE Main;
-VAR x, x;
+VAR x, x: INTEGER;
 BEGIN
 END Main.
 ```

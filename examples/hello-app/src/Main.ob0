@@ -1,5 +1,5 @@
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 BEGIN
   x := 1 + 2 * 3;
   WriteInt(x);

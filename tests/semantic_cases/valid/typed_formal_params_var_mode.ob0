@@ -1,5 +1,5 @@
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
 BEGIN
   target := target + amount

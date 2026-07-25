@@ -1,8 +1,10 @@
 MODULE Main;
-IMPORT Math;
 VAR x: INTEGER;
 BEGIN
-  x := 42;
+  x := 100;
+  WHILE x > 0 DO
+    x := x - 1
+  END;
   WriteInt(x);
   WriteLn()
 END Main.

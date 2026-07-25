@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, bail};
@@ -23,7 +23,7 @@ impl IoUsage {
 pub fn generate_rust_project(
     module: &HModule,
     manifest: Option<&ExternalManifest>,
-    out_root: &Path,
+    out_root: &std::path::Path,
     emit_state: bool,
 ) -> Result<PathBuf> {
     let project_dir = out_root.join(&module.name);
@@ -729,7 +729,6 @@ fn _validate_import_mapping(module: &HModule, manifest: &ExternalManifest) -> Re
     }
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests;

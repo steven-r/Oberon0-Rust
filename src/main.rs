@@ -1,15 +1,6 @@
 //! Command-line entry point for the Oberon0 to Rust compiler pipeline.
 
-mod ast;
-mod codegen;
-mod hir;
-mod lower;
-mod manifest;
-mod parser;
-mod scanner;
-mod scope;
-mod semantic;
-mod symbols;
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 use std::fs;
 use std::path::PathBuf;
@@ -18,12 +9,12 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 
-use codegen::generate_rust_project;
-use lower::lower_module;
-use manifest::ExternalManifest;
-use parser::parse_module;
-use scanner::scan;
-use semantic::analyze;
+use oberon0c::codegen::generate_rust_project;
+use oberon0c::lower::lower_module;
+use oberon0c::manifest::ExternalManifest;
+use oberon0c::parser::parse_module;
+use oberon0c::scanner::scan;
+use oberon0c::semantic::analyze;
 
 #[derive(Parser, Debug)]
 #[command(name = "oberon0c")]
@@ -55,6 +46,7 @@ struct Cli {
 }
 
 /// Runs scanning, parsing, semantic analysis, lowering, and Rust code generation.
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -175,17 +167,17 @@ mod tests {
 
     #[test]
     fn cli_state_flags_override_manifest_setting() {
-        let manifest = crate::manifest::ExternalManifest {
+        let manifest = oberon0c::manifest::ExternalManifest {
             dependencies: std::collections::BTreeMap::new(),
-            compiler: crate::manifest::CompilerConfig { emit_state: true },
+            compiler: oberon0c::manifest::CompilerConfig { emit_state: true },
         };
         let parsed = Cli::try_parse_from(["oberon0c", "src/Main.ob0", "--no-emit-state"])
             .expect("CLI parse should succeed");
         assert!(!super::resolve_emit_state(&parsed, Some(&manifest)));
 
-        let manifest = crate::manifest::ExternalManifest {
+        let manifest = oberon0c::manifest::ExternalManifest {
             dependencies: std::collections::BTreeMap::new(),
-            compiler: crate::manifest::CompilerConfig { emit_state: false },
+            compiler: oberon0c::manifest::CompilerConfig { emit_state: false },
         };
         let parsed = Cli::try_parse_from(["oberon0c", "src/Main.ob0", "--emit-state"])
             .expect("CLI parse should succeed");

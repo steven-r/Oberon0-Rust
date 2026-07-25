@@ -1,5 +1,5 @@
 MODULE Main;
-VAR x, sum;
+VAR x, sum: INTEGER;
 PROCEDURE Walk(x);
 BEGIN
   sum := 0;
