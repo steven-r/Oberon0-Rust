@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.8.0 - 2026-07-26
+
 ### Features
 
 - allow declaration-only modules to omit the top-level `BEGIN` block while preserving existing module-body parsing (#25)
