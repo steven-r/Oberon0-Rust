@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::hir::{HDeclaration, HExpr, HModule, HParam, HResolvedIdent, HStatement};
@@ -717,18 +717,6 @@ fn format_binary_expr(op: BinaryOp, left: &str, right: &str, wrap: bool) -> Stri
     }
 }
 
-#[allow(dead_code)]
-fn _validate_import_mapping(module: &HModule, manifest: &ExternalManifest) -> Result<()> {
-    for import in &module.imports {
-        if manifest.resolve(&import.external_name).is_none() {
-            bail!(
-                "Import '{}' has no crate binding in the manifest",
-                import.external_name
-            );
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests;

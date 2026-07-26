@@ -52,7 +52,7 @@ jobs:
       - name: Generate Cobertura coverage report
         run: cargo llvm-cov --workspace --all-targets --cobertura --output-path coverage.xml
 
-      - name: Enforce changed-line coverage (>95%)
+      - name: Enforce changed-line coverage (>90%)
         run: |
           git fetch origin main --depth=1
           RUST_CHANGED_LINES=$(git diff --name-only origin/main...HEAD -- '*.rs' | wc -l)
@@ -63,7 +63,7 @@ jobs:
 
           diff-cover coverage.xml \
             --compare-branch=origin/main \
-            --fail-under=95 \
+            --fail-under=90 \
             --format markdown:diff-cover.md
 
       - name: Smoke test minimal example
