@@ -11,6 +11,7 @@ use crate::ast::{
 };
 use crate::manifest::ExternalManifest;
 use crate::symbols::{SymbolKind, SymbolTable};
+use crate::expression_constant_handler::combine_expression;
 
 /// Information about exported symbols from an external module.
 /// Used for resolving qualified references like B.HELLO or B.IntType.
@@ -98,6 +99,8 @@ pub enum SemanticError {
         module: String,
         name: String,
     },
+    InvalidConstDeclaration { name: String },
+    InternalError { error: String },
 }
 
 impl SemanticError {
@@ -119,6 +122,8 @@ impl SemanticError {
             SemanticError::UnknownType { .. } => "E013",
             SemanticError::NonExportedMember { .. } => "E014",
             SemanticError::UnsupportedQualifiedVariable { .. } => "E015",
+            SemanticError::InvalidConstDeclaration { .. } => "E016",
+            SemanticError::InternalError { .. } => "E999",
         }
     }
 }
@@ -222,11 +227,40 @@ impl fmt::Display for SemanticError {
                     name
                 )
             }
+            SemanticError::InvalidConstDeclaration { name } => {
+                write!(
+                    f,
+                    "[{}] Constant '{}' must be initialized with a literal expression",
+                    self.code(),
+                    name
+                )
+            }
+            SemanticError::InternalError { error } => {
+                write!(
+                    f,
+                    "[{}] Internal compiler error: {}",
+                    self.code(),
+                    error
+                )
+            }
         }
     }
 }
 
 impl Error for SemanticError {}
+
+
+fn vaildate_const_expression_literal(declaration: &Declaration) -> Result<()> {
+    let Declaration::Const { name, value } = declaration else { return Err(SemanticError::InternalError { error: "Cannot retrieve const declaration".to_string() }.into()) };
+    let const_value = combine_expression(value)?;
+
+    if const_value.is_literal() {
+        Ok(())
+    } else {
+        Err(SemanticError::InvalidConstDeclaration { name: name.clone() }.into())
+    }
+}
+
 
 fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Result<()> {
     if resolve_type_ref(type_ref, types).is_none() {
@@ -444,6 +478,9 @@ fn infer_expr_type(
 ) -> Result<Option<TypeRef>> {
     match expr {
         Expr::Integer(_) => Ok(Some(TypeRef::Integer)),
+        Expr::Real(_) => Ok(Some(TypeRef::Real)),
+        Expr::LongReal(_) => Ok(Some(TypeRef::LongReal)),
+        Expr::Boolean(_) => Ok(Some(TypeRef::Boolean)),
         Expr::String(_) => Err(SemanticError::UnsupportedStringLiteral.into()),
         Expr::Variable(name) => {
             if symbols.resolve(name).is_none() {
@@ -673,6 +710,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
         match declaration {
             Declaration::Const { name, .. } => {
                 validate_declaration_name(name, &types)?;
+                vaildate_const_expression_literal(declaration)?;
                 symbols.declare(name, SymbolKind::Constant)?;
             }
             Declaration::Type { name, target, .. } => {
@@ -1015,6 +1053,9 @@ fn analyze_statement(
 fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
     match expr {
         Expr::Integer(_) => Ok(()),
+        Expr::Real(_) => Ok(()),
+        Expr::LongReal(_) => Ok(()),
+        Expr::Boolean(_) => Ok(()),
         Expr::String(_) => Err(SemanticError::UnsupportedStringLiteral.into()),
         Expr::Variable(name) => {
             if symbols.resolve(name).is_none() {

@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- allow `CONST` declarations to use full expressions (not only raw integer literals), with compile-time folding into literal values
+- carry constant expressions as HIR expressions and emit folded constant values in generated Rust
+
+### Fixes
+
+- add semantic validation for constant initializers and report `E016` when a `CONST` does not fold to a literal expression
+
+### Documentation
+
+- clarify README language-subset notes for constant expression initializers and literal expression coverage
+
 ## v0.8.0 - 2026-07-26
 
 ### Features

@@ -249,6 +249,7 @@ The current compiler supports the Milestone A subset:
 - `MODULE ... [BEGIN ...] END ... .`
 - Optional `IMPORT` section
 - Declarations include `CONST`, `TYPE`, `VAR`, and `PROCEDURE` declarations.
+- `CONST` declarations support expression initializers (for example `CONST A = 1 + 2 * 3;`) as long as they fold to a literal value during semantic analysis.
 - `TYPE` declarations currently support built-in scalar targets `INTEGER`, `BOOLEAN`, `REAL`, `LONGREAL` and simple named aliases.
 - `VAR` declarations may optionally carry declared types such as `VAR x: INTEGER;`, `VAR flag: BOOLEAN;`, or `VAR x: Count;`.
 - User-defined type names remain reserved at module scope but may be shadowed by procedure parameters; built-in scalar names stay reserved, and a parameter cannot reuse the same user-defined type name in its own declaration as in `Count: Count`.
@@ -259,7 +260,7 @@ The current compiler supports the Milestone A subset:
   - call: `Proc(...)` or `Proc`
   - `IF ... THEN ... [ELSE ...] END`
   - `WHILE ... DO ... END`
-- Expressions with integer literals, identifiers, and parentheses
+- Expressions with integer, boolean, real, and long-real literals, identifiers, and parentheses
 - Operators: `+`, `-`, unary `+`, unary `-`, `*`, `/`, `DIV`, `MOD`, `OR`, `&`, unary `~`, `=`, `#`, `<`, `<=`, `>`, `>=`
 
 Focused typed-declaration example:

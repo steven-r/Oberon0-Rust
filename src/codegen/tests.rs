@@ -544,7 +544,7 @@
             declarations: vec![HDeclaration::Const {
                 id: 30,
                 name: "BASE".to_string(),
-                value: 10,
+                value: HExpr::Integer(10),
             }],
             statements: vec![HStatement::Assign {
                 target: ident(31, "x", SymbolKind::Variable),

@@ -91,7 +91,7 @@ pub enum Statement {
 /// Top-level declarations currently recognized by the compiler.
 pub enum Declaration {
     /// Constant declaration with an integer literal value.
-    Const { name: String, value: i64 },
+    Const { name: String, value: Expr },
     /// Named type alias declaration.
     Type {
         name: String,
@@ -119,6 +119,9 @@ pub enum Declaration {
 pub enum Expr {
     /// Integer literal.
     Integer(i64),
+    Real(f32),
+    LongReal(f64),
+    Boolean(bool),
     /// String literal using Pascal-style doubled quotes for embedded `"` characters.
     String(String),
     /// Reference to an identifier before semantic resolution.
@@ -144,6 +147,16 @@ pub enum Expr {
     },
 }
 
+impl Expr {
+    /// Returns `true` if the expression is a literal (integer, real, long real, boolean, or string).
+    pub fn is_literal(&self) -> bool {
+        matches!(
+            self,
+            Expr::Integer(_) | Expr::Real(_) | Expr::LongReal(_) | Expr::Boolean(_) | Expr::String(_)
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 /// Supported binary operators in the current subset grammar.
 pub enum BinaryOp {
@@ -166,7 +179,10 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Supported unary operators in the current subset.
 pub enum UnaryOp {
+    /// Unary plus operator (no effect on the value).
     Plus,
+    /// Unary minus operator (negates the value).
     Minus,
+    /// Logical negation operator (inverts boolean value).
     Not,
 }

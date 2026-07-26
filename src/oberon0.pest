@@ -31,7 +31,7 @@ import_item = { ident ~ (":=" ~ ident)? }
 
 declaration_section = { const_section | type_section | var_section | procedure_decl }
 const_section = { "CONST" ~ const_item+ }
-const_item = { ident ~ "=" ~ integer ~ ";" }
+const_item = { ident ~ "=" ~ expr ~ ";" }
 type_section = { "TYPE" ~ type_item+ }
 type_item = { ident ~ export_marker? ~ "=" ~ type_ref ~ ";" }
 type_ref = { qualified_ident }

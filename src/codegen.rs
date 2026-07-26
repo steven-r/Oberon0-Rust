@@ -250,7 +250,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
 
 struct FormatContext<'a> {
     locals: HashMap<usize, String>,
-    constants: HashMap<usize, i64>,
+    constants: HashMap<usize, &'a HExpr>,
     procedures: &'a HashSet<String>,
     vars_arg: &'a str,
     procedure_name: Option<&'a str>,
@@ -275,12 +275,12 @@ fn collect_procedure_names(module: &HModule) -> HashSet<String> {
         .collect()
 }
 
-fn collect_module_constants(module: &HModule) -> HashMap<usize, i64> {
+fn collect_module_constants(module: &HModule) -> HashMap<usize, &HExpr> {
     module
         .declarations
         .iter()
         .filter_map(|decl| match decl {
-            HDeclaration::Const { id, value, .. } => Some((*id, *value)),
+            HDeclaration::Const { id, value, .. } => Some((*id, value)),
             _ => None,
         })
         .collect()
@@ -318,7 +318,7 @@ fn statement_needs_state_map(stmt: &HStatement, procedure_names: &HashSet<String
 
 fn expr_needs_state_map(expr: &HExpr) -> bool {
     match expr {
-        HExpr::Integer(_) | HExpr::String(_) => false,
+        HExpr::Integer(_) | HExpr::String(_) | HExpr::LongReal(_) | HExpr::Real(_) | HExpr::Boolean(_) => false,
         HExpr::Name(ident) => ident.kind != crate::symbols::SymbolKind::Constant,
         HExpr::Call { args, .. } => args.iter().any(expr_needs_state_map),
         HExpr::Unary { value, .. } => expr_needs_state_map(value),
@@ -377,7 +377,7 @@ fn statement_io_usage(stmt: &HStatement) -> IoUsage {
 
 fn expr_io_usage(expr: &HExpr) -> IoUsage {
     match expr {
-        HExpr::Integer(_) | HExpr::String(_) | HExpr::Name(_) => IoUsage::default(),
+        HExpr::Integer(_) | HExpr::String(_) | HExpr::Name(_) | HExpr::LongReal(_) | HExpr::Real(_) | HExpr::Boolean(_) => IoUsage::default(),
         HExpr::Call { name, args } => {
             let mut usage = IoUsage {
                 uses_read_int: name.name == "ReadInt",
@@ -429,7 +429,7 @@ fn format_procedure(
     params: &[HParam],
     local_vars: &[HResolvedIdent],
     body: &[HStatement],
-    constants: &HashMap<usize, i64>,
+    constants: &HashMap<usize, &HExpr>,
     procedure_names: &HashSet<String>,
     emit_state: bool,
 ) -> String {
@@ -653,10 +653,13 @@ fn format_block(stmts: &[HStatement], indent: &str, ctx: &FormatContext<'_>) -> 
 fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
     match expr {
         HExpr::Integer(v) => v.to_string(),
+        HExpr::Boolean(v) => v.to_string(),
+        HExpr::LongReal(v)  => v.to_string(),
+        HExpr::Real(v) => v.to_string(),
         HExpr::String(value) => format!("{:?}", value),
         HExpr::Name(ident) => {
             if let Some(value) = ctx.constants.get(&ident.id) {
-                value.to_string()
+                value.to_string().to_string()
             } else {
                 match ctx.locals.get(&ident.id) {
                     Some(binding) => binding.clone(),

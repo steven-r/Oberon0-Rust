@@ -50,9 +50,10 @@ Implicit declarations are not allowed.
 Scope validation in Milestone A:
 
 1. Module scope contains imported aliases, `CONST`, `VAR`, and `PROCEDURE` names.
-2. Procedure scope contains procedure parameters and can reference module-scope symbols.
-3. Assignment targets and expression identifiers must resolve in the current scope chain.
-4. Assigning to an undeclared identifier is a semantic error.
+2. `CONST` declarations accept expression initializers as long as they fold to a literal value during semantic analysis.
+3. Procedure scope contains procedure parameters and can reference module-scope symbols.
+4. Assignment targets and expression identifiers must resolve in the current scope chain.
+5. Assigning to an undeclared identifier is a semantic error.
 
 Shadowing and redeclaration:
 
@@ -114,7 +115,7 @@ Not yet in Milestone A:
 
 Grammar supports:
 
-1. Integer literals
+1. Integer, Boolean, Real, and LongReal literals
 2. Identifiers
 3. Parenthesized expressions
 4. Binary operators: `+`, `-`, `*`, `/`

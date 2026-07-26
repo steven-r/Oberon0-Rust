@@ -60,7 +60,7 @@ pub enum HDeclaration {
     Const {
         id: usize,
         name: String,
-        value: i64,
+        value: HExpr,
     },
     /// Type declaration with its resolved id and preserved target type.
     Type {
@@ -117,6 +117,9 @@ pub enum HStatement {
 pub enum HExpr {
     /// Integer literal.
     Integer(i64),
+    Real(f32),
+    LongReal(f64),
+    Boolean(bool),
     /// String literal after parser unescaping.
     String(String),
     /// Reference to a resolved identifier binding.
@@ -137,4 +140,56 @@ pub enum HExpr {
         left: Box<HExpr>,
         right: Box<HExpr>,
     },
+}
+
+impl HExpr {
+    /// Returns `true` if the expression is a literal (integer, real, long real, boolean, or string).
+    pub fn is_literal(&self) -> bool {
+        matches!(
+            self,
+            HExpr::Integer(_) | HExpr::Real(_) | HExpr::LongReal(_) | HExpr::Boolean(_) | HExpr::String(_)
+        )
+    }
+
+    pub(crate) fn to_string(&self) -> String {
+        match self {
+            HExpr::Integer(v) => v.to_string(),
+            HExpr::Real(v) => v.to_string(),
+            HExpr::LongReal(v) => v.to_string(),
+            HExpr::Boolean(v) => v.to_string(),
+            HExpr::String(value) => format!("{:?}", value),
+            HExpr::Name(ident) => ident.name.clone(),
+            HExpr::Call { name, args } => {
+                let args_str = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>().join(", ");
+                format!("{}({})", name.name, args_str)
+            }
+            HExpr::Unary { op, value } => {
+                let op_str = match op {
+                    UnaryOp::Minus => "-",
+                    UnaryOp::Not => "NOT ",
+                    UnaryOp::Plus => "",
+                };
+                format!("{}{}", op_str, value.to_string())
+            }
+            HExpr::Binary { op, left, right } => {
+                let op_str = match op {
+                    BinaryOp::Add => "+",
+                    BinaryOp::Sub => "-",
+                    BinaryOp::Mul => "*",
+                    BinaryOp::Div => "/",
+                    BinaryOp::IntDiv => "DIV",
+                    BinaryOp::Mod => "MOD",
+                    BinaryOp::And => "AND",
+                    BinaryOp::Or => "OR",
+                    BinaryOp::Eq => "=",
+                    BinaryOp::Ne => "#",
+                    BinaryOp::Lt => "<",
+                    BinaryOp::Le => "<=",
+                    BinaryOp::Gt => ">",
+                    BinaryOp::Ge => ">=",
+                };
+                format!("({} {} {})", left.to_string(), op_str, right.to_string())
+            }
+        }
+    }
 }

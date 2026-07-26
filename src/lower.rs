@@ -6,6 +6,7 @@ use crate::ast::{Declaration, Expr, Module, Statement};
 use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
 use crate::scope::ScopedMap;
 use crate::symbols::SymbolKind;
+use crate::expression_constant_handler::combine_expression;
 
 #[derive(Debug)]
 /// Tracks lexical scopes while assigning stable ids to resolved identifiers.
@@ -129,10 +130,12 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown constant '{}'.", name))?;
+            let compiled = combine_expression(value)?;
+            let value = lower_expr(&compiled, resolver)?;
             Ok(HDeclaration::Const {
                 id: resolved.id,
                 name: name.clone(),
-                value: *value,
+                value: value,
             })
         }
         Declaration::Type { name, target, .. } => {
@@ -283,6 +286,9 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
 fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
     match expr {
         Expr::Integer(value) => Ok(HExpr::Integer(*value)),
+        Expr::Real(value) => Ok(HExpr::Real(*value)),
+        Expr::LongReal(value) => Ok(HExpr::LongReal(*value)),
+        Expr::Boolean(value) => Ok(HExpr::Boolean(*value)),
         Expr::String(value) => Ok(HExpr::String(value.clone())),
         Expr::QualifiedVariable { module: _, name: _ } => {
             bail!("Qualified variables are not yet supported in code generation")
@@ -574,11 +580,11 @@ END Main.
             .declarations
             .iter()
             .find_map(|decl| match decl {
-                HDeclaration::Const { name, value, .. } if name == "x" => Some(*value),
+                HDeclaration::Const { name, value, .. } if name == "x" => Some(value.clone()),
                 _ => None,
             })
             .expect("constant x must exist in HIR");
-        assert_eq!(c, 42, "constant x should have value 42 in HIR");
+        assert!(matches!(c, HExpr::Integer(42)), "constant x should have value 42 in HIR");
 
     }
 
@@ -599,11 +605,12 @@ END Main.
             .declarations
             .iter()
             .find_map(|decl| match decl {
-                HDeclaration::Const { name, value, .. } if name == "x" => Some(*value),
+                HDeclaration::Const { name, value, .. } if name == "x" => Some(value.clone()),
                 _ => None,
             })
             .expect("constant x must exist in HIR");
-        assert_eq!(c, -1, "constant x should have value -1 in HIR");
+        println!("Found constant x with value {:?}", c);
+        assert!(matches!(c, HExpr::Integer(-1)), "constant x should have value -1 in HIR");
 
     }
 

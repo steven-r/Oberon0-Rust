@@ -209,10 +209,7 @@ fn parse_const_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
         let mut parts = item.into_inner();
         let name = take_ident(parts.next(), "constant name")?;
         let value_pair = parts.next().context("Missing constant value")?;
-        let value = value_pair
-            .as_str()
-            .parse::<i64>()
-            .with_context(|| format!("Invalid integer: {}", value_pair.as_str()))?;
+        let value = parse_expr(value_pair)?;
         out.push(Declaration::Const { name, value });
     }
 
