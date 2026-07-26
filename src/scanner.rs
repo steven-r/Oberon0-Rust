@@ -31,6 +31,12 @@ pub enum Token {
     KwWhile,
     #[token("DO")]
     KwDo,
+    #[token("OR")]
+    KwOr,
+    #[token("DIV")]
+    OpDiv,
+    #[token("MOD")]
+    OpMod,
 
     #[token(":=")]
     Assign,
@@ -56,6 +62,20 @@ pub enum Token {
     Star,
     #[token("/")]
     Slash,
+    #[token("#")]
+    Hash,
+    #[token("<=")]
+    LessEqual,
+    #[token("<")]
+    Less,
+    #[token(">=")]
+    GreaterEqual,
+    #[token(">")]
+    Greater,
+    #[token("&")]
+    Ampersand,
+    #[token("~")]
+    Tilde,
 
     #[regex(r"[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),
@@ -144,6 +164,25 @@ mod tests {
         assert!(has_then, "scanner should tokenize THEN as a keyword");
         assert!(has_while, "scanner should tokenize WHILE as a keyword");
         assert!(has_do, "scanner should tokenize DO as a keyword");
+    }
+
+    #[test]
+    fn scans_extended_operator_tokens() {
+        let source = "MODULE Main; BEGIN x := +a - ~b OR c DIV 2 MOD 3 & d / 4 * 5; IF x # 0 THEN x := (x <= 10) + (x >= 1) + (x < 11) + (x > 0) END; END Main.";
+        let tokens = scan(source).expect("scanner should accept extended operator syntax");
+
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::KwOr)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::OpDiv)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::OpMod)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Ampersand)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Tilde)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Plus)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Minus)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Hash)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::LessEqual)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::GreaterEqual)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Less)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Greater)));
     }
 
     #[test]

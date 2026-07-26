@@ -1,9 +1,14 @@
 {
   "version": "0.2",
   "language": "en",
+  "ignorePaths": [
+    "coverage/*"
+  ],
   "words": [
     "codegen",
+    "LONGREAL",
     "rustc",
-    "termcolor"
+    "termcolor",
+    "Wirth"
   ]
 }

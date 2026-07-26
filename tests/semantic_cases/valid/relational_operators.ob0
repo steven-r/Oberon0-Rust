@@ -1,0 +1,7 @@
+MODULE Main;
+VAR b1: BOOLEAN;
+VAR b2: BOOLEAN;
+BEGIN
+  b1 := (1 + 2) = 3;
+  b2 := (4 # 5) & (2 <= 2) OR (3 > 2)
+END Main.

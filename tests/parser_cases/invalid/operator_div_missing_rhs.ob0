@@ -1,0 +1,6 @@
+(* INVALID: DIV operator is missing the right-hand operand *)
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+  x := 7 DIV
+END Main.

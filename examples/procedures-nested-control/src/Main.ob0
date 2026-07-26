@@ -1,6 +1,6 @@
 MODULE Main;
-VAR current;
-PROCEDURE Countdown(start);
+VAR current: INTEGER;
+PROCEDURE Countdown(start: INTEGER);
 BEGIN
   current := start;
   WHILE current DO

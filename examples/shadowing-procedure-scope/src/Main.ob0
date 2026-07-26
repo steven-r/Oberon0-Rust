@@ -1,5 +1,5 @@
 MODULE Main;
-VAR x, y;
+VAR x, y: INTEGER;
 PROCEDURE Mix(x);
 BEGIN
   y := x + 1;

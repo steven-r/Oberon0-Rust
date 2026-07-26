@@ -1,5 +1,5 @@
 MODULE Main;
-VAR a, b;
+VAR a, b: INTEGER;
 BEGIN
   a := 1 + 2 * 3;
   b := (1 + 2) * 3;

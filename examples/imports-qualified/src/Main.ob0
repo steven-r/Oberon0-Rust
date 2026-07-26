@@ -1,0 +1,15 @@
+MODULE Main;
+IMPORT B := ModuleB;
+
+PROCEDURE TestProcedure;
+BEGIN
+  WriteInt(99)
+END TestProcedure;
+
+BEGIN
+  (* Issue #26 target behavior (not implemented yet):
+     B.HELLO;
+     VAR x: B.IntType;
+  *)
+  TestProcedure
+END Main.

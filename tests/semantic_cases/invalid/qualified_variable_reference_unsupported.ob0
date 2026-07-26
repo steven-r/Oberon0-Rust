@@ -1,0 +1,7 @@
+(* INVALID: qualified variable references are currently rejected by semantic analysis *)
+MODULE Main;
+IMPORT B := ModuleB;
+VAR x: INTEGER;
+BEGIN
+  x := B.value
+END Main.

@@ -2,7 +2,7 @@
     use std::fs;
     use std::path::Path;
 
-    use crate::ast::BinaryOp;
+    use crate::ast::{BinaryOp, UnaryOp};
     use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
     use crate::lower::lower_module;
     use crate::manifest::{CompilerConfig, CrateBinding, ExternalManifest};
@@ -43,6 +43,7 @@
                         value: HExpr::Name(ident(2, "a", SymbolKind::Parameter)),
                     },
                     HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Name(ident(3, "x", SymbolKind::Variable))],
                     },
@@ -50,6 +51,7 @@
                 end_name: "AddAndPrint".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "AddAndPrint", SymbolKind::Procedure),
                 args: vec![HExpr::Integer(7)],
             }],
@@ -134,6 +136,117 @@
     }
 
     #[test]
+    fn emits_extended_unary_and_binary_operators() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![HStatement::Assign {
+                target: ident(10, "x", SymbolKind::Variable),
+                value: HExpr::Binary {
+                    op: BinaryOp::And,
+                    left: Box::new(HExpr::Unary {
+                        op: UnaryOp::Not,
+                        value: Box::new(HExpr::Binary {
+                            op: BinaryOp::Or,
+                            left: Box::new(HExpr::Integer(1)),
+                            right: Box::new(HExpr::Integer(0)),
+                        }),
+                    }),
+                    right: Box::new(HExpr::Binary {
+                        op: BinaryOp::Mod,
+                        left: Box::new(HExpr::Binary {
+                            op: BinaryOp::IntDiv,
+                            left: Box::new(HExpr::Unary {
+                                op: UnaryOp::Minus,
+                                value: Box::new(HExpr::Integer(7)),
+                            }),
+                            right: Box::new(HExpr::Integer(2)),
+                        }),
+                        right: Box::new(HExpr::Integer(3)),
+                    }),
+                },
+            }],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(generated.contains("(1 != 0 || 0 != 0) as i64"));
+        assert!(generated.contains("== 0) as i64"));
+        assert!(generated.contains("(-7) / 2"));
+        assert!(generated.contains("% 3"));
+        assert!(generated.contains("&&"));
+    }
+
+    #[test]
+    fn emits_relational_operators_as_boolean_i64() {
+        let module = HModule {
+            name: "Main".to_string(),
+            end_name: "Main".to_string(),
+            imports: vec![],
+            declarations: vec![],
+            statements: vec![
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Eq,
+                        left: Box::new(HExpr::Integer(1)),
+                        right: Box::new(HExpr::Integer(1)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Ne,
+                        left: Box::new(HExpr::Integer(1)),
+                        right: Box::new(HExpr::Integer(2)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Lt,
+                        left: Box::new(HExpr::Integer(2)),
+                        right: Box::new(HExpr::Integer(3)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Le,
+                        left: Box::new(HExpr::Integer(2)),
+                        right: Box::new(HExpr::Integer(2)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Gt,
+                        left: Box::new(HExpr::Integer(3)),
+                        right: Box::new(HExpr::Integer(2)),
+                    },
+                },
+                HStatement::Assign {
+                    target: ident(11, "x", SymbolKind::Variable),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Ge,
+                        left: Box::new(HExpr::Integer(3)),
+                        right: Box::new(HExpr::Integer(3)),
+                    },
+                },
+            ],
+        };
+
+        let generated = generate_main_rs(&module, false);
+        assert!(generated.contains("(1 == 1) as i64"));
+        assert!(generated.contains("(1 != 2) as i64"));
+        assert!(generated.contains("(2 < 3) as i64"));
+        assert!(generated.contains("(2 <= 2) as i64"));
+        assert!(generated.contains("(3 > 2) as i64"));
+        assert!(generated.contains("(3 >= 3) as i64"));
+    }
+
+    #[test]
     fn emits_write_string_builtin_as_print_macro() {
         let module = HModule {
             name: "Main".to_string(),
@@ -141,6 +254,7 @@
             imports: vec![],
             declarations: vec![],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(20, "WriteString", SymbolKind::Procedure),
                 args: vec![HExpr::String("Hello, \"Oberon\"".to_string())],
             }],
@@ -160,6 +274,7 @@
             imports: vec![],
             declarations: vec![],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(21, "WriteLn", SymbolKind::Procedure),
                 args: vec![],
             }],
@@ -194,6 +309,7 @@
                         args: vec![],
                     },
                     then_branch: vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteLn", SymbolKind::Procedure),
                         args: vec![],
                     }],
@@ -232,6 +348,7 @@
                     }],
                     local_vars: vec![],
                     body: vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Name(ident(3, "value", SymbolKind::Parameter))],
                     }],
@@ -244,6 +361,7 @@
                     value: HExpr::Integer(7),
                 },
                 HStatement::Call {
+                    module: None,
                     name: ident(2, "Show", SymbolKind::Procedure),
                     args: vec![HExpr::Name(ident(1, "x", SymbolKind::Variable))],
                 },
@@ -263,6 +381,7 @@
             imports: vec![],
             declarations: vec![],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "WriteLn", SymbolKind::Procedure),
                 args: vec![],
             }],
@@ -300,15 +419,18 @@
                         args: vec![],
                     },
                     then_branch: vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Integer(1)],
                     }],
                     else_branch: Some(vec![HStatement::Call {
+                        module: None,
                         name: ident(5, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Integer(0)],
                     }]),
                 },
                 HStatement::Call {
+                    module: None,
                     name: ident(6, "WriteInt", SymbolKind::Procedure),
                     args: vec![HExpr::Name(ident(1, "x", SymbolKind::Variable))],
                 },
@@ -369,10 +491,12 @@
                         args: vec![],
                     },
                     then_branch: vec![HStatement::Call {
+                        module: None,
                         name: ident(3, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Integer(1)],
                     }],
                     else_branch: Some(vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Integer(0)],
                     }]),
@@ -477,6 +601,7 @@
                 end_name: "P".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "P", SymbolKind::Procedure),
                 args: vec![],
             }],
@@ -507,6 +632,7 @@
                 end_name: "P".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "P", SymbolKind::Procedure),
                 args: vec![HExpr::Integer(9)],
             }],
@@ -559,6 +685,7 @@
                     value: HExpr::Integer(3),
                 },
                 HStatement::Call {
+                    module: None,
                     name: ident(2, "Walk", SymbolKind::Procedure),
                     args: vec![HExpr::Integer(2)],
                 },
@@ -605,6 +732,7 @@
                     }],
                     local_vars: vec![],
                     body: vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Name(ident(3, "x", SymbolKind::Parameter))],
                     }],
@@ -617,6 +745,7 @@
                     value: HExpr::Integer(7),
                 },
                 HStatement::Call {
+                    module: None,
                     name: ident(2, "Show", SymbolKind::Procedure),
                     args: vec![HExpr::Integer(42)],
                 },
@@ -665,6 +794,7 @@
                 end_name: "P".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "P", SymbolKind::Procedure),
                 args: vec![],
             }],
@@ -709,6 +839,7 @@
                 end_name: "P".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "P", SymbolKind::Procedure),
                 args: vec![],
             }],

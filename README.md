@@ -166,7 +166,7 @@ Recommended layout:
 
 Compile from repository root:
 
-        cargo run -- my-oberon-app/src/Main.ob0 --out-dir target/generated
+    cargo run -- my-oberon-app/src/Main.ob0 --out-dir target/generated
 
 Force state output on for a one-off run without editing the manifest:
 
@@ -178,18 +178,18 @@ This repository includes the same layout as a runnable example at:
 
 If your project uses `IMPORT`, add an optional manifest file:
 
-        my-oberon-app/
+    my-oberon-app/
             src/
                 Main.ob0
             oberon.toml
 
 Compile a manifest-backed project from repository root:
 
-        cargo run -- my-oberon-app/src/Main.ob0 --manifest my-oberon-app/oberon.toml --out-dir target/generated
+    cargo run -- my-oberon-app/src/Main.ob0 --manifest my-oberon-app/oberon.toml --out-dir target/generated
 
 This repository includes a focused import/manifest example at:
 
-        examples/imports-manifest/
+    examples/imports-manifest/
 
 Additional focused feature examples are listed in:
 
@@ -204,7 +204,7 @@ This creates a generated Rust project at:
 Minimal valid structure:
 
     MODULE Main;
-        VAR x;
+        VAR x: INTEGER;
     BEGIN
       x := 1 + 2;
       WriteInt(x);
@@ -240,12 +240,13 @@ Notes:
 - `--emit-state` and `--no-emit-state` override the manifest for a single compiler run
 - Optional alias form in Oberon is supported: `IMPORT Local := External;`
 - See `examples/imports-manifest/` for a focused project example using this layout.
+- For the current multi-module translation workflow and limits, see `docs/module-translation-workflow.md`.
 
 ## Current language subset
 
 The current compiler supports the Milestone A subset:
 
-- `MODULE ... END ... .`
+- `MODULE ... [BEGIN ...] END ... .`
 - Optional `IMPORT` section
 - Declarations include `CONST`, `TYPE`, `VAR`, and `PROCEDURE` declarations.
 - `TYPE` declarations currently support built-in scalar targets `INTEGER`, `BOOLEAN`, `REAL`, `LONGREAL` and simple named aliases.
@@ -259,7 +260,7 @@ The current compiler supports the Milestone A subset:
   - `IF ... THEN ... [ELSE ...] END`
   - `WHILE ... DO ... END`
 - Expressions with integer literals, identifiers, and parentheses
-- Operators: `+`, `-`, `*`, `/`
+- Operators: `+`, `-`, unary `+`, unary `-`, `*`, `/`, `DIV`, `MOD`, `OR`, `&`, unary `~`, `=`, `#`, `<`, `<=`, `>`, `>=`
 
 Focused typed-declaration example:
 
@@ -268,6 +269,7 @@ Focused typed-declaration example:
 Detailed subset and planning documents:
 
 - docs/oberon0-v1-subset.md
+- docs/operator-type-compatibility-matrix.md
 - docs/milestone-a-backlog.md
 - docs/milestone-b-roadmap.md
 - docs/milestone-b-issue-backlog.md

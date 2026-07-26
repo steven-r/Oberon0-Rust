@@ -1,5 +1,5 @@
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 BEGIN
   IF EOF() THEN
     WriteInt(1)

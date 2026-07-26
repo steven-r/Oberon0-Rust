@@ -1,0 +1,9 @@
+MODULE Main;
+IMPORT B := ModuleB;
+TYPE
+  LocalType* = B.IntType;
+VAR x: INTEGER;
+BEGIN
+  B.HELLO;
+  x := B.value
+END Main.

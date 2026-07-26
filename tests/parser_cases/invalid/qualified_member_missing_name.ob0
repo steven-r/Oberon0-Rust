@@ -1,0 +1,6 @@
+(* INVALID: missing member name after qualified access dot *)
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+  B.
+END Main.

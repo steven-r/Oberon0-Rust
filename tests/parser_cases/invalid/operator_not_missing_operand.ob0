@@ -1,0 +1,6 @@
+(* INVALID: unary '~' operator is missing its operand *)
+MODULE Main;
+VAR flag: BOOLEAN;
+BEGIN
+  flag := ~
+END Main.

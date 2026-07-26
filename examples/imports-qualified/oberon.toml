@@ -1,0 +1,5 @@
+# Manifest for imports-qualified example
+# Uses the current manifest format based on dependency bindings.
+
+[dependencies]
+ModuleB = { crate = "anyhow", version = "1" }

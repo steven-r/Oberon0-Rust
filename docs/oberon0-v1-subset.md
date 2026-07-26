@@ -17,8 +17,8 @@ A source unit must follow this shape:
 ```oberon
 MODULE <Ident>;
 [IMPORT ... ;]
-BEGIN
-  [statement-list]
+[BEGIN
+  [statement-list]]
 END <Ident>.
 ```
 
@@ -26,7 +26,8 @@ Rules:
 
 1. The `END` identifier must match the `MODULE` identifier.
 2. `IMPORT` is optional.
-3. Empty statement list is allowed.
+3. The module `BEGIN` block is optional for declaration-only modules.
+4. Empty statement list is allowed when `BEGIN` is present.
 
 ## Imports
 
@@ -65,7 +66,7 @@ Valid shadowing:
 
 ```oberon
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 PROCEDURE P(x);
 BEGIN
   x := x + 1
@@ -89,7 +90,7 @@ Invalid redeclaration in same scope:
 
 ```oberon
 MODULE Main;
-VAR x, x;
+VAR x, x: INTEGER;
 BEGIN
 END Main.
 ```

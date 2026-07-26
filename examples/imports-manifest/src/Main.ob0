@@ -1,6 +1,6 @@
 MODULE Main;
 IMPORT Math;
-VAR x;
+VAR x: INTEGER;
 BEGIN
   x := 42;
   WriteInt(x);

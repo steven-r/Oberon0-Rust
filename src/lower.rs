@@ -1,6 +1,6 @@
 //! Lowers the parsed AST into a name-resolved HIR for code generation.
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 
 use crate::ast::{Declaration, Expr, Module, Statement};
 use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
@@ -33,6 +33,11 @@ impl Resolver {
         self.scopes.exit_scope();
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    fn declare_on_duplicate(name: &str) -> anyhow::Error {
+        anyhow::anyhow!("Lowering failed: duplicate symbol declaration '{}'.", name)
+    }
+
     /// Declares a resolved identifier and assigns it the next stable id.
     fn declare(&mut self, name: &str, kind: SymbolKind) -> Result<HResolvedIdent> {
         let resolved = HResolvedIdent {
@@ -42,9 +47,7 @@ impl Resolver {
         };
         self.next_id += 1;
 
-        self.scopes.declare(name, resolved.clone(), |name| {
-            anyhow::anyhow!("Lowering failed: duplicate symbol declaration '{}'.", name)
-        })?;
+        self.scopes.declare(name, resolved.clone(), |name| Self::declare_on_duplicate(name))?;
 
         Ok(resolved)
     }
@@ -132,7 +135,7 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
                 value: *value,
             })
         }
-        Declaration::Type { name, target } => {
+        Declaration::Type { name, target, .. } => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown type '{}'.", name))?;
@@ -161,6 +164,7 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
             local_vars,
             body,
             end_name,
+            ..
         } => {
             let resolved_proc = resolver
                 .resolve(name)
@@ -225,7 +229,7 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
                 value: lower_expr(value, resolver)?,
             })
         }
-        Statement::Call { name, args } => {
+        Statement::Call { module, name, args, .. } => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;
@@ -234,6 +238,7 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
                 .map(|arg| lower_expr(arg, resolver))
                 .collect::<Result<Vec<_>>>()?;
             Ok(HStatement::Call {
+                module: module.clone(),
                 name: resolved,
                 args: lowered_args,
             })
@@ -279,13 +284,16 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
     match expr {
         Expr::Integer(value) => Ok(HExpr::Integer(*value)),
         Expr::String(value) => Ok(HExpr::String(value.clone())),
+        Expr::QualifiedVariable { module: _, name: _ } => {
+            bail!("Qualified variables are not yet supported in code generation")
+        }
         Expr::Variable(name) => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown identifier '{}'.", name))?;
             Ok(HExpr::Name(resolved))
         }
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, module: _ } => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;
@@ -298,6 +306,10 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
                 args: lowered_args,
             })
         }
+        Expr::Unary { op, value } => Ok(HExpr::Unary {
+            op: *op,
+            value: Box::new(lower_expr(value, resolver)?),
+        }),
         Expr::Binary { op, left, right } => Ok(HExpr::Binary {
             op: *op,
             left: Box::new(lower_expr(left, resolver)?),
@@ -307,6 +319,7 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use anyhow::Result;
 
@@ -346,7 +359,7 @@ mod tests {
     fn procedure_locals_and_params_have_stable_ids_in_nested_flow() {
         let source = r#"
 MODULE Main;
-VAR x;
+VAR x: INTEGER;
 PROCEDURE P(p);
 BEGIN
   IF p THEN
@@ -543,4 +556,148 @@ END Main.
             "unexpected lowering error message: {msg}"
         );
     }
+
+    #[test]
+    fn lowering_keep_const() {
+        let source = r#"
+MODULE Main;
+CONST x = 42;
+BEGIN
+  WriteInt(x);
+  WriteLn()
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let hir = lower_module(&module).expect("lowering should succeed");
+        let c = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Const { name, value, .. } if name == "x" => Some(*value),
+                _ => None,
+            })
+            .expect("constant x must exist in HIR");
+        assert_eq!(c, 42, "constant x should have value 42 in HIR");
+
+    }
+
+    #[test]
+    fn lowering_const_negative() {
+        let source = r#"
+MODULE Main;
+CONST x = -1;
+BEGIN
+  WriteInt(x);
+  WriteLn()
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let hir = lower_module(&module).expect("lowering should succeed");
+        let c = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Const { name, value, .. } if name == "x" => Some(*value),
+                _ => None,
+            })
+            .expect("constant x must exist in HIR");
+        assert_eq!(c, -1, "constant x should have value -1 in HIR");
+
+    }
+
+    #[test]
+    fn lowering_write_string() {
+        let source = r#"
+MODULE Main;
+BEGIN
+  WriteString("Hello World")
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let hir = lower_module(&module).expect("lowering should succeed");
+        let c = hir
+            .statements
+            .iter()
+            .find_map(|decl| match decl {
+                HStatement::Call { module:_, name, args } if name.name == "WriteString" => {
+                    if let HExpr::String(s) = &args[0] {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .expect("WriteString call must exist in HIR");
+        assert_eq!(c, "Hello World", "WriteString argument should be 'Hello World' in HIR");
+    }
+
+    #[test]
+    fn lowering_unary_expr() {
+        let source = r#"
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+  x := -1;
+  WriteInt(x);
+  WriteLn()
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let hir = lower_module(&module).expect("lowering should succeed");
+        let c = hir
+            .statements
+            .iter()
+            .find_map(|decl| match decl {
+                HStatement::Assign { target, value, .. } =>
+                {
+                    println!("Found assignment to {} with value {:?}", target.name, value);
+                    if target.name == "x" {
+                        Some(value.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+            .expect("assignment to x must exist in HIR");
+        if let HExpr::Unary { op, value } = c {
+            assert_eq!(op, crate::ast::UnaryOp::Minus, "assignment to x should be a negation in HIR");
+            if let HExpr::Integer(i) = *value {
+                assert_eq!(i, 1, "assignment to x should be negation of 1 in HIR");
+            } else {
+                panic!("assignment to x should be negation of an integer in HIR");
+            }
+        } else {
+            panic!("assignment to x should be a unary expression in HIR");
+        }
+    }
+
+    #[test]
+    fn lowering_import() {
+        let source = r#"
+MODULE Main;
+IMPORT LocalMath := Math;
+BEGIN
+  WriteInt(42);
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let hir = lower_module(&module).expect("lowering should succeed");
+        let c = hir
+            .imports
+            .iter()
+            .find_map(|decl| {
+                Some(decl.clone()).filter(|d| d.local_name == "LocalMath" && d.external_name == "Math")
+            })
+            .expect("LocalMath import must exist in HIR");
+        assert_eq!(c.local_name, "LocalMath", "import local name should be 'LocalMath' in HIR");
+        assert_eq!(c.external_name, "Math", "import external name should be 'Math' in HIR");
+    }
+
 }

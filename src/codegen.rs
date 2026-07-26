@@ -1,10 +1,10 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 
-use crate::ast::BinaryOp;
+use crate::ast::{BinaryOp, UnaryOp};
 use crate::hir::{HDeclaration, HExpr, HModule, HParam, HResolvedIdent, HStatement};
 use crate::manifest::{CrateBinding, ExternalManifest};
 
@@ -23,7 +23,7 @@ impl IoUsage {
 pub fn generate_rust_project(
     module: &HModule,
     manifest: Option<&ExternalManifest>,
-    out_root: &Path,
+    out_root: &std::path::Path,
     emit_state: bool,
 ) -> Result<PathBuf> {
     let project_dir = out_root.join(&module.name);
@@ -295,7 +295,7 @@ fn statements_need_state_map(stmts: &[HStatement], procedure_names: &HashSet<Str
 fn statement_needs_state_map(stmt: &HStatement, procedure_names: &HashSet<String>) -> bool {
     match stmt {
         HStatement::Assign { .. } => true,
-        HStatement::Call { name, args } => {
+        HStatement::Call { module: _, name, args } => {
             procedure_names.contains(&name.name)
                 || args.iter().any(expr_needs_state_map)
         }
@@ -321,6 +321,7 @@ fn expr_needs_state_map(expr: &HExpr) -> bool {
         HExpr::Integer(_) | HExpr::String(_) => false,
         HExpr::Name(ident) => ident.kind != crate::symbols::SymbolKind::Constant,
         HExpr::Call { args, .. } => args.iter().any(expr_needs_state_map),
+        HExpr::Unary { value, .. } => expr_needs_state_map(value),
         HExpr::Binary { left, right, .. } => expr_needs_state_map(left) || expr_needs_state_map(right),
     }
 }
@@ -387,6 +388,7 @@ fn expr_io_usage(expr: &HExpr) -> IoUsage {
             }
             usage
         }
+        HExpr::Unary { value, .. } => expr_io_usage(value),
         HExpr::Binary { left, right, .. } => {
             merge_io_usage(expr_io_usage(left), expr_io_usage(right))
         }
@@ -539,7 +541,7 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
                 )
             }
         }
-        HStatement::Call { name, args } => {
+        HStatement::Call { module: _, name, args } => {
             if name.name == "WriteInt" {
                 match args.first() {
                     Some(first) => format!(
@@ -631,13 +633,10 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
 fn format_top_level_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
     match expr {
         HExpr::Binary { op, left, right } => {
-            let op_s = match op {
-                BinaryOp::Add => "+",
-                BinaryOp::Sub => "-",
-                BinaryOp::Mul => "*",
-                BinaryOp::Div => "/",
-            };
-            format!("{} {} {}", format_expr(left, ctx), op_s, format_expr(right, ctx))
+            format!(
+                "{}",
+                format_binary_expr(*op, &format_expr(left, ctx), &format_expr(right, ctx), false)
+            )
         }
         _ => format_expr(expr, ctx),
     }
@@ -679,31 +678,45 @@ fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
                 format!("/* unsupported call expr {}({}) */ 0", name.name, rendered_args)
             }
         }
+        HExpr::Unary { op, value } => {
+            let rendered = format_expr(value, ctx);
+            match op {
+                UnaryOp::Plus => format!("(+{})", rendered),
+                UnaryOp::Minus => format!("(-{})", rendered),
+                UnaryOp::Not => format!("(({} == 0) as i64)", rendered),
+            }
+        }
         HExpr::Binary { op, left, right } => {
-            let op_s = match op {
-                BinaryOp::Add => "+",
-                BinaryOp::Sub => "-",
-                BinaryOp::Mul => "*",
-                BinaryOp::Div => "/",
-            };
-            format!("({} {} {})", format_expr(left, ctx), op_s, format_expr(right, ctx))
+            format_binary_expr(*op, &format_expr(left, ctx), &format_expr(right, ctx), true)
         }
     }
 }
 
-#[allow(dead_code)]
-fn _validate_import_mapping(module: &HModule, manifest: &ExternalManifest) -> Result<()> {
-    for import in &module.imports {
-        if manifest.resolve(&import.external_name).is_none() {
-            bail!(
-                "Import '{}' has no crate binding in the manifest",
-                import.external_name
-            );
-        }
-    }
-    Ok(())
-}
+fn format_binary_expr(op: BinaryOp, left: &str, right: &str, wrap: bool) -> String {
+    let rendered = match op {
+        BinaryOp::Add => format!("{} + {}", left, right),
+        BinaryOp::Sub => format!("{} - {}", left, right),
+        BinaryOp::Or => format!("(({} != 0 || {} != 0) as i64)", left, right),
+        BinaryOp::Mul => format!("{} * {}", left, right),
+        BinaryOp::Div => format!("{} / {}", left, right),
+        BinaryOp::IntDiv => format!("{} / {}", left, right),
+        BinaryOp::Mod => format!("{} % {}", left, right),
+        BinaryOp::And => format!("(({} != 0 && {} != 0) as i64)", left, right),
+        BinaryOp::Eq => format!("(({} == {}) as i64)", left, right),
+        BinaryOp::Ne => format!("(({} != {}) as i64)", left, right),
+        BinaryOp::Lt => format!("(({} < {}) as i64)", left, right),
+        BinaryOp::Le => format!("(({} <= {}) as i64)", left, right),
+        BinaryOp::Gt => format!("(({} > {}) as i64)", left, right),
+        BinaryOp::Ge => format!("(({} >= {}) as i64)", left, right),
+    };
 
+    if wrap {
+        format!("({})", rendered)
+    } else {
+        rendered
+    }
+}
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests;
