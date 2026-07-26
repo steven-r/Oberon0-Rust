@@ -1,10 +1,28 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ "(*" ~ (!"*)" ~ ANY)* ~ "*)" }
 
-keyword = { "MODULE" | "IMPORT" | "CONST" | "TYPE" | "VAR" | "PROCEDURE" | "BEGIN" | "END" | "IF" | "THEN" | "ELSE" | "WHILE" | "DO" | "OR" | "DIV" | "MOD" }
+keyword = {
+    "MODULE" |
+    "IMPORT" |
+    "CONST" |
+    "TYPE" |
+    "VAR" |
+    "PROCEDURE" |
+    "BEGIN" |
+    "END" |
+    "IF" |
+    "THEN" |
+    "ELSE" |
+    "WHILE" |
+    "DO" |
+    "OR" |
+    "DIV" |
+    "MOD"
+}
+
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 export_marker = { "*" }
-integer = @{ ASCII_DIGIT+ }
+integer = @{ unary_sign? ~ ASCII_DIGIT+ }
 string = @{ "\"" ~ ("\"\"" | (!("\"" | NEWLINE) ~ ANY))* ~ "\"" }
 
 module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ declaration_section* ~ ("BEGIN" ~ stmt_list?)? ~ "END" ~ ident ~ "." ~ EOI }

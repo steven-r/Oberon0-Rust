@@ -27,12 +27,12 @@ struct ExternalModuleInfo {
 impl ExternalModuleInfo {
     /// Returns true if the given symbol is exported from this module.
     fn is_exported_procedure(&self, name: &str) -> bool {
-        self.exported_procedures.contains(&name.to_string())
+        self.exported_procedures.iter().any(|p| p == name)
     }
 
     /// Returns true if the given type is exported from this module.
     fn is_exported_type(&self, name: &str) -> bool {
-        self.exported_types.contains(&name.to_string())
+        self.exported_types.iter().any(|t| t == name)
     }
 
     /// Get the underlying TypeRef for an exported type.

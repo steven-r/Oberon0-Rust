@@ -43,6 +43,7 @@
                         value: HExpr::Name(ident(2, "a", SymbolKind::Parameter)),
                     },
                     HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Name(ident(3, "x", SymbolKind::Variable))],
                     },
@@ -50,6 +51,7 @@
                 end_name: "AddAndPrint".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "AddAndPrint", SymbolKind::Procedure),
                 args: vec![HExpr::Integer(7)],
             }],
@@ -252,6 +254,7 @@
             imports: vec![],
             declarations: vec![],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(20, "WriteString", SymbolKind::Procedure),
                 args: vec![HExpr::String("Hello, \"Oberon\"".to_string())],
             }],
@@ -271,6 +274,7 @@
             imports: vec![],
             declarations: vec![],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(21, "WriteLn", SymbolKind::Procedure),
                 args: vec![],
             }],
@@ -305,6 +309,7 @@
                         args: vec![],
                     },
                     then_branch: vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteLn", SymbolKind::Procedure),
                         args: vec![],
                     }],
@@ -343,6 +348,7 @@
                     }],
                     local_vars: vec![],
                     body: vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Name(ident(3, "value", SymbolKind::Parameter))],
                     }],
@@ -355,6 +361,7 @@
                     value: HExpr::Integer(7),
                 },
                 HStatement::Call {
+                    module: None,
                     name: ident(2, "Show", SymbolKind::Procedure),
                     args: vec![HExpr::Name(ident(1, "x", SymbolKind::Variable))],
                 },
@@ -374,6 +381,7 @@
             imports: vec![],
             declarations: vec![],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "WriteLn", SymbolKind::Procedure),
                 args: vec![],
             }],
@@ -411,15 +419,18 @@
                         args: vec![],
                     },
                     then_branch: vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Integer(1)],
                     }],
                     else_branch: Some(vec![HStatement::Call {
+                        module: None,
                         name: ident(5, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Integer(0)],
                     }]),
                 },
                 HStatement::Call {
+                    module: None,
                     name: ident(6, "WriteInt", SymbolKind::Procedure),
                     args: vec![HExpr::Name(ident(1, "x", SymbolKind::Variable))],
                 },
@@ -480,10 +491,12 @@
                         args: vec![],
                     },
                     then_branch: vec![HStatement::Call {
+                        module: None,
                         name: ident(3, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Integer(1)],
                     }],
                     else_branch: Some(vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Integer(0)],
                     }]),
@@ -588,6 +601,7 @@
                 end_name: "P".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "P", SymbolKind::Procedure),
                 args: vec![],
             }],
@@ -618,6 +632,7 @@
                 end_name: "P".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "P", SymbolKind::Procedure),
                 args: vec![HExpr::Integer(9)],
             }],
@@ -670,6 +685,7 @@
                     value: HExpr::Integer(3),
                 },
                 HStatement::Call {
+                    module: None,
                     name: ident(2, "Walk", SymbolKind::Procedure),
                     args: vec![HExpr::Integer(2)],
                 },
@@ -716,6 +732,7 @@
                     }],
                     local_vars: vec![],
                     body: vec![HStatement::Call {
+                        module: None,
                         name: ident(4, "WriteInt", SymbolKind::Procedure),
                         args: vec![HExpr::Name(ident(3, "x", SymbolKind::Parameter))],
                     }],
@@ -728,6 +745,7 @@
                     value: HExpr::Integer(7),
                 },
                 HStatement::Call {
+                    module: None,
                     name: ident(2, "Show", SymbolKind::Procedure),
                     args: vec![HExpr::Integer(42)],
                 },
@@ -776,6 +794,7 @@
                 end_name: "P".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "P", SymbolKind::Procedure),
                 args: vec![],
             }],
@@ -820,6 +839,7 @@
                 end_name: "P".to_string(),
             }],
             statements: vec![HStatement::Call {
+                module: None,
                 name: ident(1, "P", SymbolKind::Procedure),
                 args: vec![],
             }],

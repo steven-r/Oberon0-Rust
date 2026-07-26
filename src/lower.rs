@@ -229,7 +229,7 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
                 value: lower_expr(value, resolver)?,
             })
         }
-        Statement::Call { name, args, .. } => {
+        Statement::Call { module, name, args, .. } => {
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;
@@ -238,6 +238,7 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
                 .map(|arg| lower_expr(arg, resolver))
                 .collect::<Result<Vec<_>>>()?;
             Ok(HStatement::Call {
+                module: module.clone(),
                 name: resolved,
                 args: lowered_args,
             })
@@ -582,6 +583,31 @@ END Main.
     }
 
     #[test]
+    fn lowering_const_negative() {
+        let source = r#"
+MODULE Main;
+CONST x = -1;
+BEGIN
+  WriteInt(x);
+  WriteLn()
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let hir = lower_module(&module).expect("lowering should succeed");
+        let c = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Const { name, value, .. } if name == "x" => Some(*value),
+                _ => None,
+            })
+            .expect("constant x must exist in HIR");
+        assert_eq!(c, -1, "constant x should have value -1 in HIR");
+
+    }
+
+    #[test]
     fn lowering_write_string() {
         let source = r#"
 MODULE Main;
@@ -596,7 +622,7 @@ END Main.
             .statements
             .iter()
             .find_map(|decl| match decl {
-                HStatement::Call { name, args } if name.name == "WriteString" => {
+                HStatement::Call { module:_, name, args } if name.name == "WriteString" => {
                     if let HExpr::String(s) = &args[0] {
                         Some(s.clone())
                     } else {
@@ -629,6 +655,7 @@ END Main.
             .find_map(|decl| match decl {
                 HStatement::Assign { target, value, .. } =>
                 {
+                    println!("Found assignment to {} with value {:?}", target.name, value);
                     if target.name == "x" {
                         Some(value.clone())
                     } else {

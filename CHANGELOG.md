@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - allow declaration-only modules to omit the top-level `BEGIN` block while preserving existing module-body parsing (#25)
 - add export markers (`*`) on type and procedure declarations to prepare visibility controls for cross-module access (#26)
 - parse qualified identifiers (`Module.Name`) in expressions, calls, and type references to prepare for cross-module reference resolution (#26)
+- Allow constants to be negative (e.g. `CONST x = -1;`)
 
 ### Fixes
 

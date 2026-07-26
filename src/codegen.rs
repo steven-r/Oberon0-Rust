@@ -295,7 +295,7 @@ fn statements_need_state_map(stmts: &[HStatement], procedure_names: &HashSet<Str
 fn statement_needs_state_map(stmt: &HStatement, procedure_names: &HashSet<String>) -> bool {
     match stmt {
         HStatement::Assign { .. } => true,
-        HStatement::Call { name, args } => {
+        HStatement::Call { module: _, name, args } => {
             procedure_names.contains(&name.name)
                 || args.iter().any(expr_needs_state_map)
         }
@@ -541,7 +541,7 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
                 )
             }
         }
-        HStatement::Call { name, args } => {
+        HStatement::Call { module: _, name, args } => {
             if name.name == "WriteInt" {
                 match args.first() {
                     Some(first) => format!(

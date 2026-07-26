@@ -95,6 +95,7 @@ pub enum HStatement {
     },
     /// Call to a resolved procedure symbol.
     Call {
+        module: Option<String>,
         name: HResolvedIdent,
         args: Vec<HExpr>,
     },
