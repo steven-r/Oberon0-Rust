@@ -157,7 +157,37 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+impl PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Expr::Integer(a), Expr::Integer(b)) => a == b,
+            (Expr::Real(a), Expr::Real(b)) => a == b,
+            (Expr::LongReal(a), Expr::LongReal(b)) => a == b,
+            (Expr::Boolean(a), Expr::Boolean(b)) => a == b,
+            (Expr::String(a), Expr::String(b)) => a == b,
+            (Expr::Variable(a), Expr::Variable(b)) => a == b,
+            (
+                Expr::QualifiedVariable { module: m1, name: n1 },
+                Expr::QualifiedVariable { module: m2, name: n2 },
+            ) => m1 == m2 && n1 == n2,
+            (
+                Expr::Call { module: m1, name: n1, args: a1 },
+                Expr::Call { module: m2, name: n2, args: a2 },
+            ) => m1 == m2 && n1 == n2 && a1 == a2,
+            (
+                Expr::Unary { op: op1, value: v1 },
+                Expr::Unary { op: op2, value: v2 },
+            ) => op1 == op2 && v1 == v2,
+            (
+                Expr::Binary { op: op1, left: l1, right: r1 },
+                Expr::Binary { op: op2, left: l2, right: r2 },
+            ) => op1 == op2 && l1 == l2 && r1 == r2,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 /// Supported binary operators in the current subset grammar.
 pub enum BinaryOp {
     Add,
