@@ -496,7 +496,6 @@ fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
                 }
             }
         }
-        Rule::ident => Ok(Expr::Variable(inner.as_str().to_string())),
         Rule::expr => parse_expr(inner),
         _ => bail!("Unknown primary factor: {:?}", inner.as_rule()),
     }
