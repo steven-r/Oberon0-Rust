@@ -718,7 +718,7 @@ mod tests {
                 replace_required(source, "b := 1 =", "b := 1 = 1")
             }
             "procedure_missing_semicolon.ob0" => {
-                replace_required(source, "PROCEDURE P(x)\nBEGIN", "PROCEDURE P(x);\nBEGIN")
+                replace_required(source, "PROCEDURE P(x: INTEGER)\nBEGIN", "PROCEDURE P(x: INTEGER);\nBEGIN")
             }
             other => panic!("missing parser invalid repair mapping for {other}"),
         }

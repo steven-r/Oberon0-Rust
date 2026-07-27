@@ -68,7 +68,7 @@ Valid shadowing:
 ```oberon
 MODULE Main;
 VAR x: INTEGER;
-PROCEDURE P(x);
+PROCEDURE P(x: INTEGER);
 BEGIN
   x := x + 1
 END P;

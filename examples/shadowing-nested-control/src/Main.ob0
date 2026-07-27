@@ -1,6 +1,6 @@
 MODULE Main;
 VAR x, sum: INTEGER;
-PROCEDURE Walk(x);
+PROCEDURE Walk(x: INTEGER);
 BEGIN
   sum := 0;
   WHILE x DO

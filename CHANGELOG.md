@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 ### Fixes
 
 - add semantic validation for constant initializers and report `E016` when a `CONST` does not fold to a literal expression
+- validate types for procedure parameters (types where optional before)
 
 ### Documentation
 

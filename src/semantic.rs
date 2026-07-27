@@ -1443,7 +1443,7 @@ END Main.
                                 name: "procedure arity mismatch",
                                 source: r#"
 MODULE Main;
-PROCEDURE P(a, b);
+PROCEDURE P(a, b: INTEGER);
 BEGIN
     WriteInt(a + b)
 END P;
@@ -1458,7 +1458,7 @@ END Main.
                                 name: "procedure end name mismatch",
                                 source: r#"
 MODULE Main;
-PROCEDURE P(a);
+PROCEDURE P(a: INTEGER);
 BEGIN
     WriteInt(a)
 END Wrong;

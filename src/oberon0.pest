@@ -42,7 +42,7 @@ var_item = { ident_list ~ ":" ~ type_ref ~ ";" }
 ident_list = { ident ~ ("," ~ ident)* }
 procedure_decl = { "PROCEDURE" ~ ident ~ export_marker? ~ formal_params? ~ ";" ~ var_section* ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ ";" }
 formal_params = { "(" ~ formal_param_section? ~ (";" ~ formal_param_section)* ~ ")" }
-formal_param_section = { var_modifier? ~ ident_list ~ (":" ~ type_ref)? }
+formal_param_section = { var_modifier? ~ ident_list ~ ":" ~ type_ref }
 var_modifier = { "VAR" }
 
 stmt_list = { (statement ~ ";")* ~ statement? }

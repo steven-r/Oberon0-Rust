@@ -366,7 +366,7 @@ mod tests {
         let source = r#"
 MODULE Main;
 VAR x: INTEGER;
-PROCEDURE P(p);
+PROCEDURE P(p: INTEGER);
 BEGIN
   IF p THEN
     x := p;
