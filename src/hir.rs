@@ -147,7 +147,11 @@ impl HExpr {
     pub fn is_literal(&self) -> bool {
         matches!(
             self,
-            HExpr::Integer(_) | HExpr::Real(_) | HExpr::LongReal(_) | HExpr::Boolean(_) | HExpr::String(_)
+            HExpr::Integer(_)
+                | HExpr::Real(_)
+                | HExpr::LongReal(_)
+                | HExpr::Boolean(_)
+                | HExpr::String(_)
         )
     }
 
@@ -160,7 +164,11 @@ impl HExpr {
             HExpr::String(value) => format!("{:?}", value),
             HExpr::Name(ident) => ident.name.clone(),
             HExpr::Call { name, args } => {
-                let args_str = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>().join(", ");
+                let args_str = args
+                    .iter()
+                    .map(|arg| arg.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 format!("{}({})", name.name, args_str)
             }
             HExpr::Unary { op, value } => {

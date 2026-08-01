@@ -1238,8 +1238,8 @@ mod tests {
     #[rstest]
     fn semantic_error_cases1(#[files("tests/semantic_cases/general/*.toml")] path: PathBuf) {
         let content = std::fs::read_to_string(&path).expect("error case file should be readable");
-        let case: SemanticTestCase = toml::from_str(&content)
-            .expect("error case file should be valid TOML");
+        let case: SemanticTestCase =
+            toml::from_str(&content).expect("error case file should be valid TOML");
         let should_be_success = case.result.is_none() || case.is_success;
         let response = if let Some(manifest) = &case.manifest {
             semantic_compile_test_with_manifest(case.source.as_str(), Some(manifest))
@@ -1248,13 +1248,22 @@ mod tests {
         };
         if should_be_success {
             if response.is_err() {
-                panic!("case '{}': expected success, got error {:?}", case.name, response.err());
+                panic!(
+                    "case '{}': expected success, got error {:?}",
+                    case.name,
+                    response.err()
+                );
             }
             return;
         }
         if let Err(err) = response {
             let result = case.result.unwrap();
-            assert_eq!(err.code(), result.code, "case '{}': error code mismatch", case.name);
+            assert_eq!(
+                err.code(),
+                result.code,
+                "case '{}': error code mismatch",
+                case.name
+            );
             for fragment in &result.messages {
                 assert!(
                     err.to_string().contains(fragment),
@@ -1453,8 +1462,11 @@ END Main.
         )
         .expect("source should parse");
 
-        let err = analyze(&module, None).expect_err("qualified non-exported procedure call should be rejected");
-        let err = err.downcast::<SemanticError>().expect("semantic error should be returned");
+        let err = analyze(&module, None)
+            .expect_err("qualified non-exported procedure call should be rejected");
+        let err = err
+            .downcast::<SemanticError>()
+            .expect("semantic error should be returned");
 
         assert_eq!(err.code(), "E014");
         assert!(
@@ -1480,8 +1492,11 @@ END Main.
         )
         .expect("source should parse");
 
-        let err = analyze(&module, None).expect_err("qualified call to a missing external module should be rejected");
-        let err = err.downcast::<SemanticError>().expect("semantic error should be returned");
+        let err = analyze(&module, None)
+            .expect_err("qualified call to a missing external module should be rejected");
+        let err = err
+            .downcast::<SemanticError>()
+            .expect("semantic error should be returned");
 
         assert_eq!(err.code(), "E005");
         assert!(

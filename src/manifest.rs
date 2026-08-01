@@ -45,8 +45,7 @@ impl ExternalManifest {
     pub fn from_file(path: &Path) -> Result<Self> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("Could not read manifest: {}", path.display()))?;
-        toml::from_str(&raw)
-            .with_context(|| format!("Manifest is invalid: {}", path.display()))
+        toml::from_str(&raw).with_context(|| format!("Manifest is invalid: {}", path.display()))
     }
 
     /// Resolves an imported Oberon0 name to its crate binding.

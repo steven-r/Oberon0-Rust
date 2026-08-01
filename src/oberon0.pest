@@ -22,7 +22,11 @@ keyword = {
 
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 export_marker = { "*" }
-integer = @{ unary_sign? ~ ASCII_DIGIT+ }
+integer = @{ ASCII_DIGIT+ }
+real = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* ~ scale_factor? }
+scale_factor = { ("E" | "D") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
+number = { real | integer }
+boolean_literal = { "TRUE" | "FALSE" }
 string = @{ "\"" ~ ("\"\"" | (!("\"" | NEWLINE) ~ ANY))* ~ "\"" }
 
 module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ declaration_section* ~ ("BEGIN" ~ stmt_list?)? ~ "END" ~ ident ~ "." ~ EOI }
@@ -63,5 +67,5 @@ term = { factor ~ (mul_op ~ factor)* }
 mul_op = { "*" | "/" | "DIV" | "MOD" | "&" }
 factor = { not_factor | primary_factor }
 not_factor = { "~" ~ factor }
-primary_factor = { integer | string | call_or_var | "(" ~ expr ~ ")" }
+primary_factor = { number | boolean_literal | string | call_or_var | "(" ~ expr ~ ")" }
 call_or_var = { qualified_ident ~ ("(" ~ arg_list? ~ ")")? }

@@ -127,7 +127,10 @@ pub enum Expr {
     /// Reference to an identifier before semantic resolution.
     Variable(String),
     /// Qualified variable reference (e.g., B.T).
-    QualifiedVariable { module: String, name: String },
+    QualifiedVariable {
+        module: String,
+        name: String,
+    },
     /// Function-like call expression.
     Call {
         module: Option<String>,
@@ -152,7 +155,11 @@ impl Expr {
     pub fn is_literal(&self) -> bool {
         matches!(
             self,
-            Expr::Integer(_) | Expr::Real(_) | Expr::LongReal(_) | Expr::Boolean(_) | Expr::String(_)
+            Expr::Integer(_)
+                | Expr::Real(_)
+                | Expr::LongReal(_)
+                | Expr::Boolean(_)
+                | Expr::String(_)
         )
     }
 }
@@ -167,20 +174,41 @@ impl PartialEq for Expr {
             (Expr::String(a), Expr::String(b)) => a == b,
             (Expr::Variable(a), Expr::Variable(b)) => a == b,
             (
-                Expr::QualifiedVariable { module: m1, name: n1 },
-                Expr::QualifiedVariable { module: m2, name: n2 },
+                Expr::QualifiedVariable {
+                    module: m1,
+                    name: n1,
+                },
+                Expr::QualifiedVariable {
+                    module: m2,
+                    name: n2,
+                },
             ) => m1 == m2 && n1 == n2,
             (
-                Expr::Call { module: m1, name: n1, args: a1 },
-                Expr::Call { module: m2, name: n2, args: a2 },
+                Expr::Call {
+                    module: m1,
+                    name: n1,
+                    args: a1,
+                },
+                Expr::Call {
+                    module: m2,
+                    name: n2,
+                    args: a2,
+                },
             ) => m1 == m2 && n1 == n2 && a1 == a2,
+            (Expr::Unary { op: op1, value: v1 }, Expr::Unary { op: op2, value: v2 }) => {
+                op1 == op2 && v1 == v2
+            }
             (
-                Expr::Unary { op: op1, value: v1 },
-                Expr::Unary { op: op2, value: v2 },
-            ) => op1 == op2 && v1 == v2,
-            (
-                Expr::Binary { op: op1, left: l1, right: r1 },
-                Expr::Binary { op: op2, left: l2, right: r2 },
+                Expr::Binary {
+                    op: op1,
+                    left: l1,
+                    right: r1,
+                },
+                Expr::Binary {
+                    op: op2,
+                    left: l2,
+                    right: r2,
+                },
             ) => op1 == op2 && l1 == l2 && r1 == r2,
             _ => false,
         }

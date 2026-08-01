@@ -55,10 +55,7 @@ impl<T: Clone> ScopedMap<T> {
 
     /// Resolves a name by searching from the innermost scope outward.
     pub fn resolve(&self, name: &str) -> Option<&T> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(name))
+        self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
     /// Clones all values declared directly in the current scope.
@@ -78,11 +75,13 @@ mod tests {
     #[test]
     fn nested_scope_allows_shadowing_and_restores_outer_on_exit() {
         let mut map = ScopedMap::new();
-        map.declare("x", 1, |_| "duplicate").expect("outer declaration should succeed");
+        map.declare("x", 1, |_| "duplicate")
+            .expect("outer declaration should succeed");
         assert_eq!(map.resolve("x"), Some(&1));
 
         map.enter_scope();
-        map.declare("x", 2, |_| "duplicate").expect("inner shadow declaration should succeed");
+        map.declare("x", 2, |_| "duplicate")
+            .expect("inner shadow declaration should succeed");
         assert_eq!(map.resolve("x"), Some(&2));
 
         map.exit_scope();

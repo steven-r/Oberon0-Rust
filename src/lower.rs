@@ -3,10 +3,10 @@
 use anyhow::{Result, bail};
 
 use crate::ast::{Declaration, Expr, Module, Statement};
+use crate::expression_constant_handler::combine_expression;
 use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
 use crate::scope::ScopedMap;
 use crate::symbols::SymbolKind;
-use crate::expression_constant_handler::combine_expression;
 
 #[derive(Debug)]
 /// Tracks lexical scopes while assigning stable ids to resolved identifiers.
@@ -48,7 +48,9 @@ impl Resolver {
         };
         self.next_id += 1;
 
-        self.scopes.declare(name, resolved.clone(), |name| Self::declare_on_duplicate(name))?;
+        self.scopes.declare(name, resolved.clone(), |name| {
+            Self::declare_on_duplicate(name)
+        })?;
 
         Ok(resolved)
     }
@@ -232,10 +234,12 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
                 value: lower_expr(value, resolver)?,
             })
         }
-        Statement::Call { module, name, args, .. } => {
-            let resolved = resolver
-                .resolve(name)
-                .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;
+        Statement::Call {
+            module, name, args, ..
+        } => {
+            let resolved = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name)
+            })?;
             let lowered_args = args
                 .iter()
                 .map(|arg| lower_expr(arg, resolver))
@@ -294,15 +298,19 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
             bail!("Qualified variables are not yet supported in code generation")
         }
         Expr::Variable(name) => {
-            let resolved = resolver
-                .resolve(name)
-                .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown identifier '{}'.", name))?;
+            let resolved = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!("Lowering failed: unknown identifier '{}'.", name)
+            })?;
             Ok(HExpr::Name(resolved))
         }
-        Expr::Call { name, args, module: _ } => {
-            let resolved = resolver
-                .resolve(name)
-                .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;
+        Expr::Call {
+            name,
+            args,
+            module: _,
+        } => {
+            let resolved = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name)
+            })?;
             let lowered_args = args
                 .iter()
                 .map(|arg| lower_expr(arg, resolver))
@@ -407,7 +415,11 @@ END Main.
             .expect("procedure P must exist");
 
         assert_eq!(proc.0.len(), 1, "expected exactly one parameter");
-        assert_eq!(proc.1.len(), 0, "expected no implicit procedure local variable");
+        assert_eq!(
+            proc.1.len(),
+            0,
+            "expected no implicit procedure local variable"
+        );
 
         let mut assign_ids = Vec::new();
         collect_assign_target_ids(proc.2, &mut assign_ids);
@@ -486,7 +498,9 @@ END Main.
             .declarations
             .iter()
             .find_map(|decl| match decl {
-                HDeclaration::Procedure { name, params, .. } if name == "Bump" => Some(params.clone()),
+                HDeclaration::Procedure { name, params, .. } if name == "Bump" => {
+                    Some(params.clone())
+                }
                 _ => None,
             })
             .expect("procedure Bump must exist in HIR");
@@ -531,7 +545,11 @@ END Main.
             })
             .expect("procedure P must exist in HIR");
 
-        assert_eq!(local_vars.len(), 1, "procedure P should have one local variable");
+        assert_eq!(
+            local_vars.len(),
+            1,
+            "procedure P should have one local variable"
+        );
         assert_eq!(local_vars[0].name, "x");
 
         let assigned_id = body
@@ -555,7 +573,8 @@ END Main.
 "#;
 
         let module = parse_module(source).expect("source should parse");
-        let err = lower_module(&module).expect_err("lowering should fail on unresolved assignment target");
+        let err = lower_module(&module)
+            .expect_err("lowering should fail on unresolved assignment target");
         let msg = err.to_string();
         assert!(
             msg.contains("Lowering invariant violated: unresolved assignment target 'y'."),
@@ -584,8 +603,10 @@ END Main.
                 _ => None,
             })
             .expect("constant x must exist in HIR");
-        assert!(matches!(c, HExpr::Integer(42)), "constant x should have value 42 in HIR");
-
+        assert!(
+            matches!(c, HExpr::Integer(42)),
+            "constant x should have value 42 in HIR"
+        );
     }
 
     #[test]
@@ -610,8 +631,10 @@ END Main.
             })
             .expect("constant x must exist in HIR");
         println!("Found constant x with value {:?}", c);
-        assert!(matches!(c, HExpr::Integer(-1)), "constant x should have value -1 in HIR");
-
+        assert!(
+            matches!(c, HExpr::Integer(-1)),
+            "constant x should have value -1 in HIR"
+        );
     }
 
     #[test]
@@ -629,7 +652,11 @@ END Main.
             .statements
             .iter()
             .find_map(|decl| match decl {
-                HStatement::Call { module:_, name, args } if name.name == "WriteString" => {
+                HStatement::Call {
+                    module: _,
+                    name,
+                    args,
+                } if name.name == "WriteString" => {
                     if let HExpr::String(s) = &args[0] {
                         Some(s.clone())
                     } else {
@@ -639,7 +666,10 @@ END Main.
                 _ => None,
             })
             .expect("WriteString call must exist in HIR");
-        assert_eq!(c, "Hello World", "WriteString argument should be 'Hello World' in HIR");
+        assert_eq!(
+            c, "Hello World",
+            "WriteString argument should be 'Hello World' in HIR"
+        );
     }
 
     #[test]
@@ -660,8 +690,7 @@ END Main.
             .statements
             .iter()
             .find_map(|decl| match decl {
-                HStatement::Assign { target, value, .. } =>
-                {
+                HStatement::Assign { target, value, .. } => {
                     println!("Found assignment to {} with value {:?}", target.name, value);
                     if target.name == "x" {
                         Some(value.clone())
@@ -673,7 +702,11 @@ END Main.
             })
             .expect("assignment to x must exist in HIR");
         if let HExpr::Unary { op, value } = c {
-            assert_eq!(op, crate::ast::UnaryOp::Minus, "assignment to x should be a negation in HIR");
+            assert_eq!(
+                op,
+                crate::ast::UnaryOp::Minus,
+                "assignment to x should be a negation in HIR"
+            );
             if let HExpr::Integer(i) = *value {
                 assert_eq!(i, 1, "assignment to x should be negation of 1 in HIR");
             } else {
@@ -700,11 +733,17 @@ END Main.
             .imports
             .iter()
             .find_map(|decl| {
-                Some(decl.clone()).filter(|d| d.local_name == "LocalMath" && d.external_name == "Math")
+                Some(decl.clone())
+                    .filter(|d| d.local_name == "LocalMath" && d.external_name == "Math")
             })
             .expect("LocalMath import must exist in HIR");
-        assert_eq!(c.local_name, "LocalMath", "import local name should be 'LocalMath' in HIR");
-        assert_eq!(c.external_name, "Math", "import external name should be 'Math' in HIR");
+        assert_eq!(
+            c.local_name, "LocalMath",
+            "import local name should be 'LocalMath' in HIR"
+        );
+        assert_eq!(
+            c.external_name, "Math",
+            "import external name should be 'Math' in HIR"
+        );
     }
-
 }

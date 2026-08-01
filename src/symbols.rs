@@ -130,7 +130,10 @@ mod tests {
         table
             .declare("x", SymbolKind::Variable)
             .expect("outer declaration should succeed");
-        let outer_depth = table.resolve("x").expect("outer symbol should resolve").scope_depth;
+        let outer_depth = table
+            .resolve("x")
+            .expect("outer symbol should resolve")
+            .scope_depth;
 
         table.enter_scope();
         table
@@ -141,7 +144,9 @@ mod tests {
         assert_eq!(inner.scope_depth, 1);
 
         table.exit_scope();
-        let outer = table.resolve("x").expect("outer symbol should resolve again");
+        let outer = table
+            .resolve("x")
+            .expect("outer symbol should resolve again");
         assert_eq!(outer.kind, SymbolKind::Variable);
         assert_eq!(outer.scope_depth, outer_depth);
     }

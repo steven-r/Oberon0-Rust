@@ -116,8 +116,8 @@ mod tests {
 
     #[test]
     fn cli_uses_default_out_dir() {
-        let parsed = Cli::try_parse_from(["oberon0c", "src/Main.ob0"])
-            .expect("CLI parse should succeed");
+        let parsed =
+            Cli::try_parse_from(["oberon0c", "src/Main.ob0"]).expect("CLI parse should succeed");
         assert_eq!(parsed.input, PathBuf::from("src/Main.ob0"));
         assert_eq!(parsed.out_dir, PathBuf::from("target/generated"));
         assert!(parsed.manifest.is_none());
