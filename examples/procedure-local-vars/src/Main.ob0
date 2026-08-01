@@ -7,7 +7,7 @@ VAR total: INTEGER;
 BEGIN
   i := limit;
   total := 0;
-  WHILE i DO
+  WHILE i > 0 DO
     total := total + i;
     i := i - 1
   END;

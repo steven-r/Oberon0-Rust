@@ -3,8 +3,8 @@ VAR current: INTEGER;
 PROCEDURE Countdown(start: INTEGER);
 BEGIN
   current := start;
-  WHILE current DO
-    IF current - 1 THEN
+  WHILE current > 0 DO
+    IF current > 1 THEN
       WriteInt(current);
       WriteLn()
     ELSE

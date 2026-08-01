@@ -1,0 +1,13 @@
+name = "cannot compare types"
+code = """
+MODULE Main;
+VAR
+    x: INTEGER;
+    flag: BOOLEAN;
+BEGIN
+    IF x = flag THEN
+        x := 1;
+    END;
+END Main.
+"""
+result = { code = "E012", messages = ["equality operators require matching numeric or BOOLEAN operands"] }

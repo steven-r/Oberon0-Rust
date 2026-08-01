@@ -859,7 +859,19 @@ mod tests {
             "end_name_mismatch.ob0" => replace_required(source, "END NotMain.", "END Main."),
             "eof_with_arg.ob0" => replace_required(source, "EOF(1)", "EOF()"),
             "if_undefined_condition.ob0" => {
-                replace_required(source, "IF unknown THEN", "IF 1 THEN")
+                replace_required(source, "IF unknown THEN", "IF TRUE THEN")
+            }
+            "boolean_assignment_type_mismatch.ob0" => {
+                replace_required(source, "x := flag", "x := 1")
+            }
+            "boolean_parameter_type_mismatch.ob0" => {
+                replace_required(source, "ExpectFlag(TRUE)", "ExpectFlag(FALSE)")
+            }
+            "boolean_repeat_condition_mismatch.ob0" => {
+                replace_required(source, "WHILE 1 DO", "WHILE TRUE DO")
+            }
+            "condition_requires_boolean.ob0" => {
+                replace_required(source, "IF x THEN", "IF TRUE THEN")
             }
             "operator_div_requires_integer.ob0" => {
                 replace_required(source, "x := src DIV 2", "x := 7 DIV 2")
@@ -895,7 +907,7 @@ mod tests {
             "qualified_type_reference_unsupported.ob0" => {
                 replace_required(source, "VAR x: B.IntType;", "VAR x: INTEGER;")
             }
-            "readint_statement_call.ob0" => r#"
+            "readint_statement_call.ob0" | "ReadInt_statement_call.ob0" => r#"
 MODULE Main;
 VAR x: INTEGER;
 BEGIN
@@ -951,18 +963,21 @@ BEGIN
 END Main.
 "#
             .to_string(),
-            "while_undefined_in_body.ob0" => replace_required(source, "x := y - 1", "x := x - 1"),
-            "writeint_string_literal.ob0" => {
+            "while_undefined_in_body.ob0" => {
+                let repaired = replace_required(source, "WHILE x DO", "WHILE x > 0 DO");
+                replace_required(&repaired, "x := y - 1", "x := x - 1")
+            }
+            "writeint_string_literal.ob0" | "WriteInt_string_literal.ob0" => {
                 replace_required(source, "WriteInt(\"Hello\")", "WriteInt(1)")
             }
             "writeln_with_arg.ob0" => replace_required(source, "WriteLn(1)", "WriteLn()"),
-            "writestring_missing_arg.ob0" => {
+            "writestring_missing_arg.ob0" | "WriteString_missing_arg.ob0" => {
                 replace_required(source, "WriteString", "WriteString(\"Hello\")")
             }
-            "writestring_non_string_arg.ob0" => {
+            "writestring_non_string_arg.ob0" | "WriteString_non_string_arg.ob0" => {
                 replace_required(source, "WriteString(1)", "WriteString(\"1\")")
             }
-            "writestring_too_many_args.ob0" => replace_required(
+            "writestring_too_many_args.ob0" | "WriteString_too_many_args.ob0" => replace_required(
                 source,
                 "WriteString(\"Hello\", \"World\")",
                 "WriteString(\"Hello\")",

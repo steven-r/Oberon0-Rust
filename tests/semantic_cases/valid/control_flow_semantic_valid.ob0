@@ -2,10 +2,10 @@ MODULE Main;
 VAR x: INTEGER;
 BEGIN
   x := 2;
-  IF x THEN
+  IF x > 0 THEN
     WriteInt(x)
   ELSE
-    WHILE x DO
+    WHILE x > 0 DO
       x := x - 1
     END
   END

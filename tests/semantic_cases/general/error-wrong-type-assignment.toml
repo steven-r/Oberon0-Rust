@@ -1,0 +1,10 @@
+name = "wrong type assignment"
+code = """
+MODULE Main;
+VAR
+    x: INTEGER;
+BEGIN
+    x := TRUE;
+END Main.
+"""
+result = { code = "E012", messages = ["cannot assign BOOLEAN to INTEGER 'x'"] }

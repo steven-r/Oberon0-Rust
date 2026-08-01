@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 - allow `CONST` declarations to use full expressions (not only raw integer literals), with compile-time folding into literal values
 - carry constant expressions as HIR expressions and emit folded constant values in generated Rust
+- add semantic/lowering support for built-in conversion functions `FLT()` and `FLOOR()` for integer/real conversions
 
 ### Fixes
 

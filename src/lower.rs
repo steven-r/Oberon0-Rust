@@ -74,6 +74,8 @@ pub fn lower_module(module: &Module) -> Result<HModule> {
     resolver.declare("WriteLn", SymbolKind::Procedure)?;
     resolver.declare("ReadInt", SymbolKind::Procedure)?;
     resolver.declare("EOF", SymbolKind::Procedure)?;
+    resolver.declare("FLT", SymbolKind::Procedure)?;
+    resolver.declare("FLOOR", SymbolKind::Procedure)?;
 
     let imports = module
         .imports
@@ -376,9 +378,9 @@ MODULE Main;
 VAR x: INTEGER;
 PROCEDURE P(p: INTEGER);
 BEGIN
-  IF p THEN
+  IF p > 0 THEN
     x := p;
-    WHILE p DO
+    WHILE p > 0 DO
       x := x + 1
     END
   END
@@ -435,7 +437,10 @@ END Main.
 
         if let HStatement::If { condition, .. } = &proc.2[0] {
             match condition {
-                HExpr::Name(ident) => assert_eq!(ident.id, proc.0[0].id),
+                HExpr::Binary { left, .. } => match left.as_ref() {
+                    HExpr::Name(ident) => assert_eq!(ident.id, proc.0[0].id),
+                    _ => panic!("IF condition must resolve to parameter identifier"),
+                },
                 _ => panic!("IF condition must resolve to parameter identifier"),
             }
         } else {

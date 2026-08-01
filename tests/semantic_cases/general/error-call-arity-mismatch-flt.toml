@@ -1,0 +1,10 @@
+name = "FLT arity mismatch"
+code = """
+MODULE Main;
+VAR
+    x: REAL;
+BEGIN
+    x := FLT(1, 5);
+END Main.
+"""
+result = { code = "E006", messages = ["Procedure 'FLT' called with wrong arity: expected 1, got 2"] }
