@@ -1,0 +1,5 @@
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+  B.IntType := 1
+END Main.

@@ -526,7 +526,8 @@ fn validate_boolean_condition(
     match infer_expr_type(expr, symbols, types)? {
         Some(TypeRef::Boolean) => Ok(()),
         Some(TypeRef::Integer) => {
-            if matches!(expr, Expr::Call { module: None, name, args } if name == "EOF" && args.is_empty()) {
+            if matches!(expr, Expr::Call { module: None, name, args } if name == "EOF" && args.is_empty())
+            {
                 Ok(())
             } else {
                 Err(SemanticError::TypeMismatch {
@@ -633,8 +634,9 @@ fn infer_expr_type(
 
             Err(SemanticError::InvalidBuiltinArgument {
                 name: name.clone(),
-                detail: "call expressions currently support only ReadInt(), EOF(), FLT(), and FLOOR()"
-                    .to_string(),
+                detail:
+                    "call expressions currently support only ReadInt(), EOF(), FLT(), and FLOOR()"
+                        .to_string(),
             }
             .into())
         }
@@ -1265,8 +1267,9 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
 
             Err(SemanticError::InvalidBuiltinArgument {
                 name: name.clone(),
-                detail: "call expressions currently support only ReadInt(), EOF(), FLT(), and FLOOR()"
-                    .to_string(),
+                detail:
+                    "call expressions currently support only ReadInt(), EOF(), FLT(), and FLOOR()"
+                        .to_string(),
             }
             .into())
         }
@@ -1489,7 +1492,9 @@ mod tests {
                 "Qualified variable reference",
             ),
             (
-                SemanticError::InternalError { error: "TestError".to_string() },
+                SemanticError::InternalError {
+                    error: "TestError".to_string(),
+                },
                 "E999",
                 "TestError",
             ),
@@ -1665,16 +1670,18 @@ END Main.
             .expect("semantic error should be returned");
         assert_eq!(err.code(), "E012");
 
-        assert!(validate_boolean_condition(
-            &Expr::Call {
-                module: None,
-                name: "EOF".to_string(),
-                args: vec![],
-            },
-            &symbols,
-            &types,
-        )
-        .is_ok());
+        assert!(
+            validate_boolean_condition(
+                &Expr::Call {
+                    module: None,
+                    name: "EOF".to_string(),
+                    args: vec![],
+                },
+                &symbols,
+                &types,
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -1719,31 +1726,21 @@ END Main.
             assert!(validate_declared_type(&type_ref, &types).is_ok());
         }
 
-        assert!(validate_declared_type(
-            &TypeRef::Qualified {
-                module: "B".to_string(),
-                name: "IntType".to_string(),
-            },
-            &types,
-        )
-        .is_ok());
+        assert!(
+            validate_declared_type(
+                &TypeRef::Qualified {
+                    module: "B".to_string(),
+                    name: "IntType".to_string(),
+                },
+                &types,
+            )
+            .is_ok()
+        );
 
-        assert_eq!(
-            type_ref_name_for_error(&TypeRef::Integer),
-            "INTEGER"
-        );
-        assert_eq!(
-            type_ref_name_for_error(&TypeRef::Boolean),
-            "BOOLEAN"
-        );
-        assert_eq!(
-            type_ref_name_for_error(&TypeRef::Real),
-            "REAL"
-        );
-        assert_eq!(
-            type_ref_name_for_error(&TypeRef::LongReal),
-            "LONGREAL"
-        );
+        assert_eq!(type_ref_name_for_error(&TypeRef::Integer), "INTEGER");
+        assert_eq!(type_ref_name_for_error(&TypeRef::Boolean), "BOOLEAN");
+        assert_eq!(type_ref_name_for_error(&TypeRef::Real), "REAL");
+        assert_eq!(type_ref_name_for_error(&TypeRef::LongReal), "LONGREAL");
         assert_eq!(
             type_ref_name_for_error(&TypeRef::Named("Alias".to_string())),
             "Alias"
@@ -1765,16 +1762,18 @@ END Main.
 
         let import_aliases = HashMap::from([("B".to_string(), "ModuleB".to_string())]);
         let external_modules = ExternalModuleInfo::mock_resolver();
-        assert!(validate_declared_type_with_imports(
-            &TypeRef::Qualified {
-                module: "B".to_string(),
-                name: "IntType".to_string(),
-            },
-            &types,
-            &import_aliases,
-            &external_modules,
-        )
-        .is_ok());
+        assert!(
+            validate_declared_type_with_imports(
+                &TypeRef::Qualified {
+                    module: "B".to_string(),
+                    name: "IntType".to_string(),
+                },
+                &types,
+                &import_aliases,
+                &external_modules,
+            )
+            .is_ok()
+        );
 
         let err = validate_declared_type_with_imports(
             &TypeRef::Qualified {
@@ -2075,7 +2074,10 @@ END Main.
         ];
 
         for err in errors {
-            assert!(err.to_string().contains("Constant") || err.to_string().contains("Internal compiler error"));
+            assert!(
+                err.to_string().contains("Constant")
+                    || err.to_string().contains("Internal compiler error")
+            );
         }
     }
 
@@ -2094,8 +2096,7 @@ END Main.
         )
         .expect("source should parse");
 
-        let err = analyze(&module, None)
-            .expect_err("non-boolean conditions should be rejected");
+        let err = analyze(&module, None).expect_err("non-boolean conditions should be rejected");
         let err = err
             .downcast::<SemanticError>()
             .expect("semantic error should be returned");
@@ -2129,8 +2130,11 @@ END Main.
 
         assert_eq!(err.code(), "E012");
         assert!(
-            err.to_string().contains("FLT() requires an INTEGER argument")
-                || err.to_string().contains("FLOOR() requires a REAL or LONGREAL argument"),
+            err.to_string()
+                .contains("FLT() requires an INTEGER argument")
+                || err
+                    .to_string()
+                    .contains("FLOOR() requires a REAL or LONGREAL argument"),
             "expected FLT/FLOOR type diagnostic, got '{err}'"
         );
     }

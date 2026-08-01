@@ -337,18 +337,32 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+
     use anyhow::Result;
 
-    use super::lower_module;
-    use crate::ast::TypeRef;
+    use super::{Resolver, lower_expr, lower_module, lower_statement};
+    use crate::ast::{Expr, Statement, TypeRef};
     use crate::hir::{HDeclaration, HExpr, HStatement};
     use crate::parser::parse_module;
     use crate::semantic::analyze;
+    use crate::symbols::SymbolKind;
 
     fn lower_from_source(source: &str) -> Result<crate::hir::HModule> {
         let module = parse_module(source)?;
         analyze(&module, None)?;
         lower_module(&module)
+    }
+
+    fn lower_from_fixture(name: &str) -> Result<crate::hir::HModule> {
+        let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("lower")
+            .join(name);
+        let source = fs::read_to_string(&fixture_path)
+            .unwrap_or_else(|err| panic!("fixture should be readable: {err}"));
+        lower_from_source(&source)
     }
 
     fn collect_assign_target_ids(stmts: &[HStatement], out: &mut Vec<usize>) {
@@ -520,6 +534,242 @@ END Main.
         assert!(matches!(params[1].declared_type, Some(TypeRef::LongReal)));
     }
 
+    #[test]
+    fn fixture_const_and_call_lowering_keeps_constants_and_calls_in_hir() {
+        let hir = lower_from_fixture("const_and_call_lowering.ob0")
+            .expect("fixture-based lowering should succeed");
+
+        let const_values = hir
+            .declarations
+            .iter()
+            .filter_map(|decl| match decl {
+                HDeclaration::Const { name, value, .. } => Some((name.as_str(), value)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(const_values.len(), 2);
+        assert!(matches!(const_values[0].1, HExpr::Integer(2)));
+        assert!(matches!(const_values[1].1, HExpr::Integer(3)));
+
+        let call_stmt = hir
+            .statements
+            .iter()
+            .find_map(|stmt| match stmt {
+                HStatement::Call { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .expect("expected a call statement in the lowered HIR");
+        assert_eq!(call_stmt.name, "WriteInt");
+    }
+
+    #[test]
+    fn fixture_loop_and_if_lowering_preserves_nested_control_flow() {
+        let hir = lower_from_fixture("loop_and_if_lowering.ob0")
+            .expect("fixture-based lowering should succeed");
+
+        let if_stmt = hir
+            .statements
+            .iter()
+            .find_map(|stmt| match stmt {
+                HStatement::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                } => Some((condition, then_branch, else_branch)),
+                _ => None,
+            })
+            .expect("expected an IF statement in the lowered HIR");
+
+        assert!(matches!(if_stmt.0, HExpr::Binary { .. }));
+        assert_eq!(if_stmt.1.len(), 1);
+        assert!(if_stmt.2.is_none());
+
+        let while_stmt = hir
+            .statements
+            .iter()
+            .find_map(|stmt| match stmt {
+                HStatement::While { condition, body } => Some((condition, body)),
+                _ => None,
+            })
+            .expect("expected a WHILE statement in the lowered HIR");
+
+        assert!(matches!(while_stmt.0, HExpr::Binary { .. }));
+        assert_eq!(while_stmt.1.len(), 1);
+    }
+
+    #[test]
+    fn fixture_qualified_expression_lowering_reports_unsupported_input() {
+        let err = lower_from_fixture("qualified_imports.ob0").unwrap_err();
+        let message = err.to_string();
+
+        assert!(
+            message.contains("Qualified variables are not yet supported in code generation")
+                || message.contains("unknown call target"),
+            "unexpected lowering error: {message}"
+        );
+    }
+
+    #[test]
+    fn fixture_literal_variants_lower_to_expected_hir_nodes() {
+        let source = fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("lower")
+                .join("expression_literal_variants.ob0"),
+        )
+        .expect("fixture should be readable");
+        let module = parse_module(&source).expect("fixture should parse");
+        let hir = lower_module(&module).expect("fixture-based lowering should succeed");
+
+        let statements = &hir.statements;
+        assert_eq!(statements.len(), 3);
+
+        let mut saw_real = false;
+        let mut saw_boolean = false;
+
+        for stmt in statements {
+            if let HStatement::Assign { value, .. } = stmt {
+                match value {
+                    HExpr::Real(_) => saw_real = true,
+                    HExpr::Boolean(_) => saw_boolean = true,
+                    _ => {}
+                }
+            }
+        }
+
+        let resolver = Resolver::new();
+        let long_real_expr = lower_expr(&Expr::LongReal(2.5), &resolver)
+            .expect("longreal literal lowering should succeed");
+        let string_expr = lower_expr(&Expr::String("hello".to_string()), &resolver)
+            .expect("string literal lowering should succeed");
+
+        assert!(saw_real);
+        assert!(matches!(long_real_expr, HExpr::LongReal(2.5)));
+        assert!(saw_boolean);
+        assert!(matches!(string_expr, HExpr::String(value) if value == "hello"));
+    }
+
+    #[test]
+    fn fixture_qualified_variable_expression_is_rejected_by_lowerer() {
+        let resolver = Resolver::new();
+        let err = lower_expr(
+            &Expr::QualifiedVariable {
+                module: "B".to_string(),
+                name: "value".to_string(),
+            },
+            &resolver,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Qualified variables are not yet supported in code generation")
+        );
+    }
+
+    #[test]
+    fn lower_statement_preserves_if_else_branches() {
+        let source = r#"
+MODULE Main;
+BEGIN
+  IF TRUE THEN
+    WriteLn
+  ELSE
+    WriteInt(1)
+  END
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let hir = lower_module(&module).expect("lowering should succeed");
+
+        let if_stmt = hir.statements.iter().find_map(|stmt| match stmt {
+            HStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => Some((then_branch, else_branch)),
+            _ => None,
+        });
+
+        let (then_branch, else_branch) = if_stmt.expect("expected IF statement");
+        assert_eq!(then_branch.len(), 1);
+        assert!(else_branch.is_some());
+        assert_eq!(else_branch.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn lower_statement_preserves_call_module_metadata() {
+        let mut resolver = Resolver::new();
+        resolver
+            .declare("WriteInt", SymbolKind::Procedure)
+            .expect("builtin procedure should be declared");
+
+        let stmt = lower_statement(
+            &Statement::Call {
+                module: Some("B".to_string()),
+                name: "WriteInt".to_string(),
+                args: vec![],
+            },
+            &mut resolver,
+        )
+        .expect("call statement should lower");
+
+        match stmt {
+            HStatement::Call { module, name, .. } => {
+                assert_eq!(module, Some("B".to_string()));
+                assert_eq!(name.name, "WriteInt");
+            }
+            other => panic!("unexpected lowered statement: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowering_reports_duplicate_symbol_declarations() {
+        let source = r#"
+MODULE Main;
+VAR x: INTEGER;
+VAR x: INTEGER;
+BEGIN
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let err = lower_module(&module).unwrap_err();
+        assert!(err.to_string().contains("duplicate symbol declaration"));
+    }
+
+    #[test]
+    fn lowering_reports_unknown_identifier_in_expression() {
+        let source = r#"
+MODULE Main;
+BEGIN
+  x := 1
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let err = lower_module(&module).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Lowering failed: unknown identifier")
+                || err.to_string().contains("unresolved assignment target")
+        );
+    }
+
+    #[test]
+    fn lowering_reports_unknown_call_target() {
+        let source = r#"
+MODULE Main;
+BEGIN
+  Missing(1)
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let err = lower_module(&module).unwrap_err();
+        assert!(err.to_string().contains("unknown call target"));
+    }
     #[test]
     fn procedure_local_vars_survive_lowering_with_stable_ids() {
         let source = r#"

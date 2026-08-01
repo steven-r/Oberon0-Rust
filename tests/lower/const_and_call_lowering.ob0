@@ -1,0 +1,10 @@
+MODULE Main;
+CONST
+  Two = 2;
+  Three = 3;
+VAR
+  value: INTEGER;
+BEGIN
+  value := Two + Three;
+  WriteInt(value)
+END Main.
