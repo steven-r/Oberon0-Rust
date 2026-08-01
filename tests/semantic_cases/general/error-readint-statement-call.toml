@@ -1,0 +1,12 @@
+name = "readint statement call"
+code = """
+MODULE Main;
+BEGIN
+    ReadInt()
+END Main.
+"""
+result.code = "E007"
+result.messages = [
+  "Builtin 'ReadInt' received an invalid argument",
+  "must be used as a call expression",
+]

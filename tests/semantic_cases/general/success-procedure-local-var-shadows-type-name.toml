@@ -1,0 +1,15 @@
+name = "procedure-local var shadows user-defined type name"
+code = """
+MODULE Main;
+TYPE Count = REAL;
+PROCEDURE P;
+VAR Count: INTEGER;
+BEGIN
+    Count := 1;
+    WriteInt(Count)
+END P;
+BEGIN
+    P
+END Main.
+"""
+is_success = true

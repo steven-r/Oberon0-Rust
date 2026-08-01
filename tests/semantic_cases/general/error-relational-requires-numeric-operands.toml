@@ -1,0 +1,11 @@
+name = "relational requires numeric operands"
+code = """
+MODULE Main;
+VAR b1: BOOLEAN;
+VAR b2: BOOLEAN;
+BEGIN
+    b1 := b1 < b2
+END Main.
+"""
+result.code = "E012"
+result.messages = ["ordering relational operators require numeric operands"]

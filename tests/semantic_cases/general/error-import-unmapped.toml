@@ -1,0 +1,11 @@
+name = "unmapped import"
+code = """
+  MODULE Main;
+  IMPORT B := ModuleB;
+BEGIN
+END Main.
+"""
+result.code = "E003"
+result.messages = [ "not mapped to a crate" ]
+
+[manifest]

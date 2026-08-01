@@ -1,0 +1,11 @@
+name = "qualified type with unknown external module"
+code = """
+  MODULE Main;
+  IMPORT B := MissingModule;
+  VAR x: B.IntType;
+BEGIN
+  x := 1
+END Main.
+"""
+result.code = "E013"
+result.messages = [ "Unknown type reference" ]

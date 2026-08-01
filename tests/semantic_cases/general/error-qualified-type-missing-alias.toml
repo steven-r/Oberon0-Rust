@@ -1,0 +1,10 @@
+name = "qualified type with missing import alias"
+code = """
+  MODULE Main;
+  VAR x: B.IntType;
+BEGIN
+  x := 1
+END Main.
+"""
+result.code = "E013"
+result.messages = [ "Unknown type reference" ]

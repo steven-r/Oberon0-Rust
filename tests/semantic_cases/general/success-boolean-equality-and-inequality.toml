@@ -1,0 +1,11 @@
+name = "boolean equality and inequality"
+code = """
+MODULE Main;
+VAR b1: BOOLEAN;
+VAR b2: BOOLEAN;
+BEGIN
+    b1 := b1 = b2;
+    b2 := b1 # b2
+END Main.
+"""
+is_success = true

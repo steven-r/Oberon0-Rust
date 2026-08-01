@@ -1,0 +1,17 @@
+name = "invalid const declaration"
+code = """
+  MODULE Main;
+  CONST
+    x = 42;
+    y = x1;
+  VAR
+    x: INTEGER;
+  BEGIN
+    x()
+  END Main.
+"""
+
+result.messages = [
+  "Constant 'y' must be initialized with a literal expression"
+]
+result.code = "E016"

@@ -1,0 +1,12 @@
+name = "parameter shadows builtin type"
+code = """
+MODULE Main;
+PROCEDURE P(INTEGER: INTEGER);
+BEGIN
+    WriteInt(INTEGER)
+END P;
+BEGIN
+END Main.
+"""
+result.code = "E004"
+result.messages = ["Duplicate symbol declaration: 'INTEGER'"]

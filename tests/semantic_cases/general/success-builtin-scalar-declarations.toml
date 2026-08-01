@@ -1,0 +1,10 @@
+name = "builtin scalar declarations"
+code = """
+MODULE Main;
+VAR flag: BOOLEAN;
+VAR x: REAL;
+VAR y: LONGREAL;
+BEGIN
+END Main.
+"""
+is_success = true

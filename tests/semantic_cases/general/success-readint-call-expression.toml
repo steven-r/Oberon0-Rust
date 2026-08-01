@@ -1,0 +1,9 @@
+name = "readint call expression"
+code = """
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+    x := ReadInt()
+END Main.
+"""
+is_success = true

@@ -1,0 +1,10 @@
+name = "logical operator with numeric operands"
+code = """
+MODULE Main;
+VAR b: BOOLEAN;
+BEGIN
+    b := 1 OR 0
+END Main.
+"""
+result.code = "E012"
+result.messages = ["logical operator requires BOOLEAN operands"]

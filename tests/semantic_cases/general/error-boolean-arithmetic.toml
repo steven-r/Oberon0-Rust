@@ -1,0 +1,11 @@
+name = "boolean arithmetic"
+code = """
+MODULE Main;
+VAR flag: BOOLEAN;
+VAR x: INTEGER;
+BEGIN
+    x := flag + 1
+END Main.
+"""
+result.code = "E012"
+result.messages = ["arithmetic expressions require numeric operands"]

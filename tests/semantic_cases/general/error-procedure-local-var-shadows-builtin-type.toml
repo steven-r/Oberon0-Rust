@@ -1,0 +1,13 @@
+name = "procedure-local var shadows builtin type name"
+code = """
+MODULE Main;
+PROCEDURE P;
+VAR INTEGER: INTEGER;
+BEGIN
+END P;
+BEGIN
+    P
+END Main.
+"""
+result.code = "E004"
+result.messages = ["Duplicate symbol declaration: 'INTEGER'"]

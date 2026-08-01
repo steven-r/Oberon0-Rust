@@ -1,0 +1,11 @@
+name = "div requires integer operands"
+code = """
+MODULE Main;
+VAR src: REAL;
+VAR x: INTEGER;
+BEGIN
+    x := src DIV 2
+END Main.
+"""
+result.code = "E012"
+result.messages = ["operator 'DIV' requires INTEGER operands"]

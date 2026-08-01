@@ -1,0 +1,10 @@
+name = "eof call expression in if"
+code = """
+MODULE Main;
+BEGIN
+    IF EOF() THEN
+        WriteLn()
+    END
+END Main.
+"""
+is_success = true

@@ -1,0 +1,10 @@
+code = """
+  MODULE Main;
+  TYPE
+    Foo = Bar;
+  BEGIN
+  END Main.
+"""
+name = "unknown type reference"
+result.code = "E013"
+result.messages = [ "Unknown type reference: 'Bar'" ]

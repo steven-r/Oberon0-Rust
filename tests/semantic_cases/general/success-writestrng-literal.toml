@@ -1,0 +1,8 @@
+name = "write string literal"
+code = """
+MODULE Main;
+BEGIN
+    WriteString("Hello")
+END Main.
+"""
+is_success = true

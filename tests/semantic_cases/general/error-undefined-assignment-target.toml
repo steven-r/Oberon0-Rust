@@ -1,0 +1,9 @@
+code = """
+  MODULE Main;
+  BEGIN
+    x := 42
+  END Main.
+"""
+name = "undefined assignment target"
+result.code = "E005"
+result.messages = [ "Undefined symbol usage: 'x'" ]

@@ -1,0 +1,12 @@
+code = """
+  MODULE Main;
+  PROCEDURE Foo();
+  BEGIN
+  END Bar;
+
+  BEGIN
+  END Main.
+"""
+name = "procedure end name mismatch"
+result.code = "E010"
+result.messages = [ "Procedure END name mismatch", "expected 'Foo', got 'Bar'" ]

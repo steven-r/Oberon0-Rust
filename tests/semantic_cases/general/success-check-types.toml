@@ -1,0 +1,11 @@
+name = "assign boolean to integer"
+code = """
+MODULE Main;
+TYPE
+    MyBoolean = BOOLEAN;
+    MyInteger = INTEGER;
+    MyReal = REAL;
+    MyLongReal = LONGREAL;
+END Main.
+"""
+is_success = true

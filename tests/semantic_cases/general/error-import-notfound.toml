@@ -1,0 +1,12 @@
+name = "import not found"
+code = """
+  MODULE Main;
+  IMPORT B := ModuleB;
+BEGIN
+  X.CallProc
+END Main.
+"""
+result.code = "E003"
+result.messages = [ "not mapped to a crate" ]
+
+[manifest]

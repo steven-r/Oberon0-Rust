@@ -1,0 +1,10 @@
+name = "duplicate type declaration"
+code = """
+MODULE Main;
+TYPE Count = INTEGER;
+TYPE Count = INTEGER;
+BEGIN
+END Main.
+"""
+result.code = "E004"
+result.messages = ["Duplicate symbol declaration: 'Count'"]

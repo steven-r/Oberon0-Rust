@@ -1,0 +1,9 @@
+name = "duplicate import alias"
+code = """
+  MODULE Main;
+  IMPORT B := ModuleB, B := ModuleC;
+BEGIN
+END Main.
+"""
+result.code = "E002"
+result.messages = [ "Duplicate import alias" ]

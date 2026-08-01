@@ -1,0 +1,13 @@
+name = "parameter var type mismatch"
+code = """
+MODULE Main;
+VAR x: REAL;
+PROCEDURE UseInt(VAR value: INTEGER);
+BEGIN
+END UseInt;
+BEGIN
+    UseInt(x)
+END Main.
+"""
+result.code = "E012"
+result.messages = ["VAR parameter 'value' expects exact type INTEGER, got REAL"]
