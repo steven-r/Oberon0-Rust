@@ -64,7 +64,7 @@ jobs:
 
       - name: Publish test results to PR checks
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Rust test results
           path: target/test-results/junit.xml
