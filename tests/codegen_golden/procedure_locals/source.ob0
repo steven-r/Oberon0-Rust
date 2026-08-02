@@ -1,0 +1,13 @@
+MODULE Main;
+
+PROCEDURE ShowLocal;
+VAR z: INTEGER;
+BEGIN
+  z := 7;
+  WriteInt(z)
+END ShowLocal;
+
+BEGIN
+  ShowLocal;
+  WriteLn()
+END Main.

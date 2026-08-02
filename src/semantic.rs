@@ -12,6 +12,7 @@ use crate::ast::{
 use crate::expression_constant_handler::combine_expression;
 use crate::manifest::ExternalManifest;
 use crate::symbols::{SymbolKind, SymbolTable};
+use crate::types::Type;
 
 /// Information about exported symbols from an external module.
 /// Used for resolving qualified references like B.HELLO or B.IntType.
@@ -436,13 +437,9 @@ fn is_numeric_type(type_ref: &TypeRef) -> bool {
 }
 
 fn assignment_compatible(expected: &TypeRef, actual: &TypeRef) -> bool {
-    match (expected, actual) {
-        (TypeRef::Integer, TypeRef::Integer) => true,
-        (TypeRef::Real, TypeRef::Integer | TypeRef::Real) => true,
-        (TypeRef::LongReal, TypeRef::Integer | TypeRef::Real | TypeRef::LongReal) => true,
-        (TypeRef::Boolean, TypeRef::Boolean) => true,
-        _ => expected == actual,
-    }
+    let expected_type = Type::from_ast_type_ref(expected);
+    let actual_type = Type::from_ast_type_ref(actual);
+    expected_type.is_compatible_with(&actual_type, &HashMap::new())
 }
 
 /// Extended assignment compatibility check that handles qualified types.
@@ -453,50 +450,45 @@ fn assignment_compatible_extended(
     import_aliases: &HashMap<String, String>,
     external_modules: &HashMap<String, ExternalModuleInfo>,
 ) -> bool {
-    // Expand qualified types by looking them up in external modules
-    let expanded_expected = match expected {
-        TypeRef::Qualified { module, name } => {
-            // Resolve module alias to actual module name
-            if let Some(module_name) = import_aliases.get(module) {
-                // Look up the type in the external module
-                if let Some(ext_module) = external_modules.get(module_name) {
-                    if let Some(actual_type) = ext_module.get_type(name) {
-                        actual_type.clone()
-                    } else {
-                        expected.clone()
-                    }
-                } else {
-                    expected.clone()
-                }
-            } else {
-                expected.clone()
-            }
-        }
-        _ => expected.clone(),
-    };
-
-    // Expand actual qualified types as well
-    let expanded_actual = match actual {
+    let expected_type = match expected {
         TypeRef::Qualified { module, name } => {
             if let Some(module_name) = import_aliases.get(module) {
                 if let Some(ext_module) = external_modules.get(module_name) {
                     if let Some(actual_type) = ext_module.get_type(name) {
-                        actual_type.clone()
+                        Type::from_ast_type_ref(actual_type)
                     } else {
-                        actual.clone()
+                        Type::from_ast_type_ref(expected)
                     }
                 } else {
-                    actual.clone()
+                    Type::from_ast_type_ref(expected)
                 }
             } else {
-                actual.clone()
+                Type::from_ast_type_ref(expected)
             }
         }
-        _ => actual.clone(),
+        _ => Type::from_ast_type_ref(expected),
     };
 
-    // Now use the standard compatibility check on the expanded types
-    assignment_compatible(&expanded_expected, &expanded_actual)
+    let actual_type = match actual {
+        TypeRef::Qualified { module, name } => {
+            if let Some(module_name) = import_aliases.get(module) {
+                if let Some(ext_module) = external_modules.get(module_name) {
+                    if let Some(actual_type) = ext_module.get_type(name) {
+                        Type::from_ast_type_ref(actual_type)
+                    } else {
+                        Type::from_ast_type_ref(actual)
+                    }
+                } else {
+                    Type::from_ast_type_ref(actual)
+                }
+            } else {
+                Type::from_ast_type_ref(actual)
+            }
+        }
+        _ => Type::from_ast_type_ref(actual),
+    };
+
+    expected_type.is_compatible_with(&actual_type, &HashMap::new())
 }
 
 fn format_type_name(type_ref: &TypeRef) -> &'static str {
@@ -588,6 +580,30 @@ fn infer_expr_type(
                     .into());
                 }
                 return Ok(Some(TypeRef::Integer));
+            }
+
+            if name == "ReadReal" {
+                if !args.is_empty() {
+                    return Err(SemanticError::ArityMismatch {
+                        name: name.clone(),
+                        expected: 0,
+                        got: args.len(),
+                    }
+                    .into());
+                }
+                return Ok(Some(TypeRef::Real));
+            }
+
+            if name == "ReadLongReal" {
+                if !args.is_empty() {
+                    return Err(SemanticError::ArityMismatch {
+                        name: name.clone(),
+                        expected: 0,
+                        got: args.len(),
+                    }
+                    .into());
+                }
+                return Ok(Some(TypeRef::LongReal));
             }
 
             if name == "FLT" {
@@ -779,14 +795,22 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     symbols.declare("WriteInt", SymbolKind::Procedure)?;
     symbols.declare("WriteString", SymbolKind::Procedure)?;
     symbols.declare("WriteLn", SymbolKind::Procedure)?;
+    symbols.declare("WriteReal", SymbolKind::Procedure)?;
+    symbols.declare("WriteLongReal", SymbolKind::Procedure)?;
     symbols.declare("ReadInt", SymbolKind::Procedure)?;
+    symbols.declare("ReadReal", SymbolKind::Procedure)?;
+    symbols.declare("ReadLongReal", SymbolKind::Procedure)?;
     symbols.declare("EOF", SymbolKind::Procedure)?;
     let mut proc_arity: HashMap<String, Option<usize>> = HashMap::new();
     let mut proc_params: HashMap<String, Vec<ParamDecl>> = HashMap::new();
     proc_arity.insert("WriteInt".to_string(), None);
     proc_arity.insert("WriteString".to_string(), Some(1));
     proc_arity.insert("WriteLn".to_string(), Some(0));
+    proc_arity.insert("WriteReal".to_string(), Some(1));
+    proc_arity.insert("WriteLongReal".to_string(), Some(1));
     proc_arity.insert("ReadInt".to_string(), Some(0));
+    proc_arity.insert("ReadReal".to_string(), Some(0));
+    proc_arity.insert("ReadLongReal".to_string(), Some(0));
     proc_arity.insert("EOF".to_string(), Some(0));
     let mut types: HashMap<String, TypeRef> = HashMap::new();
     types.insert("INTEGER".to_string(), TypeRef::Integer);
@@ -1063,11 +1087,11 @@ fn analyze_statement(
             }
 
             // Original logic for unqualified calls.
-            if name == "ReadInt" || name == "EOF" {
+            if name == "ReadInt" || name == "EOF" || name == "ReadReal" || name == "ReadLongReal" {
                 return Err(SemanticError::InvalidBuiltinArgument {
                     name: name.clone(),
                     detail:
-                        "must be used as a call expression (e.g. x := ReadInt(), IF EOF() THEN ...)"
+                        "must be used as a call expression (e.g. x := ReadInt(), x := ReadReal(), x := ReadLongReal(), IF EOF() THEN ...)"
                             .to_string(),
                 }
                 .into());
@@ -1237,7 +1261,7 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             name,
             args,
         } => {
-            if name == "ReadInt" || name == "EOF" {
+            if name == "ReadInt" || name == "EOF" || name == "ReadReal" || name == "ReadLongReal" {
                 if !args.is_empty() {
                     return Err(SemanticError::ArityMismatch {
                         name: name.clone(),
@@ -1813,7 +1837,7 @@ END Main.
             &import_aliases,
             &external_modules,
         ));
-        assert!(assignment_compatible_extended(
+        assert!(!assignment_compatible_extended(
             &TypeRef::Real,
             &TypeRef::Qualified {
                 module: "B".to_string(),
@@ -2285,6 +2309,68 @@ END Main.
             result_type.name(),
             expr
         )
+    }
+
+    #[test]
+    fn inferred_operator_types_follow_the_documented_matrix() {
+        let mut symbols = SymbolTable::new();
+        symbols
+            .declare_with_type("i", SymbolKind::Variable, Some(TypeRef::Integer))
+            .expect("integer variable should be declared");
+        symbols
+            .declare_with_type("r", SymbolKind::Variable, Some(TypeRef::Real))
+            .expect("real variable should be declared");
+        symbols
+            .declare_with_type("lr", SymbolKind::Variable, Some(TypeRef::LongReal))
+            .expect("longreal variable should be declared");
+        symbols
+            .declare_with_type("b", SymbolKind::Variable, Some(TypeRef::Boolean))
+            .expect("boolean variable should be declared");
+
+        let mut types = HashMap::new();
+        types.insert("INTEGER".to_string(), TypeRef::Integer);
+        types.insert("BOOLEAN".to_string(), TypeRef::Boolean);
+        types.insert("REAL".to_string(), TypeRef::Real);
+        types.insert("LONGREAL".to_string(), TypeRef::LongReal);
+
+        let arithmetic = infer_expr_type(
+            &Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Variable("i".to_string())),
+                right: Box::new(Expr::Variable("r".to_string())),
+            },
+            &symbols,
+            &types,
+        )
+        .expect("numeric addition should infer")
+        .expect("numeric addition should have a result type");
+        assert_eq!(arithmetic, TypeRef::Real);
+
+        let relation = infer_expr_type(
+            &Expr::Binary {
+                op: BinaryOp::Lt,
+                left: Box::new(Expr::Variable("i".to_string())),
+                right: Box::new(Expr::Variable("lr".to_string())),
+            },
+            &symbols,
+            &types,
+        )
+        .expect("ordering relation should infer")
+        .expect("ordering relation should have a result type");
+        assert_eq!(relation, TypeRef::Boolean);
+
+        let boolean = infer_expr_type(
+            &Expr::Binary {
+                op: BinaryOp::Or,
+                left: Box::new(Expr::Variable("b".to_string())),
+                right: Box::new(Expr::Variable("b".to_string())),
+            },
+            &symbols,
+            &types,
+        )
+        .expect("boolean logic should infer")
+        .expect("boolean logic should have a result type");
+        assert_eq!(boolean, TypeRef::Boolean);
     }
 
     #[test]

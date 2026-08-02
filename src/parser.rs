@@ -563,7 +563,7 @@ fn parse_real_literal(raw: &str) -> Result<Expr> {
                 return parse_real_literal_with_exponent(
                     &digits,
                     value,
-                    raw.ends_with('D') || raw.ends_with('d'),
+                    raw[scale_pos..].starts_with('D') || raw[scale_pos..].starts_with('d'),
                 );
             }
             None => 1,

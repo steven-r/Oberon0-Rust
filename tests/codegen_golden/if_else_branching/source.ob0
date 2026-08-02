@@ -1,0 +1,11 @@
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+  x := 5;
+  IF x > 3 THEN
+    WriteInt(1)
+  ELSE
+    WriteInt(0)
+  END;
+  WriteLn()
+END Main.

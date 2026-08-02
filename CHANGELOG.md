@@ -6,6 +6,27 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- add a shared numeric type model for `INTEGER`, `REAL`, and `LONGREAL` with stricter compatibility rules for assignments and numeric conversions
+- add semantic, lowering, and code generation support for built-in real/longreal I/O procedures such as `ReadReal`, `ReadLongReal`, `WriteReal`, and `WriteLongReal`
+- extend the parser and generated runtime to handle `LONGREAL` literals and numeric operations with the new runtime value model
+
+### Fixes
+
+- reject invalid numeric assignments such as `REAL` to `INTEGER` while preserving valid mixed numeric compatibility
+- keep generated Rust code aligned with the new numeric semantics and built-in I/O behavior
+
+### Documentation
+
+- document the compiler pipeline, the role of the HIR, and why code generation relies on internal analysis helpers
+- clarify the import/module-translation workflow and link the new pipeline notes
+
+### Tests
+
+- extend code generation coverage for state-map decision paths and nested assignment tracking in generated code paths
+- add golden regression coverage for branching, procedure-local behavior, and real/longreal built-in execution paths
+
 ## v0.9.0 - 2026-08-02
 
 ### Features

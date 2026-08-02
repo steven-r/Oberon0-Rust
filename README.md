@@ -27,8 +27,11 @@ Current pipeline:
 1. Scan Oberon0 source using Logos
 2. Parse to AST using Pest
 3. Run semantic checks
-4. Generate a Rust project
-5. Build generated Rust project with Cargo (optional)
+4. Lower to HIR for code generation
+5. Generate a Rust project
+6. Build generated Rust project with Cargo (optional)
+
+A more detailed explanation of the compiler pipeline, the role of the HIR, and why code generation relies on internal analysis helpers is available in [docs/compiler-pipeline.md](docs/compiler-pipeline.md).
 
 The generated Rust code is compiled by `rustc`/LLVM, so this project can target machine code without implementing a native backend yet.
 
