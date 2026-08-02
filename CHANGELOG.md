@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.9.0 - 2026-08-02
+
 ### Features
 
 - allow `CONST` declarations to use full expressions (not only raw integer literals), with compile-time folding into literal values
