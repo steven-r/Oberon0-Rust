@@ -1,0 +1,8 @@
+MODULE Main;
+VAR arr: ARRAY 4 OF INTEGER;
+    i: INTEGER;
+    x: INTEGER;
+BEGIN
+  arr[i] := 1;
+  x := arr[0]
+END Main.

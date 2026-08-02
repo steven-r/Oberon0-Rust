@@ -17,6 +17,10 @@ pub enum Token {
     KwVar,
     #[token("PROCEDURE")]
     KwProcedure,
+    #[token("ARRAY")]
+    KwArray,
+    #[token("OF")]
+    KwOf,
     #[token("BEGIN")]
     KwBegin,
     #[token("END")]
@@ -54,6 +58,10 @@ pub enum Token {
     LParen,
     #[token(")")]
     RParen,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
     #[token("+")]
     Plus,
     #[token("-")]

@@ -7,7 +7,8 @@ use std::fmt;
 use anyhow::Result;
 
 use crate::ast::{
-    BinaryOp, Declaration, Expr, LocalVarDecl, Module, ParamDecl, Statement, TypeRef, UnaryOp,
+    AssignTarget, BinaryOp, Declaration, Expr, LocalVarDecl, Module, ParamDecl, Statement,
+    TypeRef, UnaryOp,
 };
 use crate::expression_constant_handler::combine_expression;
 use crate::manifest::ExternalManifest;
@@ -304,13 +305,137 @@ fn type_ref_name_for_error(type_ref: &TypeRef) -> String {
         TypeRef::Boolean => "BOOLEAN".to_string(),
         TypeRef::Real => "REAL".to_string(),
         TypeRef::LongReal => "LONGREAL".to_string(),
+        TypeRef::Array {
+            length,
+            element_type,
+        } => format!(
+            "ARRAY {} OF {}",
+            format_expr_for_error(length),
+            type_ref_name_for_error(element_type)
+        ),
         TypeRef::Named(name) => name.clone(),
         TypeRef::Qualified { module, name } => format!("{}.{}", module, name),
     }
 }
 
-fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Result<()> {
-    if resolve_type_ref(type_ref, types).is_none() {
+fn format_expr_for_error(expr: &Expr) -> String {
+    match expr {
+        Expr::Integer(v) => v.to_string(),
+        Expr::Real(v) => v.to_string(),
+        Expr::LongReal(v) => v.to_string(),
+        Expr::Boolean(v) => {
+            if *v {
+                "TRUE".to_string()
+            } else {
+                "FALSE".to_string()
+            }
+        }
+        Expr::String(value) => format!("\"{}\"", value),
+        Expr::Variable(name) => name.clone(),
+        Expr::Indexed { name, index } => {
+            format!("{}[{}]", name, format_expr_for_error(index))
+        }
+        Expr::QualifiedVariable { module, name } => format!("{}.{}", module, name),
+        Expr::Call {
+            module,
+            name,
+            args,
+        } => {
+            let rendered_args = args
+                .iter()
+                .map(format_expr_for_error)
+                .collect::<Vec<_>>()
+                .join(", ");
+            match module {
+                Some(module_name) => format!("{}.{}({})", module_name, name, rendered_args),
+                None => format!("{}({})", name, rendered_args),
+            }
+        }
+        Expr::Unary { op, value } => {
+            let op_text = match op {
+                UnaryOp::Plus => "+",
+                UnaryOp::Minus => "-",
+                UnaryOp::Not => "~",
+            };
+            format!("{}{}", op_text, format_expr_for_error(value))
+        }
+        Expr::Binary { op, left, right } => {
+            let op_text = match op {
+                BinaryOp::Add => "+",
+                BinaryOp::Sub => "-",
+                BinaryOp::Or => "OR",
+                BinaryOp::Mul => "*",
+                BinaryOp::Div => "/",
+                BinaryOp::IntDiv => "DIV",
+                BinaryOp::Mod => "MOD",
+                BinaryOp::And => "&",
+                BinaryOp::Eq => "=",
+                BinaryOp::Ne => "#",
+                BinaryOp::Lt => "<",
+                BinaryOp::Le => "<=",
+                BinaryOp::Gt => ">",
+                BinaryOp::Ge => ">=",
+            };
+            format!(
+                "({} {} {})",
+                format_expr_for_error(left),
+                op_text,
+                format_expr_for_error(right)
+            )
+        }
+    }
+}
+
+fn substitute_const_expr(expr: &Expr, const_values: &HashMap<String, Expr>) -> Expr {
+    match expr {
+        Expr::Variable(name) => const_values
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| Expr::Variable(name.clone())),
+        Expr::Unary { op, value } => Expr::Unary {
+            op: *op,
+            value: Box::new(substitute_const_expr(value, const_values)),
+        },
+        Expr::Binary { op, left, right } => Expr::Binary {
+            op: *op,
+            left: Box::new(substitute_const_expr(left, const_values)),
+            right: Box::new(substitute_const_expr(right, const_values)),
+        },
+        Expr::Indexed { name, index } => Expr::Indexed {
+            name: name.clone(),
+            index: Box::new(substitute_const_expr(index, const_values)),
+        },
+        Expr::Call { module, name, args } => Expr::Call {
+            module: module.clone(),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|arg| substitute_const_expr(arg, const_values))
+                .collect(),
+        },
+        Expr::QualifiedVariable { module, name } => Expr::QualifiedVariable {
+            module: module.clone(),
+            name: name.clone(),
+        },
+        _ => expr.clone(),
+    }
+}
+
+fn resolve_array_length_expr(length: &Expr, const_values: &HashMap<String, Expr>) -> Option<usize> {
+    let substituted = substitute_const_expr(length, const_values);
+    let combined = combine_expression(&substituted).ok()?;
+    match combined {
+        Expr::Integer(value) => usize::try_from(value).ok(),
+        _ => None,
+    }
+}
+
+fn validate_declared_type_with_consts(
+    type_ref: &TypeRef,
+    types: &HashMap<String, TypeRef>,
+    const_values: &HashMap<String, Expr>,
+) -> Result<()> {
+    if resolve_type_ref_with_consts(type_ref, types, const_values).is_none() {
         return Err(SemanticError::UnknownType {
             name: type_ref_name_for_error(type_ref),
         }
@@ -320,12 +445,19 @@ fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) 
     Ok(())
 }
 
+#[cfg(test)]
+fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Result<()> {
+    let const_values = HashMap::new();
+    validate_declared_type_with_consts(type_ref, types, &const_values)
+}
+
 /// Validates a type reference with support for qualified types via import resolution.
 fn validate_declared_type_with_imports(
     type_ref: &TypeRef,
     types: &HashMap<String, TypeRef>,
     import_aliases: &HashMap<String, String>,
     external_modules: &HashMap<String, ExternalModuleInfo>,
+    const_values: &HashMap<String, Expr>,
 ) -> Result<()> {
     match type_ref {
         TypeRef::Qualified { module, name } => {
@@ -355,7 +487,7 @@ fn validate_declared_type_with_imports(
 
             Ok(())
         }
-        _ => validate_declared_type(type_ref, types),
+        _ => validate_declared_type_with_consts(type_ref, types, const_values),
     }
 }
 
@@ -410,14 +542,28 @@ fn validate_local_var_name(
     validate_local_binding_name(&local_var.name, local_var.declared_type.as_ref(), types)
 }
 
-fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Option<TypeRef> {
+fn resolve_type_ref_with_consts(
+    type_ref: &TypeRef,
+    types: &HashMap<String, TypeRef>,
+    const_values: &HashMap<String, Expr>,
+) -> Option<TypeRef> {
     match type_ref {
         TypeRef::Integer => Some(TypeRef::Integer),
         TypeRef::Boolean => Some(TypeRef::Boolean),
         TypeRef::Real => Some(TypeRef::Real),
         TypeRef::LongReal => Some(TypeRef::LongReal),
+        TypeRef::Array {
+            length,
+            element_type,
+        } => {
+            let normalized_length = resolve_array_length_expr(length, const_values)?;
+            resolve_type_ref_with_consts(element_type, types, const_values).map(|resolved| TypeRef::Array {
+                length: Expr::Integer(normalized_length as i64),
+                element_type: Box::new(resolved),
+            })
+        }
         TypeRef::Named(name) => match types.get(name) {
-            Some(target) => resolve_type_ref(target, types),
+            Some(target) => resolve_type_ref_with_consts(target, types, const_values),
             None => None,
         },
         TypeRef::Qualified { .. } => {
@@ -427,6 +573,11 @@ fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Opt
             Some(type_ref.clone())
         }
     }
+}
+
+fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Option<TypeRef> {
+    let const_values = HashMap::new();
+    resolve_type_ref_with_consts(type_ref, types, &const_values)
 }
 
 fn is_numeric_type(type_ref: &TypeRef) -> bool {
@@ -497,6 +648,7 @@ fn format_type_name(type_ref: &TypeRef) -> &'static str {
         TypeRef::Boolean => "BOOLEAN",
         TypeRef::Real => "REAL",
         TypeRef::LongReal => "LONGREAL",
+        TypeRef::Array { .. } => "ARRAY",
         TypeRef::Named(_) => "<named>",
         TypeRef::Qualified { .. } => "<qualified>",
     }
@@ -557,6 +709,9 @@ fn infer_expr_type(
 
             Ok(resolve_symbol_type(symbols, name)
                 .and_then(|type_ref| resolve_type_ref(&type_ref, types)))
+        }
+        Expr::Indexed { name, index } => {
+            infer_indexed_expr_type(name, index, symbols, types)
         }
         Expr::QualifiedVariable { module, name } => {
             Err(SemanticError::UnsupportedQualifiedVariable {
@@ -803,6 +958,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     symbols.declare("EOF", SymbolKind::Procedure)?;
     let mut proc_arity: HashMap<String, Option<usize>> = HashMap::new();
     let mut proc_params: HashMap<String, Vec<ParamDecl>> = HashMap::new();
+    let mut const_values: HashMap<String, Expr> = HashMap::new();
     proc_arity.insert("WriteInt".to_string(), None);
     proc_arity.insert("WriteString".to_string(), Some(1));
     proc_arity.insert("WriteLn".to_string(), Some(0));
@@ -851,6 +1007,10 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
             Declaration::Const { name, .. } => {
                 validate_declaration_name(name, &types)?;
                 validate_const_expression_literal(declaration)?;
+                let Declaration::Const { value, .. } = declaration else {
+                    unreachable!("const declaration expected");
+                };
+                const_values.insert(name.clone(), combine_expression(value)?);
                 symbols.declare(name, SymbolKind::Constant)?;
             }
             Declaration::Type { name, target, .. } => {
@@ -860,9 +1020,18 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                     &types,
                     &import_aliases,
                     &external_modules,
+                    &const_values,
                 )?;
-                symbols.declare_with_type(name, SymbolKind::TypeName, Some(target.clone()))?;
-                types.insert(name.clone(), target.clone());
+                let resolved_target = resolve_type_ref_with_consts(target, &types, &const_values)
+                    .ok_or_else(|| SemanticError::UnknownType {
+                        name: type_ref_name_for_error(target),
+                    })?;
+                symbols.declare_with_type(
+                    name,
+                    SymbolKind::TypeName,
+                    Some(resolved_target.clone()),
+                )?;
+                types.insert(name.clone(), resolved_target);
             }
             Declaration::Var {
                 name,
@@ -875,9 +1044,24 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                         &types,
                         &import_aliases,
                         &external_modules,
+                        &const_values,
                     )?;
                 }
-                symbols.declare_with_type(name, SymbolKind::Variable, declared_type.clone())?;
+                let normalized_declared_type = declared_type
+                    .as_ref()
+                    .map(|type_ref| {
+                        resolve_type_ref_with_consts(type_ref, &types, &const_values).ok_or_else(
+                            || SemanticError::UnknownType {
+                                name: type_ref_name_for_error(type_ref),
+                            },
+                        )
+                    })
+                    .transpose()?;
+                symbols.declare_with_type(
+                    name,
+                    SymbolKind::Variable,
+                    normalized_declared_type,
+                )?;
             }
             Declaration::Procedure {
                 name,
@@ -894,6 +1078,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                             &types,
                             &import_aliases,
                             &external_modules,
+                            &const_values,
                         )?;
                     }
                 }
@@ -905,6 +1090,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                             &types,
                             &import_aliases,
                             &external_modules,
+                            &const_values,
                         )?;
                     }
                 }
@@ -935,17 +1121,31 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
 
             symbols.enter_scope();
             for param in params {
+                let normalized_type = param
+                    .declared_type
+                    .as_ref()
+                    .map(|type_ref| {
+                        resolve_type_ref_with_consts(type_ref, &types, &const_values)
+                            .unwrap_or_else(|| type_ref.clone())
+                    });
                 symbols.declare_with_type(
                     &param.name,
                     SymbolKind::Parameter,
-                    param.declared_type.clone(),
+                    normalized_type,
                 )?;
             }
             for local_var in local_vars {
+                let normalized_type = local_var
+                    .declared_type
+                    .as_ref()
+                    .map(|type_ref| {
+                        resolve_type_ref_with_consts(type_ref, &types, &const_values)
+                            .unwrap_or_else(|| type_ref.clone())
+                    });
                 symbols.declare_with_type(
                     &local_var.name,
                     SymbolKind::Variable,
-                    local_var.declared_type.clone(),
+                    normalized_type,
                 )?;
             }
             for statement in body {
@@ -1022,32 +1222,89 @@ fn analyze_statement(
     match stmt {
         Statement::Assign { target, value } => {
             analyze_expr(value, symbols)?;
-            let symbol = symbols
-                .resolve(target)
-                .ok_or_else(|| SemanticError::UndefinedSymbol {
-                    name: target.clone(),
-                })?;
+            match target {
+                AssignTarget::Name(name) => {
+                    let symbol = symbols
+                        .resolve(name)
+                        .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.clone() })?;
 
-            if let Some(expected_type) = &symbol.declared_type
-                && let Some(actual_type) = infer_expr_type(value, symbols, types)?
-            {
-                let expected_type = resolve_type_ref(expected_type, types)
-                    .expect("declared target type should resolve after semantic validation");
-                if !assignment_compatible_extended(
-                    &expected_type,
-                    &actual_type,
-                    import_aliases,
-                    external_modules,
-                ) {
-                    return Err(SemanticError::TypeMismatch {
-                        detail: format!(
-                            "cannot assign {} to {} '{}'",
-                            format_type_name(&actual_type),
-                            format_type_name(&expected_type),
-                            target
-                        ),
+                    if let Some(expected_type) = &symbol.declared_type
+                        && let Some(actual_type) = infer_expr_type(value, symbols, types)?
+                    {
+                        let expected_type = resolve_type_ref(expected_type, types)
+                            .expect("declared target type should resolve after semantic validation");
+                        if !assignment_compatible_extended(
+                            &expected_type,
+                            &actual_type,
+                            import_aliases,
+                            external_modules,
+                        ) {
+                            return Err(SemanticError::TypeMismatch {
+                                detail: format!(
+                                    "cannot assign {} to {} '{}'",
+                                    format_type_name(&actual_type),
+                                    format_type_name(&expected_type),
+                                    name
+                                ),
+                            }
+                            .into());
+                        }
                     }
-                    .into());
+                }
+                AssignTarget::Indexed { name, index } => {
+                    analyze_expr(index, symbols)?;
+                    let index_type = infer_expr_type(index, symbols, types)?;
+                    if index_type != Some(TypeRef::Integer) {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!(
+                                "array index for '{}' must be INTEGER, got {}",
+                                name,
+                                index_type
+                                    .as_ref()
+                                    .map(format_type_name)
+                                    .unwrap_or("<unknown>")
+                            ),
+                        }
+                        .into());
+                    }
+
+                    let symbol = symbols
+                        .resolve(name)
+                        .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.clone() })?;
+
+                    let expected_type = symbol
+                        .declared_type
+                        .as_ref()
+                        .and_then(|declared_type| resolve_type_ref(declared_type, types))
+                        .ok_or_else(|| SemanticError::TypeMismatch {
+                            detail: format!("'{}' is not an array variable", name),
+                        })?;
+
+                    let TypeRef::Array { element_type, .. } = expected_type else {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!("'{}' is not an array variable", name),
+                        }
+                        .into());
+                    };
+
+                    if let Some(actual_type) = infer_expr_type(value, symbols, types)?
+                        && !assignment_compatible_extended(
+                            &element_type,
+                            &actual_type,
+                            import_aliases,
+                            external_modules,
+                        )
+                    {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!(
+                                "cannot assign {} to array element '{}' of type {}",
+                                format_type_name(&actual_type),
+                                name,
+                                format_type_name(&element_type)
+                            ),
+                        }
+                        .into());
+                    }
                 }
             }
 
@@ -1249,6 +1506,13 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             }
             Ok(())
         }
+        Expr::Indexed { name, index } => {
+            analyze_expr(index, symbols)?;
+            if symbols.resolve(name).is_none() {
+                return Err(SemanticError::UndefinedSymbol { name: name.clone() }.into());
+            }
+            Ok(())
+        }
         Expr::QualifiedVariable { module, name } => {
             Err(SemanticError::UnsupportedQualifiedVariable {
                 module: module.clone(),
@@ -1305,6 +1569,53 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
     }
 }
 
+fn infer_indexed_expr_type(
+    name: &str,
+    index: &Expr,
+    symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
+) -> Result<Option<TypeRef>> {
+    let index_type = infer_expr_type(index, symbols, types)?;
+    if index_type != Some(TypeRef::Integer) {
+        return Err(SemanticError::TypeMismatch {
+            detail: format!(
+                "array index for '{}' must be INTEGER, got {}",
+                name,
+                index_type
+                    .as_ref()
+                    .map(format_type_name)
+                    .unwrap_or("<unknown>")
+            ),
+        }
+        .into());
+    }
+
+    let symbol = symbols
+        .resolve(name)
+        .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.to_string() })?;
+
+    let Some(declared_type) = symbol.declared_type.as_ref() else {
+        return Err(SemanticError::TypeMismatch {
+            detail: format!("'{}' is not an array variable", name),
+        }
+        .into());
+    };
+
+    let resolved_type = resolve_type_ref(declared_type, types).ok_or_else(|| {
+        SemanticError::TypeMismatch {
+            detail: format!("'{}' is not an array variable", name),
+        }
+    })?;
+
+    match resolved_type {
+        TypeRef::Array { element_type, .. } => Ok(Some(*element_type)),
+        _ => Err(SemanticError::TypeMismatch {
+            detail: format!("'{}' is not an array variable", name),
+        }
+        .into()),
+    }
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
@@ -1315,11 +1626,14 @@ mod tests {
 
     use super::{
         ExternalModuleInfo, SemanticError, analyze, analyze_expr, analyze_statement,
-        assignment_compatible_extended, infer_expr_type, type_ref_name_for_error,
+        assignment_compatible_extended, format_expr_for_error, infer_expr_type,
+        resolve_array_length_expr, substitute_const_expr, type_ref_name_for_error,
         validate_boolean_condition, validate_const_expression_literal, validate_declared_type,
         validate_declared_type_with_imports,
     };
-    use crate::ast::{BinaryOp, Declaration, Expr, ParamDecl, Statement, TypeRef, UnaryOp};
+    use crate::ast::{
+        AssignTarget, BinaryOp, Declaration, Expr, ParamDecl, Statement, TypeRef, UnaryOp,
+    };
     use crate::manifest::ExternalManifest;
     use crate::parser::parse_module;
     use crate::symbols::{SymbolKind, SymbolTable};
@@ -1559,6 +1873,102 @@ END Main.
     }
 
     #[test]
+    fn semantic_accepts_indexed_assignment_and_expression_usage() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+VAR arr: ARRAY 4 OF INTEGER;
+    i: INTEGER;
+    x: INTEGER;
+BEGIN
+    i := 1;
+    arr[i] := 7;
+    x := arr[0]
+END Main.
+"#,
+        )
+        .expect("source should parse");
+
+        analyze(&module, None).expect("indexed array access should pass semantic analysis");
+    }
+
+    #[test]
+    fn semantic_accepts_array_length_constant_expression() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+CONST n = 2;
+TYPE
+    Vec = ARRAY n + 3 OF INTEGER;
+VAR x: Vec;
+BEGIN
+    x[0] := 1
+END Main.
+"#,
+        )
+        .expect("source should parse");
+
+        analyze(&module, None).expect("constant-expression array lengths should be accepted");
+    }
+
+    #[test]
+    fn semantic_rejects_non_constant_array_length_expression() {
+        let err = semantic_compile_test(
+            r#"
+MODULE Main;
+VAR n: INTEGER;
+    arr: ARRAY n + 1 OF INTEGER;
+BEGIN
+END Main.
+"#,
+        )
+        .expect_err("non-constant array length should fail semantic analysis");
+
+        assert_eq!(err.code(), "E013");
+        assert!(
+            err.to_string().contains("Unknown type reference"),
+            "expected unknown-type diagnostic for non-constant array length, got '{err}'"
+        );
+    }
+
+    #[test]
+    fn semantic_rejects_non_integer_array_index() {
+        let err = semantic_compile_test(
+            r#"
+MODULE Main;
+VAR arr: ARRAY 4 OF INTEGER;
+BEGIN
+    arr[TRUE] := 1
+END Main.
+"#,
+        )
+        .expect_err("non-integer array index should fail semantic analysis");
+
+        assert_eq!(err.code(), "E012");
+        assert!(
+            err.to_string()
+                .contains("array index for 'arr' must be INTEGER")
+        );
+    }
+
+    #[test]
+    fn semantic_rejects_indexing_non_array_variable() {
+        let err = semantic_compile_test(
+            r#"
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+    x := x[0]
+END Main.
+"#,
+        )
+        .expect_err("indexing a scalar variable should fail semantic analysis");
+
+        assert_eq!(err.code(), "E012");
+        assert!(err.to_string().contains("is not an array variable"));
+    }
+
+    #[test]
     fn semantic_accepts_flt_floor_and_eof_conditions() {
         let module = parse_module(
             r#"
@@ -1786,6 +2196,7 @@ END Main.
 
         let import_aliases = HashMap::from([("B".to_string(), "ModuleB".to_string())]);
         let external_modules = ExternalModuleInfo::mock_resolver();
+        let const_values = HashMap::new();
         assert!(
             validate_declared_type_with_imports(
                 &TypeRef::Qualified {
@@ -1795,6 +2206,7 @@ END Main.
                 &types,
                 &import_aliases,
                 &external_modules,
+                &const_values,
             )
             .is_ok()
         );
@@ -1807,6 +2219,7 @@ END Main.
             &types,
             &import_aliases,
             &external_modules,
+            &const_values,
         )
         .expect_err("non-exported qualified type should fail");
         let err = err
@@ -1822,6 +2235,7 @@ END Main.
             &types,
             &import_aliases,
             &external_modules,
+            &const_values,
         )
         .expect_err("unknown module-qualified type should fail");
         let err = err
@@ -2032,11 +2446,11 @@ END Main.
         let if_stmt = Statement::If {
             condition: Expr::Variable("flag".to_string()),
             then_branch: vec![Statement::Assign {
-                target: "flag".to_string(),
+                target: AssignTarget::Name("flag".to_string()),
                 value: Expr::Boolean(true),
             }],
             else_branch: Some(vec![Statement::Assign {
-                target: "flag".to_string(),
+                target: AssignTarget::Name("flag".to_string()),
                 value: Expr::Boolean(false),
             }]),
         };
@@ -2054,7 +2468,7 @@ END Main.
         let while_stmt = Statement::While {
             condition: Expr::Variable("flag".to_string()),
             body: vec![Statement::Assign {
-                target: "flag".to_string(),
+                target: AssignTarget::Name("flag".to_string()),
                 value: Expr::Boolean(false),
             }],
         };
@@ -2256,6 +2670,59 @@ END Main.
         // - resolve B.IntType via imported module alias B
         // - require IntType to be exported from ModuleB
         analyze(&module, None).expect("qualified exported type reference should be accepted");
+    }
+
+    #[test]
+    fn semantic_helpers_cover_expression_format_and_const_substitution_paths() {
+        let mut const_values = HashMap::new();
+        const_values.insert("N".to_string(), Expr::Integer(4));
+
+        let expr = Expr::Binary {
+            op: BinaryOp::Ge,
+            left: Box::new(Expr::Indexed {
+                name: "arr".to_string(),
+                index: Box::new(Expr::Variable("N".to_string())),
+            }),
+            right: Box::new(Expr::Call {
+                module: Some("M".to_string()),
+                name: "Proc".to_string(),
+                args: vec![
+                    Expr::Unary {
+                        op: UnaryOp::Not,
+                        value: Box::new(Expr::Boolean(false)),
+                    },
+                    Expr::QualifiedVariable {
+                        module: "Q".to_string(),
+                        name: "x".to_string(),
+                    },
+                    Expr::String("s".to_string()),
+                    Expr::Real(1.5),
+                    Expr::LongReal(2.5),
+                ],
+            }),
+        };
+
+        let rendered = format_expr_for_error(&expr);
+        assert!(rendered.contains("arr[N]"));
+        assert!(rendered.contains("M.Proc(~FALSE, Q.x, \"s\", 1.5, 2.5)"));
+        assert!(rendered.contains(">="));
+
+        let substituted = substitute_const_expr(&expr, &const_values);
+        let substituted_rendered = format_expr_for_error(&substituted);
+        assert!(substituted_rendered.contains("arr[4]"));
+
+        let resolved_len = resolve_array_length_expr(
+            &Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Variable("N".to_string())),
+                right: Box::new(Expr::Integer(1)),
+            },
+            &const_values,
+        );
+        assert_eq!(resolved_len, Some(5));
+
+        let unresolved_len = resolve_array_length_expr(&Expr::Boolean(true), &const_values);
+        assert_eq!(unresolved_len, None);
     }
 
     #[derive(Clone, Copy)]

@@ -8,6 +8,8 @@ keyword = {
     "TYPE" |
     "VAR" |
     "PROCEDURE" |
+    "ARRAY" |
+    "OF" |
     "BEGIN" |
     "END" |
     "IF" |
@@ -38,8 +40,11 @@ const_section = { "CONST" ~ const_item+ }
 const_item = { ident ~ "=" ~ expr ~ ";" }
 type_section = { "TYPE" ~ type_item+ }
 type_item = { ident ~ export_marker? ~ "=" ~ type_ref ~ ";" }
-type_ref = { qualified_ident }
+type_ref = { array_type | qualified_ident }
+array_type = { "ARRAY" ~ expr ~ "OF" ~ type_ref }
 qualified_ident = { ident ~ ("." ~ ident)? }
+designator = { qualified_ident ~ index_selector* }
+index_selector = { "[" ~ expr ~ "]" }
 var_section = { "VAR" ~ var_item+ }
 
 var_item = { ident_list ~ ":" ~ type_ref ~ ";" }
@@ -51,8 +56,8 @@ var_modifier = { "VAR" }
 
 stmt_list = { (statement ~ ";")* ~ statement? }
 statement = _{ assign_stmt | call_stmt | if_stmt | while_stmt }
-assign_stmt = { ident ~ ":=" ~ expr }
-call_stmt = { qualified_ident ~ ("(" ~ arg_list? ~ ")")? }
+assign_stmt = { designator ~ ":=" ~ expr }
+call_stmt = { call_or_var }
 if_stmt = { "IF" ~ expr ~ "THEN" ~ stmt_list? ~ else_section? ~ "END" }
 else_section = { "ELSE" ~ stmt_list? }
 while_stmt = { "WHILE" ~ expr ~ "DO" ~ stmt_list? ~ "END" }
@@ -68,4 +73,4 @@ mul_op = { "*" | "/" | "DIV" | "MOD" | "&" }
 factor = { not_factor | primary_factor }
 not_factor = { "~" ~ factor }
 primary_factor = { number | boolean_literal | string | call_or_var | "(" ~ expr ~ ")" }
-call_or_var = { qualified_ident ~ ("(" ~ arg_list? ~ ")")? }
+call_or_var = { designator ~ ("(" ~ arg_list? ~ ")")? }

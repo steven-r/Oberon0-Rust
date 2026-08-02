@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
-use crate::ast::{BinaryOp, UnaryOp};
-use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
+use crate::ast::{BinaryOp, Expr, TypeRef, UnaryOp};
+use crate::hir::{
+    HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement, HTarget,
+};
 use crate::lower::lower_module;
 use crate::manifest::{CompilerConfig, CrateBinding, ExternalManifest};
 use crate::parser::parse_module;
@@ -15,6 +17,22 @@ fn ident(id: usize, name: &str, kind: SymbolKind) -> HResolvedIdent {
         id,
         name: name.to_string(),
         kind,
+    }
+}
+
+fn assign_target(id: usize, name: &str, kind: SymbolKind) -> HTarget {
+    HTarget::Name(ident(id, name, kind))
+}
+
+fn indexed_target(
+    id: usize,
+    name: &str,
+    kind: SymbolKind,
+    index: HExpr,
+) -> HTarget {
+    HTarget::Indexed {
+        name: ident(id, name, kind),
+        index,
     }
 }
 
@@ -36,7 +54,7 @@ fn emits_procedure_function_and_call_from_main() {
             local_vars: vec![ident(3, "x", SymbolKind::Variable)],
             body: vec![
                 HStatement::Assign {
-                    target: ident(3, "x", SymbolKind::Variable),
+                    target: assign_target(3, "x", SymbolKind::Variable),
                     value: HExpr::Name(ident(2, "a", SymbolKind::Parameter)),
                 },
                 HStatement::Call {
@@ -117,6 +135,45 @@ fn emits_dependency_entries_with_package_and_features() {
 }
 
 #[test]
+fn emits_runtime_call_for_indexed_assignment_target() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![HStatement::Assign {
+            target: indexed_target(10, "arr", SymbolKind::Variable, HExpr::Integer(1)),
+            value: HExpr::Integer(42),
+        }],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains("let indexed_idx_10 = (value_integer(1)).clone();"));
+    assert!(generated.contains("let indexed_value_10 = (value_integer(42)).clone();"));
+    assert!(generated.contains("set_var_index(&mut vars, \"arr\", &indexed_idx_10, indexed_value_10);"));
+}
+
+#[test]
+fn emits_runtime_call_for_indexed_expression_read() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![HStatement::Assign {
+            target: assign_target(11, "x", SymbolKind::Variable),
+            value: HExpr::Indexed {
+                name: ident(12, "arr", SymbolKind::Variable),
+                index: Box::new(HExpr::Integer(0)),
+            },
+        }],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains("value_index(&get_var(&vars, \"arr\"), &value_integer(0))"));
+}
+
+#[test]
 fn binary_top_level_expr_is_not_wrapped_with_outer_parentheses() {
     let module = HModule {
         name: "Main".to_string(),
@@ -124,7 +181,7 @@ fn binary_top_level_expr_is_not_wrapped_with_outer_parentheses() {
         imports: vec![],
         declarations: vec![],
         statements: vec![HStatement::Assign {
-            target: ident(10, "x", SymbolKind::Variable),
+            target: assign_target(10, "x", SymbolKind::Variable),
             value: HExpr::Binary {
                 op: BinaryOp::Add,
                 left: Box::new(HExpr::Integer(1)),
@@ -151,7 +208,7 @@ fn nested_binary_expressions_do_not_add_unnecessary_parentheses() {
         imports: vec![],
         declarations: vec![],
         statements: vec![HStatement::Assign {
-            target: ident(10, "x", SymbolKind::Variable),
+            target: assign_target(10, "x", SymbolKind::Variable),
             value: HExpr::Binary {
                 op: BinaryOp::Add,
                 left: Box::new(HExpr::Integer(1)),
@@ -194,7 +251,7 @@ fn emits_extended_unary_and_binary_operators() {
         imports: vec![],
         declarations: vec![],
         statements: vec![HStatement::Assign {
-            target: ident(10, "x", SymbolKind::Variable),
+            target: assign_target(10, "x", SymbolKind::Variable),
             value: HExpr::Binary {
                 op: BinaryOp::And,
                 left: Box::new(HExpr::Unary {
@@ -238,7 +295,7 @@ fn emits_relational_operators_as_boolean_i64() {
         declarations: vec![],
         statements: vec![
             HStatement::Assign {
-                target: ident(11, "x", SymbolKind::Variable),
+                target: assign_target(11, "x", SymbolKind::Variable),
                 value: HExpr::Binary {
                     op: BinaryOp::Eq,
                     left: Box::new(HExpr::Integer(1)),
@@ -246,7 +303,7 @@ fn emits_relational_operators_as_boolean_i64() {
                 },
             },
             HStatement::Assign {
-                target: ident(11, "x", SymbolKind::Variable),
+                target: assign_target(11, "x", SymbolKind::Variable),
                 value: HExpr::Binary {
                     op: BinaryOp::Ne,
                     left: Box::new(HExpr::Integer(1)),
@@ -254,7 +311,7 @@ fn emits_relational_operators_as_boolean_i64() {
                 },
             },
             HStatement::Assign {
-                target: ident(11, "x", SymbolKind::Variable),
+                target: assign_target(11, "x", SymbolKind::Variable),
                 value: HExpr::Binary {
                     op: BinaryOp::Lt,
                     left: Box::new(HExpr::Integer(2)),
@@ -262,7 +319,7 @@ fn emits_relational_operators_as_boolean_i64() {
                 },
             },
             HStatement::Assign {
-                target: ident(11, "x", SymbolKind::Variable),
+                target: assign_target(11, "x", SymbolKind::Variable),
                 value: HExpr::Binary {
                     op: BinaryOp::Le,
                     left: Box::new(HExpr::Integer(2)),
@@ -270,7 +327,7 @@ fn emits_relational_operators_as_boolean_i64() {
                 },
             },
             HStatement::Assign {
-                target: ident(11, "x", SymbolKind::Variable),
+                target: assign_target(11, "x", SymbolKind::Variable),
                 value: HExpr::Binary {
                     op: BinaryOp::Gt,
                     left: Box::new(HExpr::Integer(3)),
@@ -278,7 +335,7 @@ fn emits_relational_operators_as_boolean_i64() {
                 },
             },
             HStatement::Assign {
-                target: ident(11, "x", SymbolKind::Variable),
+                target: assign_target(11, "x", SymbolKind::Variable),
                 value: HExpr::Binary {
                     op: BinaryOp::Ge,
                     left: Box::new(HExpr::Integer(3)),
@@ -348,13 +405,13 @@ fn statement_assigns_id_recurses_through_nested_if_and_while_blocks() {
     let stmt = HStatement::If {
         condition: HExpr::Integer(1),
         then_branch: vec![HStatement::Assign {
-            target: ident(4, "x", SymbolKind::Variable),
+            target: assign_target(4, "x", SymbolKind::Variable),
             value: HExpr::Integer(1),
         }],
         else_branch: Some(vec![HStatement::While {
             condition: HExpr::Boolean(true),
             body: vec![HStatement::Assign {
-                target: ident(5, "y", SymbolKind::Variable),
+                target: assign_target(5, "y", SymbolKind::Variable),
                 value: HExpr::Integer(2),
             }],
         }]),
@@ -416,7 +473,7 @@ fn emits_readint_and_eof_call_expressions() {
         }],
         statements: vec![
             HStatement::Assign {
-                target: ident(1, "x", SymbolKind::Variable),
+                target: assign_target(1, "x", SymbolKind::Variable),
                 value: HExpr::Call {
                     name: ident(2, "ReadInt", SymbolKind::Procedure),
                     args: vec![],
@@ -506,7 +563,7 @@ fn evaluates_procedure_call_arguments_before_mutable_vars_borrow() {
         ],
         statements: vec![
             HStatement::Assign {
-                target: ident(1, "x", SymbolKind::Variable),
+                target: assign_target(1, "x", SymbolKind::Variable),
                 value: HExpr::Integer(7),
             },
             HStatement::Call {
@@ -556,7 +613,7 @@ fn runtime_readint_and_eof_follow_input_contract() {
         }],
         statements: vec![
             HStatement::Assign {
-                target: ident(1, "x", SymbolKind::Variable),
+                target: assign_target(1, "x", SymbolKind::Variable),
                 value: HExpr::Call {
                     name: ident(2, "ReadInt", SymbolKind::Procedure),
                     args: vec![],
@@ -651,7 +708,7 @@ fn runtime_readint_fails_after_eof_is_reached() {
                 }]),
             },
             HStatement::Assign {
-                target: ident(1, "x", SymbolKind::Variable),
+                target: assign_target(1, "x", SymbolKind::Variable),
                 value: HExpr::Call {
                     name: ident(5, "ReadInt", SymbolKind::Procedure),
                     args: vec![],
@@ -696,7 +753,7 @@ fn resolves_module_constants_in_generated_expressions() {
             value: HExpr::Integer(10),
         }],
         statements: vec![HStatement::Assign {
-            target: ident(31, "x", SymbolKind::Variable),
+            target: assign_target(31, "x", SymbolKind::Variable),
             value: HExpr::Binary {
                 op: BinaryOp::Add,
                 left: Box::new(HExpr::Name(ident(30, "BASE", SymbolKind::Constant))),
@@ -720,7 +777,7 @@ fn emits_state_output_only_when_explicitly_enabled() {
         imports: vec![],
         declarations: vec![],
         statements: vec![HStatement::Assign {
-            target: ident(40, "x", SymbolKind::Variable),
+            target: assign_target(40, "x", SymbolKind::Variable),
             value: HExpr::Integer(7),
         }],
     };
@@ -746,7 +803,7 @@ fn emits_state_map_for_procedure_locals_without_module_variables() {
             params: vec![],
             local_vars: vec![ident(2, "local", SymbolKind::Variable)],
             body: vec![HStatement::Assign {
-                target: ident(2, "local", SymbolKind::Variable),
+                target: assign_target(2, "local", SymbolKind::Variable),
                 value: HExpr::Integer(9),
             }],
             end_name: "P".to_string(),
@@ -819,7 +876,7 @@ fn runtime_state_output_supports_reassigned_procedure_parameters() {
                 body: vec![HStatement::While {
                     condition: HExpr::Name(ident(3, "x", SymbolKind::Parameter)),
                     body: vec![HStatement::Assign {
-                        target: ident(3, "x", SymbolKind::Parameter),
+                        target: assign_target(3, "x", SymbolKind::Parameter),
                         value: HExpr::Binary {
                             op: BinaryOp::Sub,
                             left: Box::new(HExpr::Name(ident(3, "x", SymbolKind::Parameter))),
@@ -832,7 +889,7 @@ fn runtime_state_output_supports_reassigned_procedure_parameters() {
         ],
         statements: vec![
             HStatement::Assign {
-                target: ident(1, "x", SymbolKind::Variable),
+                target: assign_target(1, "x", SymbolKind::Variable),
                 value: HExpr::Integer(3),
             },
             HStatement::Call {
@@ -896,7 +953,7 @@ fn runtime_state_output_shows_shadowed_module_and_procedure_parameter_values() {
         ],
         statements: vec![
             HStatement::Assign {
-                target: ident(1, "x", SymbolKind::Variable),
+                target: assign_target(1, "x", SymbolKind::Variable),
                 value: HExpr::Integer(7),
             },
             HStatement::Call {
@@ -942,11 +999,11 @@ fn runtime_state_output_shows_only_module_variables_when_enabled() {
             local_vars: vec![ident(2, "local", SymbolKind::Variable)],
             body: vec![
                 HStatement::Assign {
-                    target: ident(2, "local", SymbolKind::Variable),
+                    target: assign_target(2, "local", SymbolKind::Variable),
                     value: HExpr::Integer(9),
                 },
                 HStatement::Assign {
-                    target: ident(3, "x", SymbolKind::Variable),
+                    target: assign_target(3, "x", SymbolKind::Variable),
                     value: HExpr::Integer(7),
                 },
             ],
@@ -996,7 +1053,7 @@ fn runtime_state_output_can_be_forced_on_without_manifest() {
             params: vec![],
             local_vars: vec![ident(2, "local", SymbolKind::Variable)],
             body: vec![HStatement::Assign {
-                target: ident(2, "local", SymbolKind::Variable),
+                target: assign_target(2, "local", SymbolKind::Variable),
                 value: HExpr::Integer(9),
             }],
             end_name: "P".to_string(),
@@ -1037,7 +1094,7 @@ fn runtime_state_output_is_suppressed_by_default() {
         imports: vec![],
         declarations: vec![],
         statements: vec![HStatement::Assign {
-            target: ident(50, "x", SymbolKind::Variable),
+            target: assign_target(50, "x", SymbolKind::Variable),
             value: HExpr::Integer(7),
         }],
     };
@@ -1059,6 +1116,150 @@ fn runtime_state_output_is_suppressed_by_default() {
 
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
     assert!(!stdout.contains("State: {"));
+
+    std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
+}
+
+#[test]
+fn runtime_state_output_should_include_array_values() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![HDeclaration::Var {
+            id: 60,
+            name: "arr".to_string(),
+            declared_type: Some(TypeRef::Array {
+                length: Expr::Integer(3),
+                element_type: Box::new(TypeRef::Integer),
+            }),
+        }],
+        statements: vec![
+            HStatement::Assign {
+                target: indexed_target(60, "arr", SymbolKind::Variable, HExpr::Integer(0)),
+                value: HExpr::Integer(10),
+            },
+            HStatement::Assign {
+                target: indexed_target(60, "arr", SymbolKind::Variable, HExpr::Integer(1)),
+                value: HExpr::Integer(20),
+            },
+            HStatement::Assign {
+                target: indexed_target(60, "arr", SymbolKind::Variable, HExpr::Integer(2)),
+                value: HExpr::Integer(30),
+            },
+        ],
+    };
+
+    let out_root = temp_codegen_dir("state_array_missing");
+    let project_dir = generate_rust_project(&module, None, &out_root, true)
+        .expect("project generation should succeed");
+
+    let output = std::process::Command::new("cargo")
+        .arg("run")
+        .current_dir(&project_dir)
+        .output()
+        .expect("generated project should run");
+    assert!(
+        output.status.success(),
+        "generated project failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(
+        stdout.contains("State: {\"arr\": [10, 20, 30]}"),
+        "expected rendered array in state output, got: {stdout}"
+    );
+
+    std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
+}
+
+#[test]
+fn var_array_parameter_updates_module_variable() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![
+            HDeclaration::Type {
+                id: 70,
+                name: "IntArray".to_string(),
+                target: TypeRef::Array {
+                    length: Expr::Integer(4),
+                    element_type: Box::new(TypeRef::Integer),
+                },
+            },
+            HDeclaration::Var {
+                id: 71,
+                name: "arr".to_string(),
+                declared_type: Some(TypeRef::Named("IntArray".to_string())),
+            },
+            HDeclaration::Procedure {
+                id: 72,
+                name: "BumpFirst".to_string(),
+                params: vec![HParam {
+                    id: 73,
+                    name: "a".to_string(),
+                    declared_type: Some(TypeRef::Named("IntArray".to_string())),
+                    is_var: true,
+                }],
+                local_vars: vec![],
+                body: vec![HStatement::Assign {
+                    target: indexed_target(73, "a", SymbolKind::Parameter, HExpr::Integer(0)),
+                    value: HExpr::Binary {
+                        op: BinaryOp::Add,
+                        left: Box::new(HExpr::Indexed {
+                            name: ident(73, "a", SymbolKind::Parameter),
+                            index: Box::new(HExpr::Integer(0)),
+                        }),
+                        right: Box::new(HExpr::Integer(1)),
+                    },
+                }],
+                end_name: "BumpFirst".to_string(),
+            },
+        ],
+        statements: vec![
+            HStatement::Assign {
+                target: indexed_target(71, "arr", SymbolKind::Variable, HExpr::Integer(0)),
+                value: HExpr::Integer(41),
+            },
+            HStatement::Call {
+                module: None,
+                name: ident(72, "BumpFirst", SymbolKind::Procedure),
+                args: vec![HExpr::Name(ident(71, "arr", SymbolKind::Variable))],
+            },
+            HStatement::Call {
+                module: None,
+                name: ident(74, "WriteInt", SymbolKind::Procedure),
+                args: vec![HExpr::Indexed {
+                    name: ident(71, "arr", SymbolKind::Variable),
+                    index: Box::new(HExpr::Integer(0)),
+                }],
+            },
+        ],
+    };
+
+    let out_root = temp_codegen_dir("var_array_roundtrip");
+    let project_dir = generate_rust_project(&module, None, &out_root, true)
+        .expect("project generation should succeed");
+
+    let output = std::process::Command::new("cargo")
+        .arg("run")
+        .current_dir(&project_dir)
+        .output()
+        .expect("generated project should run");
+    assert!(
+        output.status.success(),
+        "generated project failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
+    assert!(stdout.contains("42"), "expected updated first element, got: {stdout}");
+    assert!(
+        stdout.contains("\"arr\": [42]"),
+        "expected propagated array state, got: {stdout}"
+    );
 
     std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
 }

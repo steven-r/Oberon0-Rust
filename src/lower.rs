@@ -2,9 +2,9 @@
 
 use anyhow::{Result, bail};
 
-use crate::ast::{Declaration, Expr, Module, Statement};
+use crate::ast::{AssignTarget, Declaration, Expr, Module, Statement};
 use crate::expression_constant_handler::combine_expression;
-use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
+use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement, HTarget};
 use crate::scope::ScopedMap;
 use crate::symbols::SymbolKind;
 
@@ -227,19 +227,10 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
 /// Lowers one statement while preserving the current lexical scope.
 fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HStatement> {
     match statement {
-        Statement::Assign { target, value } => {
-            let resolved_target = resolver.resolve(target).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Lowering invariant violated: unresolved assignment target '{}'.",
-                    target
-                )
-            })?;
-
-            Ok(HStatement::Assign {
-                target: resolved_target,
-                value: lower_expr(value, resolver)?,
-            })
-        }
+        Statement::Assign { target, value } => Ok(HStatement::Assign {
+            target: lower_assign_target(target, resolver)?,
+            value: lower_expr(value, resolver)?,
+        }),
         Statement::Call {
             module, name, args, ..
         } => {
@@ -300,6 +291,15 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
         Expr::LongReal(value) => Ok(HExpr::LongReal(*value)),
         Expr::Boolean(value) => Ok(HExpr::Boolean(*value)),
         Expr::String(value) => Ok(HExpr::String(value.clone())),
+        Expr::Indexed { name, index } => {
+            let resolved = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!("Lowering failed: unknown identifier '{}'.", name)
+            })?;
+            Ok(HExpr::Indexed {
+                name: resolved,
+                index: Box::new(lower_expr(index, resolver)?),
+            })
+        }
         Expr::QualifiedVariable { module: _, name: _ } => {
             bail!("Qualified variables are not yet supported in code generation")
         }
@@ -338,6 +338,34 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
     }
 }
 
+fn lower_assign_target(target: &AssignTarget, resolver: &Resolver) -> Result<HTarget> {
+    match target {
+        AssignTarget::Name(name) => {
+            let resolved_target = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Lowering invariant violated: unresolved assignment target '{}'.",
+                    name
+                )
+            })?;
+
+            Ok(HTarget::Name(resolved_target))
+        }
+        AssignTarget::Indexed { name, index } => {
+            let resolved_target = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Lowering invariant violated: unresolved assignment target '{}'.",
+                    name
+                )
+            })?;
+
+            Ok(HTarget::Indexed {
+                name: resolved_target,
+                index: lower_expr(index, resolver)?,
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
@@ -348,7 +376,7 @@ mod tests {
 
     use super::{Resolver, lower_expr, lower_module, lower_statement};
     use crate::ast::{Expr, Statement, TypeRef};
-    use crate::hir::{HDeclaration, HExpr, HStatement};
+    use crate::hir::{HDeclaration, HExpr, HStatement, HTarget};
     use crate::parser::parse_module;
     use crate::semantic::analyze;
     use crate::symbols::SymbolKind;
@@ -372,7 +400,10 @@ mod tests {
     fn collect_assign_target_ids(stmts: &[HStatement], out: &mut Vec<usize>) {
         for stmt in stmts {
             match stmt {
-                HStatement::Assign { target, .. } => out.push(target.id),
+                HStatement::Assign { target, .. } => match target {
+                    crate::hir::HTarget::Name(ident) => out.push(ident.id),
+                    crate::hir::HTarget::Indexed { name, .. } => out.push(name.id),
+                },
                 HStatement::If {
                     then_branch,
                     else_branch,
@@ -774,6 +805,138 @@ END Main.
         let err = lower_module(&module).unwrap_err();
         assert!(err.to_string().contains("unknown call target"));
     }
+
+    #[test]
+    fn lower_expr_reports_unknown_variable_indexed_and_call_targets() {
+        let resolver = Resolver::new();
+
+        let indexed_err = lower_expr(
+            &Expr::Indexed {
+                name: "missing".to_string(),
+                index: Box::new(Expr::Integer(0)),
+            },
+            &resolver,
+        )
+        .expect_err("unknown indexed identifier should fail lowering");
+        assert!(
+            indexed_err
+                .to_string()
+                .contains("Lowering failed: unknown identifier 'missing'.")
+        );
+
+        let variable_err = lower_expr(&Expr::Variable("missing".to_string()), &resolver)
+            .expect_err("unknown variable should fail lowering");
+        assert!(
+            variable_err
+                .to_string()
+                .contains("Lowering failed: unknown identifier 'missing'.")
+        );
+
+        let call_err = lower_expr(
+            &Expr::Call {
+                module: None,
+                name: "MissingProc".to_string(),
+                args: vec![],
+            },
+            &resolver,
+        )
+        .expect_err("unknown call target should fail lowering");
+        assert!(
+            call_err
+                .to_string()
+                .contains("Lowering failed: unknown call target 'MissingProc'.")
+        );
+    }
+
+    #[test]
+    fn lower_assign_target_indexed_covers_success_and_error_paths() {
+        let mut resolver = Resolver::new();
+        let declared = resolver
+            .declare("arr", SymbolKind::Variable)
+            .expect("array symbol should be declared");
+
+        let lowered = super::lower_assign_target(
+            &crate::ast::AssignTarget::Indexed {
+                name: "arr".to_string(),
+                index: Expr::Integer(2),
+            },
+            &resolver,
+        )
+        .expect("indexed assignment target should lower");
+
+        assert!(matches!(
+            lowered,
+            HTarget::Indexed { name, index }
+                if name.id == declared.id && matches!(index, HExpr::Integer(2))
+        ));
+
+        let missing_err = super::lower_assign_target(
+            &crate::ast::AssignTarget::Indexed {
+                name: "missing".to_string(),
+                index: Expr::Integer(0),
+            },
+            &resolver,
+        )
+        .expect_err("unresolved indexed assignment target should fail");
+
+        assert!(
+            missing_err
+                .to_string()
+                .contains("Lowering invariant violated: unresolved assignment target 'missing'.")
+        );
+    }
+
+    #[test]
+    fn lowering_preserves_indexed_targets_and_indexed_reads() {
+        let source = r#"
+MODULE Main;
+VAR arr: ARRAY 4 OF INTEGER;
+    i: INTEGER;
+    x: INTEGER;
+BEGIN
+  arr[i] := 7;
+  x := arr[0]
+END Main.
+"#;
+
+        let hir = lower_from_source(source).expect("lowering should succeed");
+
+        let arr_id = hir
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                HDeclaration::Var { id, name, .. } if name == "arr" => Some(*id),
+                _ => None,
+            })
+            .expect("array declaration should exist");
+
+        let first = &hir.statements[0];
+        match first {
+            HStatement::Assign { target, value } => {
+                assert!(matches!(value, HExpr::Integer(7)));
+                assert!(matches!(
+                    target,
+                    HTarget::Indexed { name, index }
+                        if name.id == arr_id
+                            && matches!(index, HExpr::Name(idx) if idx.name == "i")
+                ));
+            }
+            other => panic!("expected first lowered statement to be assignment, got {other:?}"),
+        }
+
+        let second = &hir.statements[1];
+        match second {
+            HStatement::Assign { value, .. } => {
+                assert!(matches!(
+                    value,
+                    HExpr::Indexed { name, index }
+                        if name.id == arr_id && matches!(index.as_ref(), HExpr::Integer(0))
+                ));
+            }
+            other => panic!("expected second lowered statement to be assignment, got {other:?}"),
+        }
+    }
+
     #[test]
     fn procedure_local_vars_survive_lowering_with_stable_ids() {
         let source = r#"
@@ -814,7 +977,10 @@ END Main.
         let assigned_id = body
             .iter()
             .find_map(|stmt| match stmt {
-                HStatement::Assign { target, .. } => Some(target.id),
+                HStatement::Assign { target, .. } => match target {
+                    crate::hir::HTarget::Name(ident) => Some(ident.id),
+                    crate::hir::HTarget::Indexed { name, .. } => Some(name.id),
+                },
                 _ => None,
             })
             .expect("procedure body should assign to local variable x");
@@ -950,11 +1116,16 @@ END Main.
             .iter()
             .find_map(|decl| match decl {
                 HStatement::Assign { target, value, .. } => {
-                    println!("Found assignment to {} with value {:?}", target.name, value);
-                    if target.name == "x" {
-                        Some(value.clone())
-                    } else {
-                        None
+                    match target {
+                        crate::hir::HTarget::Name(ident) => {
+                            println!("Found assignment to {} with value {:?}", ident.name, value);
+                            if ident.name == "x" {
+                                Some(value.clone())
+                            } else {
+                                None
+                            }
+                        }
+                        crate::hir::HTarget::Indexed { .. } => None,
                     }
                 }
                 _ => None,

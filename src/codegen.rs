@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 use crate::ast::{BinaryOp, TypeRef, UnaryOp};
-use crate::hir::{HDeclaration, HExpr, HModule, HParam, HResolvedIdent, HStatement};
+use crate::hir::{HDeclaration, HExpr, HModule, HParam, HResolvedIdent, HStatement, HTarget};
 use crate::manifest::{CrateBinding, ExternalManifest};
 
 #[derive(Default, Clone, Copy)]
@@ -35,6 +35,7 @@ enum RuntimeType {
     Boolean,
     Real,
     LongReal,
+    Array,
 }
 
 fn runtime_type_from_type_ref(type_ref: Option<&TypeRef>) -> Option<RuntimeType> {
@@ -43,8 +44,47 @@ fn runtime_type_from_type_ref(type_ref: Option<&TypeRef>) -> Option<RuntimeType>
         Some(TypeRef::Boolean) => Some(RuntimeType::Boolean),
         Some(TypeRef::Real) => Some(RuntimeType::Real),
         Some(TypeRef::LongReal) => Some(RuntimeType::LongReal),
+        Some(TypeRef::Array { .. }) => Some(RuntimeType::Array),
         Some(TypeRef::Named(_)) | Some(TypeRef::Qualified { .. }) => None,
         None => None,
+    }
+}
+
+fn resolve_named_type<'a>(
+    type_ref: &'a TypeRef,
+    type_aliases: &'a HashMap<String, TypeRef>,
+) -> &'a TypeRef {
+    match type_ref {
+        TypeRef::Named(name) => match type_aliases.get(name) {
+            Some(target) => resolve_named_type(target, type_aliases),
+            None => type_ref,
+        },
+        _ => type_ref,
+    }
+}
+
+fn collect_type_aliases(module: &HModule) -> HashMap<String, TypeRef> {
+    module
+        .declarations
+        .iter()
+        .filter_map(|decl| match decl {
+            HDeclaration::Type { name, target, .. } => Some((name.clone(), target.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn resolve_runtime_type(
+    type_ref: Option<&TypeRef>,
+    type_aliases: &HashMap<String, TypeRef>,
+) -> Option<RuntimeType> {
+    let Some(type_ref) = type_ref else {
+        return None;
+    };
+
+    match resolve_named_type(type_ref, type_aliases) {
+        TypeRef::Array { .. } => Some(RuntimeType::Array),
+        resolved => runtime_type_from_type_ref(Some(resolved)),
     }
 }
 
@@ -124,6 +164,7 @@ fn dependency_line(local_name: &str, binding: &CrateBinding) -> String {
 fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     let mut out = String::new();
     let procedure_names = collect_procedure_names(module);
+    let procedure_param_modes = collect_procedure_param_modes(module);
     let module_constants = collect_module_constants(module);
     let io_usage = collect_io_usage(module);
     let needs_module_state = statements_need_state_map(&module.statements, &procedure_names);
@@ -153,6 +194,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("    Integer(i64),\n");
     out.push_str("    Real(f32),\n");
     out.push_str("    LongReal(f64),\n");
+    out.push_str("    Array(Vec<Value>),\n");
     out.push_str("}\n\n");
 
     out.push_str("fn value_integer(value: i64) -> Value {\n");
@@ -164,11 +206,40 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("fn value_longreal(value: f64) -> Value {\n");
     out.push_str("    Value::LongReal(value)\n");
     out.push_str("}\n\n");
+    out.push_str("fn value_array(length: usize) -> Value {\n");
+    out.push_str("    Value::Array(vec![Value::Integer(0); length])\n");
+    out.push_str("}\n\n");
+    out.push_str("fn value_index_from_value(value: &Value) -> usize {\n");
+    out.push_str("    match value {\n");
+    out.push_str("        Value::Integer(v) => usize::try_from(*v).expect(\"Runtime error: negative array index\"),\n");
+    out.push_str("        _ => panic!(\"Runtime error: array index must be INTEGER\"),\n");
+    out.push_str("    }\n");
+    out.push_str("}\n\n");
+    out.push_str("fn value_index(array: &Value, index: &Value) -> Value {\n");
+    out.push_str("    let idx = value_index_from_value(index);\n");
+    out.push_str("    match array {\n");
+    out.push_str("        Value::Array(values) => values.get(idx).cloned().unwrap_or(Value::Integer(0)),\n");
+    out.push_str("        _ => panic!(\"Runtime error: indexed access on non-array value\"),\n");
+    out.push_str("    }\n");
+    out.push_str("}\n\n");
+    out.push_str("fn value_set_index(array: &mut Value, index: &Value, new_value: Value) {\n");
+    out.push_str("    let idx = value_index_from_value(index);\n");
+    out.push_str("    match array {\n");
+    out.push_str("        Value::Array(values) => {\n");
+    out.push_str("            if idx >= values.len() {\n");
+    out.push_str("                values.resize(idx + 1, Value::Integer(0));\n");
+    out.push_str("            }\n");
+    out.push_str("            values[idx] = new_value;\n");
+    out.push_str("        }\n");
+    out.push_str("        _ => panic!(\"Runtime error: indexed assignment on non-array value\"),\n");
+    out.push_str("    }\n");
+    out.push_str("}\n\n");
     out.push_str("fn value_as_real(value: &Value) -> Value {\n");
     out.push_str("    match value {\n");
     out.push_str("        Value::Integer(v) => Value::Real(*v as f32),\n");
     out.push_str("        Value::Real(v) => Value::Real(*v),\n");
     out.push_str("        Value::LongReal(v) => Value::Real(*v as f32),\n");
+    out.push_str("        Value::Array(_) => panic!(\"Runtime error: cannot cast ARRAY to REAL\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_as_integer(value: &Value) -> Value {\n");
@@ -176,6 +247,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Integer(v) => Value::Integer(*v),\n");
     out.push_str("        Value::Real(v) => Value::Integer(*v as i64),\n");
     out.push_str("        Value::LongReal(v) => Value::Integer(*v as i64),\n");
+    out.push_str("        Value::Array(_) => panic!(\"Runtime error: cannot cast ARRAY to INTEGER\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_truthy(value: &Value) -> bool {\n");
@@ -183,6 +255,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Integer(v) => *v != 0,\n");
     out.push_str("        Value::Real(v) => *v != 0.0,\n");
     out.push_str("        Value::LongReal(v) => *v != 0.0,\n");
+    out.push_str("        Value::Array(v) => !v.is_empty(),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn print_value(value: &Value) {\n");
@@ -190,6 +263,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Integer(v) => print!(\"{}\", v),\n");
     out.push_str("        Value::Real(v) => print!(\"{}\", v),\n");
     out.push_str("        Value::LongReal(v) => print!(\"{}\", v),\n");
+    out.push_str("        Value::Array(v) => print!(\"[{}]\", v.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn print_value_ln(value: &Value) {\n");
@@ -197,6 +271,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Integer(v) => println!(\"{}\", v),\n");
     out.push_str("        Value::Real(v) => println!(\"{}\", v),\n");
     out.push_str("        Value::LongReal(v) => println!(\"{}\", v),\n");
+    out.push_str("        Value::Array(v) => println!(\"[{}]\", v.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_add(lhs: &Value, rhs: &Value) -> Value {\n");
@@ -218,6 +293,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str(
         "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a + *b as f64),\n",
     );
+    out.push_str("        _ => panic!(\"Runtime error: unsupported operands for ADD\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_sub(lhs: &Value, rhs: &Value) -> Value {\n");
@@ -239,6 +315,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str(
         "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a - *b as f64),\n",
     );
+    out.push_str("        _ => panic!(\"Runtime error: unsupported operands for SUB\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_mul(lhs: &Value, rhs: &Value) -> Value {\n");
@@ -260,6 +337,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str(
         "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a * *b as f64),\n",
     );
+    out.push_str("        _ => panic!(\"Runtime error: unsupported operands for MUL\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_div(lhs: &Value, rhs: &Value) -> Value {\n");
@@ -281,6 +359,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str(
         "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a / *b as f64),\n",
     );
+    out.push_str("        _ => panic!(\"Runtime error: unsupported operands for DIV\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_neg(value: &Value) -> Value {\n");
@@ -288,6 +367,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Integer(v) => Value::Integer(-*v),\n");
     out.push_str("        Value::Real(v) => Value::Real(-*v),\n");
     out.push_str("        Value::LongReal(v) => Value::LongReal(-*v),\n");
+    out.push_str("        Value::Array(_) => panic!(\"Runtime error: unary minus on ARRAY\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_not(value: &Value) -> Value {\n");
@@ -295,6 +375,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Integer(v) => Value::Integer(if *v != 0 { 0 } else { 1 }),\n");
     out.push_str("        Value::Real(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),\n");
     out.push_str("        Value::LongReal(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),\n");
+    out.push_str("        Value::Array(v) => Value::Integer(if v.is_empty() { 1 } else { 0 }),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_and(lhs: &Value, rhs: &Value) -> Value {\n");
@@ -326,6 +407,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str(
         "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a % *b as f64),\n",
     );
+    out.push_str("        _ => panic!(\"Runtime error: unsupported operands for MOD\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str(
@@ -341,6 +423,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        (Value::LongReal(a), Value::Integer(b)) => Value::Integer(if cmp(*a, *b as f64) { 1 } else { 0 }),\n");
     out.push_str("        (Value::Real(a), Value::LongReal(b)) => Value::Integer(if cmp(*a as f64, *b) { 1 } else { 0 }),\n");
     out.push_str("        (Value::LongReal(a), Value::Real(b)) => Value::Integer(if cmp(*a, *b as f64) { 1 } else { 0 }),\n");
+    out.push_str("        _ => panic!(\"Runtime error: unsupported operands for comparison\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
@@ -352,6 +435,19 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("#[allow(dead_code)]\n");
     out.push_str("fn get_var(vars: &BTreeMap<String, Value>, name: &str) -> Value {\n");
     out.push_str("    vars.get(name).cloned().unwrap_or(Value::Integer(0))\n");
+    out.push_str("}\n\n");
+    out.push_str("#[allow(dead_code)]\n");
+    out.push_str("fn get_var_mut<'a>(vars: &'a mut BTreeMap<String, Value>, name: &str) -> &'a mut Value {\n");
+    out.push_str("    vars.entry(name.to_string()).or_insert(Value::Integer(0))\n");
+    out.push_str("}\n\n");
+    out.push_str("#[allow(dead_code)]\n");
+    out.push_str("fn set_var_index(vars: &mut BTreeMap<String, Value>, name: &str, index: &Value, value: Value) {\n");
+    out.push_str("    let entry = vars.entry(name.to_string()).or_insert_with(|| value_array(0));\n");
+    out.push_str("    value_set_index(entry, index, value);\n");
+    out.push_str("}\n\n");
+    out.push_str("#[allow(dead_code)]\n");
+    out.push_str("fn set_var(vars: &mut BTreeMap<String, Value>, name: &str, value: Value) {\n");
+    out.push_str("    vars.insert(name.to_string(), value);\n");
     out.push_str("}\n\n");
 
     if io_usage.any() {
@@ -466,6 +562,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
             out.push_str("        Value::Real(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::Integer(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::LongReal(v) => print!(\"{}\", v),\n");
+            out.push_str("        Value::Array(v) => print!(\"[{}]\", v.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
             out.push_str("    }\n");
             out.push_str("}\n\n");
         }
@@ -476,6 +573,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
             out.push_str("        Value::Real(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::Integer(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::LongReal(v) => print!(\"{}\", v),\n");
+            out.push_str("        Value::Array(v) => print!(\"[{}]\", v.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
             out.push_str("    }\n");
             out.push_str("}\n\n");
         }
@@ -496,6 +594,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Integer(v) => v.to_string(),\n");
     out.push_str("        Value::Real(v) => v.to_string(),\n");
     out.push_str("        Value::LongReal(v) => v.to_string(),\n");
+    out.push_str("        Value::Array(values) => format!(\"[{}]\", values.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("/// Records the current value of a procedure-scoped Oberon0 variable.\n");
@@ -520,6 +619,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
                 body,
                 &module_constants,
                 &procedure_names,
+                &procedure_param_modes,
                 emit_state,
             ));
             out.push('\n');
@@ -538,20 +638,36 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
         out.push_str("    let mut vars: BTreeMap<String, Value> = BTreeMap::new();\n");
     }
 
+    let type_aliases = collect_type_aliases(module);
     let mut module_types = HashMap::new();
     for declaration in &module.declarations {
         match declaration {
             HDeclaration::Var {
-                id, declared_type, ..
+                id,
+                name,
+                declared_type,
             } => {
-                if let Some(runtime_type) = runtime_type_from_type_ref(declared_type.as_ref()) {
+                if let Some(runtime_type) =
+                    resolve_runtime_type(declared_type.as_ref(), &type_aliases)
+                {
                     module_types.insert(*id, runtime_type);
+                }
+                if needs_runtime_state
+                    && matches!(
+                        resolve_runtime_type(declared_type.as_ref(), &type_aliases),
+                        Some(RuntimeType::Array)
+                    )
+                {
+                    out.push_str(&format!(
+                        "    vars.insert(\"{}\".to_string(), value_array(0));\n",
+                        name
+                    ));
                 }
             }
             HDeclaration::Procedure { params, .. } => {
                 for param in params {
                     if let Some(runtime_type) =
-                        runtime_type_from_type_ref(param.declared_type.as_ref())
+                        resolve_runtime_type(param.declared_type.as_ref(), &type_aliases)
                     {
                         module_types.insert(param.id, runtime_type);
                     }
@@ -563,8 +679,10 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
 
     let main_ctx = FormatContext {
         locals: HashMap::new(),
+        by_ref_locals: HashSet::new(),
         constants: module_constants,
         procedures: &procedure_names,
+        procedure_param_modes: &procedure_param_modes,
         vars_arg: if needs_runtime_state {
             "&mut vars"
         } else {
@@ -591,8 +709,10 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
 
 struct FormatContext<'a> {
     locals: HashMap<usize, String>,
+    by_ref_locals: HashSet<usize>,
     constants: HashMap<usize, &'a HExpr>,
     procedures: &'a HashSet<String>,
+    procedure_param_modes: &'a HashMap<String, Vec<bool>>,
     vars_arg: &'a str,
     procedure_name: Option<&'a str>,
     track_procedure_locals: bool,
@@ -608,6 +728,7 @@ fn default_literal(ty: RuntimeType) -> &'static str {
         RuntimeType::Integer | RuntimeType::Boolean => "value_integer(0)",
         RuntimeType::Real => "value_real(0.0)",
         RuntimeType::LongReal => "value_longreal(0.0)",
+        RuntimeType::Array => "value_array(0)",
     }
 }
 
@@ -624,6 +745,19 @@ fn collect_procedure_names(module: &HModule) -> HashSet<String> {
         .iter()
         .filter_map(|decl| match decl {
             HDeclaration::Procedure { name, .. } => Some(name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn collect_procedure_param_modes(module: &HModule) -> HashMap<String, Vec<bool>> {
+    module
+        .declarations
+        .iter()
+        .filter_map(|decl| match decl {
+            HDeclaration::Procedure { name, params, .. } => {
+                Some((name.clone(), params.iter().map(|p| p.is_var).collect()))
+            }
             _ => None,
         })
         .collect()
@@ -679,6 +813,7 @@ fn expr_needs_state_map(expr: &HExpr) -> bool {
         | HExpr::Real(_)
         | HExpr::Boolean(_) => false,
         HExpr::Name(ident) => ident.kind != crate::symbols::SymbolKind::Constant,
+        HExpr::Indexed { index, .. } => expr_needs_state_map(index),
         HExpr::Call { args, .. } => args.iter().any(expr_needs_state_map),
         HExpr::Unary { value, .. } => expr_needs_state_map(value),
         HExpr::Binary { left, right, .. } => {
@@ -756,6 +891,7 @@ fn expr_io_usage(expr: &HExpr) -> IoUsage {
         HExpr::Integer(_)
         | HExpr::String(_)
         | HExpr::Name(_)
+        | HExpr::Indexed { .. }
         | HExpr::LongReal(_)
         | HExpr::Real(_)
         | HExpr::Boolean(_) => IoUsage::default(),
@@ -786,7 +922,10 @@ fn procedure_assigns_id(body: &[HStatement], ident_id: usize) -> bool {
 
 fn statement_assigns_id(stmt: &HStatement, ident_id: usize) -> bool {
     match stmt {
-        HStatement::Assign { target, .. } => target.id == ident_id,
+        HStatement::Assign { target, .. } => match target {
+            HTarget::Name(ident) => ident.id == ident_id,
+            HTarget::Indexed { name, .. } => name.id == ident_id,
+        },
         HStatement::Call { .. } => false,
         HStatement::If {
             then_branch,
@@ -815,6 +954,7 @@ fn format_procedure(
     body: &[HStatement],
     constants: &HashMap<usize, &HExpr>,
     procedure_names: &HashSet<String>,
+    procedure_param_modes: &HashMap<String, Vec<bool>>,
     emit_state: bool,
 ) -> String {
     let mut out = String::new();
@@ -830,7 +970,9 @@ fn format_procedure(
         let runtime_type = runtime_type_from_type_ref(param.declared_type.as_ref())
             .unwrap_or(RuntimeType::Integer);
         types.insert(param.id, runtime_type);
-        if procedure_assigns_id(body, param.id) {
+        if param.is_var {
+            signature_args.push(format!("{}: &mut Value", binding));
+        } else if procedure_assigns_id(body, param.id) {
             signature_args.push(format!("mut {}: Value", binding));
         } else {
             signature_args.push(format!("{}: Value", binding));
@@ -839,8 +981,13 @@ fn format_procedure(
 
     let ctx = FormatContext {
         locals,
+        by_ref_locals: params
+            .iter()
+            .filter_map(|param| if param.is_var { Some(param.id) } else { None })
+            .collect(),
         constants: constants.clone(),
         procedures: procedure_names,
+        procedure_param_modes,
         vars_arg: "vars",
         procedure_name: Some(name),
         track_procedure_locals: emit_state,
@@ -867,10 +1014,17 @@ fn format_procedure(
 
     if emit_state {
         for param in params {
-            out.push_str(&format!(
-                "    set_procedure_var(vars, \"{}\", \"{}\", &param_{});\n",
-                name, param.name, param.id
-            ));
+            if param.is_var {
+                out.push_str(&format!(
+                    "    set_procedure_var(vars, \"{}\", \"{}\", &*param_{});\n",
+                    name, param.name, param.id
+                ));
+            } else {
+                out.push_str(&format!(
+                    "    set_procedure_var(vars, \"{}\", \"{}\", &param_{});\n",
+                    name, param.name, param.id
+                ));
+            }
         }
     }
 
@@ -913,23 +1067,96 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
     match stmt {
         HStatement::Assign { target, value } => {
             let rendered_value = format_top_level_expr(value, ctx);
-            if let Some(binding) = ctx.locals.get(&target.id) {
-                let mut out = String::new();
-                out.push_str(&format!("{}{} = {};\n", indent, binding, rendered_value));
-                if ctx.track_procedure_locals {
-                    if let Some(procedure_name) = ctx.procedure_name {
-                        out.push_str(&format!(
-                            "{}set_procedure_var(vars, \"{}\", \"{}\", &{});\n",
-                            indent, procedure_name, target.name, binding
-                        ));
+            match target {
+                HTarget::Name(ident) => {
+                    if let Some(binding) = ctx.locals.get(&ident.id) {
+                        let mut out = String::new();
+                        if ctx.by_ref_locals.contains(&ident.id) {
+                            out.push_str(&format!("{}*{} = {};\n", indent, binding, rendered_value));
+                        } else {
+                            out.push_str(&format!("{}{} = {};\n", indent, binding, rendered_value));
+                        }
+                        if ctx.track_procedure_locals {
+                            if let Some(procedure_name) = ctx.procedure_name {
+                                if ctx.by_ref_locals.contains(&ident.id) {
+                                    out.push_str(&format!(
+                                        "{}set_procedure_var(vars, \"{}\", \"{}\", &*{});\n",
+                                        indent, procedure_name, ident.name, binding
+                                    ));
+                                } else {
+                                    out.push_str(&format!(
+                                        "{}set_procedure_var(vars, \"{}\", \"{}\", &{});\n",
+                                        indent, procedure_name, ident.name, binding
+                                    ));
+                                }
+                            }
+                        }
+                        out
+                    } else {
+                        format!(
+                            "{}vars.insert(\"{}\".to_string(), {});\n",
+                            indent, ident.name, rendered_value
+                        )
                     }
                 }
-                out
-            } else {
-                format!(
-                    "{}vars.insert(\"{}\".to_string(), {});\n",
-                    indent, target.name, rendered_value
-                )
+                HTarget::Indexed { name, index } => {
+                    let rendered_index = format_expr(index, ctx);
+                    let index_temp = format!("indexed_idx_{}", name.id);
+                    let value_temp = format!("indexed_value_{}", name.id);
+                    if let Some(binding) = ctx.locals.get(&name.id) {
+                        let mut out = String::new();
+                        out.push_str(&format!(
+                            "{}let {} = ({}).clone();\n",
+                            indent, index_temp, rendered_index
+                        ));
+                        out.push_str(&format!(
+                            "{}let {} = ({}).clone();\n",
+                            indent, value_temp, rendered_value
+                        ));
+                        if ctx.by_ref_locals.contains(&name.id) {
+                            out.push_str(&format!(
+                                "{}value_set_index(&mut *{}, &{}, {});\n",
+                                indent, binding, index_temp, value_temp
+                            ));
+                        } else {
+                            out.push_str(&format!(
+                                "{}value_set_index(&mut {}, &{}, {});\n",
+                                indent, binding, index_temp, value_temp
+                            ));
+                        }
+                        if ctx.track_procedure_locals {
+                            if let Some(procedure_name) = ctx.procedure_name {
+                                if ctx.by_ref_locals.contains(&name.id) {
+                                    out.push_str(&format!(
+                                        "{}set_procedure_var(vars, \"{}\", \"{}\", &*{});\n",
+                                        indent, procedure_name, name.name, binding
+                                    ));
+                                } else {
+                                    out.push_str(&format!(
+                                        "{}set_procedure_var(vars, \"{}\", \"{}\", &{});\n",
+                                        indent, procedure_name, name.name, binding
+                                    ));
+                                }
+                            }
+                        }
+                        out
+                    } else {
+                        let mut out = String::new();
+                        out.push_str(&format!(
+                            "{}let {} = ({}).clone();\n",
+                            indent, index_temp, rendered_index
+                        ));
+                        out.push_str(&format!(
+                            "{}let {} = ({}).clone();\n",
+                            indent, value_temp, rendered_value
+                        ));
+                        out.push_str(&format!(
+                            "{}set_var_index({}, \"{}\", &{}, {});\n",
+                            indent, ctx.vars_arg, name.name, index_temp, value_temp
+                        ));
+                        out
+                    }
+                }
             }
         }
         HStatement::Call {
@@ -978,16 +1205,58 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
             } else if ctx.procedures.contains(&name.name) {
                 let mut out = String::new();
                 let mut call_args = Vec::new();
+                let mut post_call_updates = Vec::new();
+                let param_modes = ctx
+                    .procedure_param_modes
+                    .get(&name.name)
+                    .cloned()
+                    .unwrap_or_default();
 
                 for (index, arg) in args.iter().enumerate() {
-                    let temp_name = format!("call_arg_{}", index);
-                    out.push_str(&format!(
-                        "{}let {} = {};\n",
-                        indent,
-                        temp_name,
-                        format_top_level_expr(arg, ctx)
-                    ));
-                    call_args.push(temp_name);
+                    let is_var_param = param_modes.get(index).copied().unwrap_or(false);
+                    if is_var_param {
+                        match arg {
+                            HExpr::Name(ident) => {
+                                if let Some(binding) = ctx.locals.get(&ident.id) {
+                                    if ctx.by_ref_locals.contains(&ident.id) {
+                                        call_args.push(format!("&mut *{}", binding));
+                                    } else {
+                                        call_args.push(format!("&mut {}", binding));
+                                    }
+                                } else {
+                                    let temp_name = format!("call_arg_{}", index);
+                                    out.push_str(&format!(
+                                        "{}let mut {} = get_var({}, \"{}\");\n",
+                                        indent, temp_name, ctx.vars_arg, ident.name
+                                    ));
+                                    call_args.push(format!("&mut {}", temp_name));
+                                    post_call_updates.push(format!(
+                                        "{}set_var({}, \"{}\", {});\n",
+                                        indent, ctx.vars_arg, ident.name, temp_name
+                                    ));
+                                }
+                            }
+                            _ => {
+                                let temp_name = format!("call_arg_{}", index);
+                                out.push_str(&format!(
+                                    "{}let mut {} = {};\n",
+                                    indent,
+                                    temp_name,
+                                    format_top_level_expr(arg, ctx)
+                                ));
+                                call_args.push(format!("&mut {}", temp_name));
+                            }
+                        }
+                    } else {
+                        let temp_name = format!("call_arg_{}", index);
+                        out.push_str(&format!(
+                            "{}let {} = {};\n",
+                            indent,
+                            temp_name,
+                            format_top_level_expr(arg, ctx)
+                        ));
+                        call_args.push(temp_name);
+                    }
                 }
 
                 let joined_args = if call_args.is_empty() {
@@ -997,6 +1266,9 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
                 };
 
                 out.push_str(&format!("{}{}({});\n", indent, name.name, joined_args));
+                for update in post_call_updates {
+                    out.push_str(&update);
+                }
                 out
             } else {
                 format!(
@@ -1080,9 +1352,30 @@ fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
                 format_expr(value, ctx)
             } else {
                 match ctx.locals.get(&ident.id) {
-                    Some(binding) => binding.clone(),
+                    Some(binding) => {
+                        if ctx.by_ref_locals.contains(&ident.id) {
+                            format!("(*{}).clone()", binding)
+                        } else {
+                            binding.clone()
+                        }
+                    }
                     None => format!("get_var(&vars, \"{}\")", ident.name),
                 }
+            }
+        }
+        HExpr::Indexed { name, index } => {
+            let rendered_index = format_expr(index, ctx);
+            if let Some(binding) = ctx.locals.get(&name.id) {
+                if ctx.by_ref_locals.contains(&name.id) {
+                    format!("value_index(&*{}, &{})", binding, rendered_index)
+                } else {
+                    format!("value_index(&{}, &{})", binding, rendered_index)
+                }
+            } else {
+                format!(
+                    "value_index(&get_var(&vars, \"{}\"), &{})",
+                    name.name, rendered_index
+                )
             }
         }
         HExpr::Call { name, args } => {

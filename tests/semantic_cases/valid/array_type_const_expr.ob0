@@ -1,0 +1,7 @@
+MODULE Main;
+CONST N = 2;
+TYPE IntArray = ARRAY N + 8 OF INTEGER;
+VAR a: IntArray;
+BEGIN
+  a[0] := 1
+END Main.

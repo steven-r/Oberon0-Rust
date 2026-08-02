@@ -1,0 +1,60 @@
+MODULE Sort;
+
+CONST
+  MAX_SIZE = 100;
+
+TYPE
+  SORT_ARRAY = ARRAY MAX_SIZE OF INTEGER;
+
+VAR
+  sort_array: SORT_ARRAY;
+  number_count: INTEGER;
+  i: INTEGER;
+
+PROCEDURE DoSort(VAR a: SORT_ARRAY; n: INTEGER);
+VAR
+  i: INTEGER;
+  temp, swaps : INTEGER;
+BEGIN
+  swaps := 1;
+  WHILE swaps > 0 DO
+    swaps := 0;
+    i := 0;
+    WHILE i < n - 1 DO
+      IF ~(a[i] <= a[i+1]) THEN
+        temp := a[i]; a[i] := a[i+1]; a[i+1] := temp;
+        swaps := swaps + 1;
+      END;
+      i := i + 1;
+    END
+  END
+END DoSort;
+
+BEGIN
+  WriteString("Please enter the number of elements to sort: ");
+  number_count := ReadInt();
+  IF (number_count <= 0) OR (number_count > MAX_SIZE) THEN
+    WriteString("The number exceeds ");
+    WriteInt(MAX_SIZE);
+  ELSE
+    i := 0;
+    WriteString("Please enter the elements separated by space or newline");
+    WriteLn();
+    WHILE i < number_count DO
+      sort_array[i] := ReadInt();
+      i := i + 1;
+    END;
+    DoSort(sort_array, number_count);
+    WriteString("The sorted output:");
+    WriteLn();
+    i := 0;
+    WHILE i < number_count DO
+      WriteInt(sort_array[i]);
+      IF i < number_count THEN
+        WriteString(" ");
+      END;
+      i := i + 1
+    END;
+    WriteLn();
+  END;
+END Sort.

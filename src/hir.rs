@@ -41,6 +41,18 @@ pub struct HResolvedIdent {
 }
 
 #[derive(Debug, Clone)]
+/// Lowered assignable designator.
+pub enum HTarget {
+    /// Named binding.
+    Name(HResolvedIdent),
+    /// Indexed array element.
+    Indexed {
+        name: HResolvedIdent,
+        index: HExpr,
+    },
+}
+
+#[derive(Debug, Clone)]
 /// Lowered procedure parameter with a stable id.
 pub struct HParam {
     /// Compiler-assigned id for this parameter binding.
@@ -90,7 +102,7 @@ pub enum HDeclaration {
 pub enum HStatement {
     /// Assignment to a resolved variable or parameter binding.
     Assign {
-        target: HResolvedIdent,
+        target: HTarget,
         value: HExpr,
     },
     /// Call to a resolved procedure symbol.
@@ -124,6 +136,11 @@ pub enum HExpr {
     String(String),
     /// Reference to a resolved identifier binding.
     Name(HResolvedIdent),
+    /// Indexed array element reference.
+    Indexed {
+        name: HResolvedIdent,
+        index: Box<HExpr>,
+    },
     /// Function-like call expression with resolved callee and arguments.
     Call {
         name: HResolvedIdent,
@@ -164,6 +181,9 @@ impl HExpr {
             HExpr::Boolean(v) => v.to_string(),
             HExpr::String(value) => format!("{:?}", value),
             HExpr::Name(ident) => ident.name.clone(),
+            HExpr::Indexed { name, index } => {
+                format!("{}[{}]", name.name, index.to_string())
+            }
             HExpr::Call { name, args } => {
                 let args_str = args
                     .iter()
@@ -224,6 +244,17 @@ mod tests {
                 name: "value".to_string(),
                 kind: SymbolKind::Variable,
             })
+            .is_literal()
+        );
+        assert!(
+            !HExpr::Indexed {
+                name: HResolvedIdent {
+                    id: 1,
+                    name: "value".to_string(),
+                    kind: SymbolKind::Variable,
+                },
+                index: Box::new(HExpr::Integer(0)),
+            }
             .is_literal()
         );
         assert!(

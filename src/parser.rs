@@ -6,8 +6,8 @@ use pest::iterators::Pair;
 use pest_derive::Parser;
 
 use crate::ast::{
-    BinaryOp, Declaration, Expr, ImportDecl, LocalVarDecl, Module, ParamDecl, Statement, TypeRef,
-    UnaryOp,
+    AssignTarget, BinaryOp, Declaration, Expr, ImportDecl, LocalVarDecl, Module, ParamDecl,
+    Statement, TypeRef, UnaryOp,
 };
 
 #[derive(Parser)]
@@ -143,9 +143,7 @@ fn parse_local_var_section(section: Pair<Rule>) -> Result<Vec<LocalVarDecl>> {
         let ident_list = parts
             .next()
             .context("Missing procedure-local variable names")?;
-        let declared_type = parts
-            .next()
-            .map(|pair| parse_type_ref_name(pair.as_str().to_string()));
+        let declared_type = parts.next().map(parse_type_ref).transpose()?;
 
         for ident in ident_list.into_inner() {
             if ident.as_rule() != Rule::ident {
@@ -181,9 +179,7 @@ fn parse_formal_params(params: Pair<Rule>) -> Result<Vec<ParamDecl>> {
             (false, first)
         };
 
-        let declared_type = parts
-            .next()
-            .map(|pair| parse_type_ref_name(pair.as_str().to_string()));
+        let declared_type = parts.next().map(parse_type_ref).transpose()?;
 
         for ident in ident_list_pair.into_inner() {
             if ident.as_rule() != Rule::ident {
@@ -251,9 +247,7 @@ fn parse_var_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
     for item in section.into_inner() {
         let mut parts = item.into_inner();
         let ident_list = parts.next().context("Missing variable names")?;
-        let declared_type = parts
-            .next()
-            .map(|pair| parse_type_ref_name(pair.as_str().to_string()));
+        let declared_type = parts.next().map(parse_type_ref).transpose()?;
 
         for ident in ident_list.into_inner() {
             if ident.as_rule() != Rule::ident {
@@ -306,18 +300,26 @@ fn parse_statement(stmt: Pair<Rule>) -> Result<Statement> {
     match stmt.as_rule() {
         Rule::assign_stmt => {
             let mut parts = stmt.into_inner();
-            let target = take_ident(parts.next(), "assignment target")?;
+            let target = parse_assignment_target(parts.next().context("Missing assignment target")?)?;
             let value = parse_expr(parts.next().context("Missing expression")?)?;
             Ok(Statement::Assign { target, value })
         }
         Rule::call_stmt => {
-            let mut parts = stmt.into_inner();
-            let qualified_pair = parts.next().context("Missing procedure name in call")?;
-            let (module, name) = parse_qualified_ident(qualified_pair)?;
-            let args = match parts.next() {
-                Some(arg_list) => parse_arg_list(arg_list)?,
-                None => Vec::new(),
+            let raw = stmt.as_str().trim();
+            let (designator_text, args_text) = if raw.contains('(') {
+                split_call_text(raw)?
+            } else {
+                (raw, "")
             };
+            let designator_pair = Oberon0Parser::parse(Rule::designator, designator_text)
+                .context("Invalid procedure name in call")?
+                .next()
+                .context("Missing procedure name in call")?;
+            let (module, name, indexes) = parse_designator(designator_pair)?;
+            if !indexes.is_empty() {
+                bail!("Indexed designators cannot be called")
+            }
+            let args = parse_call_args(args_text)?;
             Ok(Statement::Call { module, name, args })
         }
         Rule::if_stmt => {
@@ -378,6 +380,34 @@ fn parse_arg_list(arg_list: Pair<Rule>) -> Result<Vec<Expr>> {
         .into_inner()
         .map(parse_expr)
         .collect::<Result<Vec<_>>>()
+}
+
+fn parse_call_args(args_text: &str) -> Result<Vec<Expr>> {
+    let trimmed = args_text.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let pair = Oberon0Parser::parse(Rule::arg_list, trimmed)
+        .context("Invalid call arguments")?
+        .next()
+        .context("Missing argument list")?;
+    parse_arg_list(pair)
+}
+
+fn split_call_text(raw: &str) -> Result<(&str, &str)> {
+    let open = raw
+        .find('(')
+        .context("Missing opening parenthesis in call")?;
+    let close = raw
+        .rfind(')')
+        .context("Missing closing parenthesis in call")?;
+
+    if close < open {
+        bail!("Malformed call syntax")
+    }
+
+    Ok((raw[..open].trim(), raw[open + 1..close].trim()))
 }
 
 fn parse_expr(expr: Pair<Rule>) -> Result<Expr> {
@@ -476,31 +506,93 @@ fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
         }
         Rule::string => Ok(Expr::String(parse_pascal_string(inner.as_str())?)),
         Rule::call_or_var => {
-            // `arg_list` is optional and does not produce a pair for empty calls like `ReadInt()`,
-            // so we must detect call syntax from the raw text to preserve zero-arg calls.
-            let is_call_syntax = inner.as_str().contains('(');
-            let mut parts = inner.into_inner();
-            let qualified_pair = parts.next().context("Missing qualified identifier")?;
-            let (module, name) = parse_qualified_ident(qualified_pair)?;
+            let raw = inner.as_str().trim();
+            if raw.contains('(') {
+                let (designator_text, args_text) = split_call_text(raw)?;
+                let designator_pair = Oberon0Parser::parse(Rule::designator, designator_text)
+                    .context("Invalid designator in call")?
+                    .next()
+                    .context("Missing designator")?;
+                let (module, name, indexes) = parse_designator(designator_pair)?;
+                if !indexes.is_empty() {
+                    bail!("Indexed designators cannot be called")
+                }
 
-            if is_call_syntax {
-                let args = match parts.next() {
-                    Some(arg_list) => parse_arg_list(arg_list)?,
-                    None => Vec::new(),
-                };
+                let args = parse_call_args(args_text)?;
                 Ok(Expr::Call { module, name, args })
             } else {
-                match module {
-                    Some(mod_name) => Ok(Expr::QualifiedVariable {
-                        module: mod_name,
+                let designator_pair = Oberon0Parser::parse(Rule::designator, raw)
+                    .context("Invalid designator")?
+                    .next()
+                    .context("Missing designator")?;
+                let (module, name, indexes) = parse_designator(designator_pair)?;
+
+                if indexes.is_empty() {
+                    match module {
+                        Some(mod_name) => Ok(Expr::QualifiedVariable {
+                            module: mod_name,
+                            name,
+                        }),
+                        None => Ok(Expr::Variable(name)),
+                    }
+                } else if indexes.len() == 1 {
+                    if module.is_some() {
+                        bail!("Indexed qualified designators are not yet supported")
+                    }
+                    Ok(Expr::Indexed {
                         name,
-                    }),
-                    None => Ok(Expr::Variable(name)),
+                        index: Box::new(indexes.into_iter().next().unwrap()),
+                    })
+                } else {
+                    bail!("Multiple index selectors are not yet supported")
                 }
             }
         }
         Rule::expr => parse_expr(inner),
         _ => bail!("Unknown primary factor: {:?}", inner.as_rule()),
+    }
+}
+
+fn parse_designator(pair: Pair<Rule>) -> Result<(Option<String>, String, Vec<Expr>)> {
+    let mut inner = pair.into_inner();
+    let mut base_pair = inner.next().context("Missing qualified identifier")?;
+    while base_pair.as_rule() != Rule::qualified_ident && base_pair.as_rule() != Rule::ident {
+        base_pair = base_pair
+            .into_inner()
+            .next()
+            .context("Missing qualified identifier")?;
+    }
+    let (module, name) = parse_qualified_ident(base_pair)?;
+
+    let mut indexes = Vec::new();
+    for selector in inner {
+        if selector.as_rule() != Rule::index_selector {
+            continue;
+        }
+        let index_expr = selector
+            .into_inner()
+            .next()
+            .context("Missing array index expression")?;
+        indexes.push(parse_expr(index_expr)?);
+    }
+
+    Ok((module, name, indexes))
+}
+
+fn parse_assignment_target(pair: Pair<Rule>) -> Result<AssignTarget> {
+    let (module, name, indexes) = parse_designator(pair)?;
+
+    if module.is_some() {
+        bail!("Qualified assignment targets are not yet supported")
+    }
+
+    match indexes.len() {
+        0 => Ok(AssignTarget::Name(name)),
+        1 => Ok(AssignTarget::Indexed {
+            name,
+            index: indexes.into_iter().next().unwrap(),
+        }),
+        _ => bail!("Multiple index selectors are not yet supported"),
     }
 }
 
@@ -620,32 +712,22 @@ fn parse_pascal_string(raw: &str) -> Result<String> {
 /// Parses a qualified identifier (module.name or just name).
 /// Returns (Optional<module>, name).
 fn parse_qualified_ident(pair: Pair<Rule>) -> Result<(Option<String>, String)> {
-    let mut inner = pair.into_inner();
+    let raw = pair.as_str().trim();
+    let mut parts = raw.splitn(2, '.');
+    let first = parts
+        .next()
+        .context("first part of identifier is not an identifier")?;
 
-    let first = take_ident(inner.next(), "first part of identifier")?;
+    if first.is_empty() {
+        bail!("first part of identifier is not an identifier")
+    }
 
-    // If there's a second pair, it might be the "." operator (which we skip) or the second ident
-    // When parsing "B.IntType", the structure is: ident("B") ~ ("." ~ ident("IntType"))?
-    // This gives us: ident, ".", ident as inner pairs
-    // So we need to skip the "." operator and get the next ident
-    if let Some(next_pair) = inner.next() {
-        // This could be a rule (like ".") or an ident
-        if next_pair.as_rule() == Rule::ident {
-            // Simple case: just "module" followed by another "ident" (shouldn't happen with current grammar)
-            Ok((Some(first), next_pair.as_str().to_string()))
-        } else {
-            // Expected case: "." operator followed by ident
-            // Try to get the next ident
-            if let Some(second) = inner.next() {
-                let name = take_ident(Some(second), "second part of identifier")?;
-                Ok((Some(first), name))
-            } else {
-                // Just in case, return first as name
-                Ok((None, first))
-            }
+    match parts.next() {
+        Some(second) if !second.is_empty() => {
+            Ok((Some(first.to_string()), second.trim().to_string()))
         }
-    } else {
-        Ok((None, first))
+        Some(_) => bail!("second part of identifier is not an identifier"),
+        None => Ok((None, first.to_string())),
     }
 }
 
@@ -654,43 +736,39 @@ fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeRef> {
         .into_inner()
         .next()
         .context("Missing qualified_ident in type_ref")?;
-    let (module, name) = parse_qualified_ident(qualified)?;
+    match qualified.as_rule() {
+        Rule::array_type => parse_array_type(qualified),
+        Rule::qualified_ident => {
+            let (module, name) = parse_qualified_ident(qualified)?;
 
-    match name.as_str() {
-        "INTEGER" if module.is_none() => Ok(TypeRef::Integer),
-        "BOOLEAN" if module.is_none() => Ok(TypeRef::Boolean),
-        "REAL" if module.is_none() => Ok(TypeRef::Real),
-        "LONGREAL" if module.is_none() => Ok(TypeRef::LongReal),
-        _ => match module {
-            Some(mod_name) => Ok(TypeRef::Qualified {
-                module: mod_name,
-                name,
-            }),
-            None => Ok(TypeRef::Named(name)),
-        },
+            match name.as_str() {
+                "INTEGER" if module.is_none() => Ok(TypeRef::Integer),
+                "BOOLEAN" if module.is_none() => Ok(TypeRef::Boolean),
+                "REAL" if module.is_none() => Ok(TypeRef::Real),
+                "LONGREAL" if module.is_none() => Ok(TypeRef::LongReal),
+                _ => match module {
+                    Some(mod_name) => Ok(TypeRef::Qualified {
+                        module: mod_name,
+                        name,
+                    }),
+                    None => Ok(TypeRef::Named(name)),
+                },
+            }
+        }
+        _ => bail!("Unknown type reference: {:?}", qualified.as_rule()),
     }
 }
 
-fn parse_type_ref_name(name: String) -> TypeRef {
-    match name.as_str() {
-        "INTEGER" => TypeRef::Integer,
-        "BOOLEAN" => TypeRef::Boolean,
-        "REAL" => TypeRef::Real,
-        "LONGREAL" => TypeRef::LongReal,
-        _ => {
-            // Check if it's a qualified name (contains a dot)
-            if let Some(dot_pos) = name.find('.') {
-                let module = name[..dot_pos].to_string();
-                let type_name = name[dot_pos + 1..].to_string();
-                TypeRef::Qualified {
-                    module,
-                    name: type_name,
-                }
-            } else {
-                TypeRef::Named(name)
-            }
-        }
-    }
+fn parse_array_type(pair: Pair<Rule>) -> Result<TypeRef> {
+    let mut inner = pair.into_inner();
+    let length_expr = inner.next().context("Missing ARRAY length")?;
+    let length = parse_expr(length_expr)?;
+    let element_type = inner.next().context("Missing ARRAY element type")?;
+
+    Ok(TypeRef::Array {
+        length,
+        element_type: Box::new(parse_type_ref(element_type)?),
+    })
 }
 
 fn parse_add_op(op: Pair<Rule>) -> Result<BinaryOp> {
@@ -748,7 +826,7 @@ mod tests {
     use std::path::Path;
 
     use super::parse_module;
-    use crate::ast::{BinaryOp, Expr, Statement, UnaryOp};
+    use crate::ast::{AssignTarget, BinaryOp, Expr, Statement, UnaryOp};
     use crate::manifest::ExternalManifest;
     use crate::scanner::scan;
     use crate::semantic::analyze;
@@ -991,6 +1069,24 @@ END Main.
             "qualified_variable_reference_unsupported.ob0" => {
                 replace_required(source, "x := B.value", "x := 1")
             }
+            "array_index_non_integer.ob0" => {
+                replace_required(source, "i: REAL;", "i: INTEGER;")
+            }
+            "array_index_non_array.ob0" => {
+                replace_required(source, "x[0] := 1", "x := 1")
+            }
+            "array_type_non_constant_expr.ob0" => {
+                let repaired = replace_required(source, "VAR n: INTEGER;", "CONST n = 4;");
+                replace_required(&repaired, "ARRAY n + 1 OF", "ARRAY n OF")
+            }
+            "readreal_with_arg.ob0" => {
+                replace_required(source, "ReadReal(1)", "ReadReal()")
+            }
+            "readlongreal_with_arg.ob0" => {
+                replace_required(source, "ReadLongReal(1)", "ReadLongReal()")
+            }
+            "floor_integer_arg.ob0" => replace_required(source, "FLOOR(1)", "FLOOR(1.0)"),
+            "flt_real_arg.ob0" => replace_required(source, "FLT(1.0)", "FLT(1)"),
             other => panic!("missing semantic invalid repair mapping for {other}"),
         }
     }
@@ -1265,12 +1361,109 @@ END Main.
         let Statement::Assign { target, value } = &parsed.statements[1] else {
             panic!("expected second statement to be an assignment");
         };
-        assert_eq!(target, "x");
+        assert_eq!(target, &AssignTarget::Name("x".to_string()));
         assert!(matches!(
             value,
             Expr::QualifiedVariable { module, name }
             if module == "B" && name == "value"
         ));
+    }
+
+    #[test]
+    fn parses_indexed_designators_in_assignments_and_expressions() {
+        let parsed = parse_module(
+            r#"
+MODULE Main;
+VAR arr: ARRAY 4 OF INTEGER;
+    i: INTEGER;
+    x: INTEGER;
+BEGIN
+  arr[i] := 1;
+  x := arr[0]
+END Main.
+"#,
+        )
+        .expect("module with indexed designators should parse");
+
+        let Statement::Assign { target, value } = &parsed.statements[0] else {
+            panic!("expected first statement to be an assignment");
+        };
+
+        assert!(matches!(
+            target,
+            AssignTarget::Indexed { name, index }
+            if name == "arr" && matches!(index, Expr::Variable(var) if var == "i")
+        ));
+        assert!(matches!(value, Expr::Integer(1)));
+
+        let Statement::Assign { target, value } = &parsed.statements[1] else {
+            panic!("expected second statement to be an assignment");
+        };
+
+        assert_eq!(target, &AssignTarget::Name("x".to_string()));
+        assert!(matches!(
+            value,
+            Expr::Indexed { name, index }
+            if name == "arr" && matches!(index.as_ref(), Expr::Integer(0))
+        ));
+    }
+
+    #[test]
+    fn parses_array_length_constant_expression() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+CONST n = 2;
+TYPE
+  Vec = ARRAY n + 3 OF INTEGER;
+BEGIN
+END Main.
+"#,
+        )
+        .expect("array length constant expression should parse");
+
+        let decl = module
+            .declarations
+            .iter()
+            .find_map(|decl| match decl {
+                crate::ast::Declaration::Type { name, target, .. } if name == "Vec" => {
+                    Some(target)
+                }
+                _ => None,
+            })
+            .expect("type declaration Vec should exist");
+
+        assert!(matches!(
+            decl,
+            crate::ast::TypeRef::Array { length, element_type }
+                if matches!(
+                    length,
+                    Expr::Binary { op: BinaryOp::Add, left, right }
+                        if matches!(left.as_ref(), Expr::Variable(name) if name == "n")
+                            && matches!(right.as_ref(), Expr::Integer(3))
+                )
+                && matches!(element_type.as_ref(), crate::ast::TypeRef::Integer)
+        ));
+    }
+
+    #[test]
+    fn rejects_multiple_index_selectors_for_current_subset() {
+        let err = parse_module(
+            r#"
+MODULE Main;
+VAR matrix: ARRAY 2 OF INTEGER;
+    x: INTEGER;
+BEGIN
+  x := matrix[0][1]
+END Main.
+"#,
+        )
+        .expect_err("multi-index designators should be rejected in current subset");
+
+        assert!(
+            err.to_string()
+                .contains("Multiple index selectors are not yet supported")
+        );
     }
 
     #[test]

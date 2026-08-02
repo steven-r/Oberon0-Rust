@@ -1,4 +1,4 @@
-use crate::ast::TypeRef;
+use crate::ast::{Expr, TypeRef};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
@@ -39,6 +39,16 @@ impl Type {
             TypeRef::Boolean => Self::Scalar(ScalarType::Boolean),
             TypeRef::Real => Self::Scalar(ScalarType::Real),
             TypeRef::LongReal => Self::Scalar(ScalarType::LongReal),
+            TypeRef::Array {
+                element_type,
+                length,
+            } => Self::Array {
+                element_type: Box::new(Self::from_ast_type_ref(element_type)),
+                length: match length {
+                    Expr::Integer(value) if *value >= 0 => Some(*value as usize),
+                    _ => None,
+                },
+            },
             TypeRef::Named(name) => Self::Alias(name.clone()),
             TypeRef::Qualified { .. } => Self::Alias("<qualified>".to_string()),
         }

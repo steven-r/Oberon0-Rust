@@ -106,7 +106,7 @@ Current status:
 
 ## B5. Array types and indexing
 
-Status: Planned.
+Status: Completed.
 
 Tasks:
 
@@ -123,8 +123,10 @@ Definition of done:
 
 Current status:
 
-1. The shared type model groundwork is in place, so the next implementation slice should start with array type syntax and indexed designators rather than adding another type layer.
-2. Array parsing, semantic validation, and HIR designator support are still to be implemented.
+1. Array type declarations are implemented, including constant-expression lengths folded during semantic analysis.
+2. Indexed designators are implemented for both expressions and assignment targets.
+3. Lowering and HIR model indexed l-values explicitly.
+4. Rust code generation supports indexed read/write execution and state serialization for array values.
 
 ## B6. Record types and field access
 
@@ -200,11 +202,9 @@ Priority 2 (expression and control-flow completeness):
 
 Priority 3 (structured data model):
 
-1. #7 (array type declarations)
-2. #8 (indexed designators)
-3. #9 (record type declarations)
-4. #10 (field-selection designators)
-5. #11 (type-checking consolidation)
+1. #9 (record type declarations)
+2. #10 (field-selection designators)
+3. #11 (type-checking consolidation)
 
 Priority 4 (IO and grammar parity refinements):
 

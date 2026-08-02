@@ -1,0 +1,5 @@
+MODULE Main;
+TYPE IntArray = ARRAY 10 OF INTEGER;
+VAR values: IntArray;
+BEGIN
+END Main.
