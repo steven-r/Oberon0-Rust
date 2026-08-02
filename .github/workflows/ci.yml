@@ -72,7 +72,14 @@ jobs:
       - name: Generate Cobertura coverage report
         run: cargo llvm-cov --workspace --all-targets --cobertura --output-path coverage.xml
 
+      - name: Smoke test minimal example
+        run: scripts/oberon0 examples/hello-app --run
+
+      - name: Smoke test import manifest example
+        run: scripts/oberon0 examples/imports-manifest --run
+
       - name: Upload coverage reports to Codecov
+        if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v7
         with:
           files: coverage.xml
@@ -80,8 +87,10 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-      - name: Smoke test minimal example
-        run: scripts/oberon0 examples/hello-app --run
-
-      - name: Smoke test import manifest example
-        run: scripts/oberon0 examples/imports-manifest --run
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          files: target/test-results/junit.xml
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
