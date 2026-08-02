@@ -52,6 +52,14 @@ jobs:
       - name: Generate Cobertura coverage report
         run: cargo llvm-cov --workspace --all-targets --cobertura --output-path coverage.xml
 
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          fail_ci_if_error: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Enforce changed-line coverage (>90%)
         run: |
           git fetch origin main --depth=1

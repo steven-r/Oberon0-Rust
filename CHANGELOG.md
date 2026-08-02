@@ -22,6 +22,10 @@ All notable changes to this project will be documented in this file.
 - document the compiler pipeline, the role of the HIR, and why code generation relies on internal analysis helpers
 - clarify the import/module-translation workflow and link the new pipeline notes
 
+### CI
+
+- upload generated coverage reports to Codecov from the CI workflow
+
 ### Tests
 
 - extend code generation coverage for state-map decision paths and nested assignment tracking in generated code paths
