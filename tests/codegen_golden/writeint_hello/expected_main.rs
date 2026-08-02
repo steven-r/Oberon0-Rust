@@ -1,8 +1,12 @@
 // Generated from Oberon0 module `Main`.
 // Comments preserve the mapping between Oberon0 names and generated Rust bindings.
 
+#![allow(dead_code)]
+#![allow(unused_parens)]
+
 use std::collections::BTreeMap;
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 enum Value {
     Integer(i64),
@@ -22,19 +26,19 @@ fn value_longreal(value: f64) -> Value {
     Value::LongReal(value)
 }
 
-fn value_as_real(value: Value) -> Value {
+fn value_as_real(value: &Value) -> Value {
     match value {
-        Value::Integer(v) => Value::Real(v as f32),
-        Value::Real(v) => Value::Real(v),
-        Value::LongReal(v) => Value::Real(v as f32),
+        Value::Integer(v) => Value::Real(*v as f32),
+        Value::Real(v) => Value::Real(*v),
+        Value::LongReal(v) => Value::Real(*v as f32),
     }
 }
 
-fn value_as_integer(value: Value) -> Value {
+fn value_as_integer(value: &Value) -> Value {
     match value {
-        Value::Integer(v) => Value::Integer(v),
-        Value::Real(v) => Value::Integer(v as i64),
-        Value::LongReal(v) => Value::Integer(v as i64),
+        Value::Integer(v) => Value::Integer(*v),
+        Value::Real(v) => Value::Integer(*v as i64),
+        Value::LongReal(v) => Value::Integer(*v as i64),
     }
 }
 
@@ -62,111 +66,111 @@ fn print_value_ln(value: &Value) {
     }
 }
 
-fn value_add(lhs: Value, rhs: Value) -> Value {
+fn value_add(lhs: &Value, rhs: &Value) -> Value {
     match (lhs, rhs) {
-        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a + b),
-        (Value::Real(a), Value::Real(b)) => Value::Real(a + b),
-        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a + b),
-        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 + b),
-        (Value::Real(a), Value::Integer(b)) => Value::Real(a + b as f32),
-        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 + b),
-        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a + b as f64),
-        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 + b),
-        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a + b as f64),
+        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a + *b),
+        (Value::Real(a), Value::Real(b)) => Value::Real(*a + *b),
+        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a + *b),
+        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 + *b),
+        (Value::Real(a), Value::Integer(b)) => Value::Real(*a + *b as f32),
+        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 + *b),
+        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a + *b as f64),
+        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 + *b),
+        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a + *b as f64),
     }
 }
 
-fn value_sub(lhs: Value, rhs: Value) -> Value {
+fn value_sub(lhs: &Value, rhs: &Value) -> Value {
     match (lhs, rhs) {
-        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a - b),
-        (Value::Real(a), Value::Real(b)) => Value::Real(a - b),
-        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a - b),
-        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 - b),
-        (Value::Real(a), Value::Integer(b)) => Value::Real(a - b as f32),
-        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 - b),
-        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a - b as f64),
-        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 - b),
-        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a - b as f64),
+        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a - *b),
+        (Value::Real(a), Value::Real(b)) => Value::Real(*a - *b),
+        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a - *b),
+        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 - *b),
+        (Value::Real(a), Value::Integer(b)) => Value::Real(*a - *b as f32),
+        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 - *b),
+        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a - *b as f64),
+        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 - *b),
+        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a - *b as f64),
     }
 }
 
-fn value_mul(lhs: Value, rhs: Value) -> Value {
+fn value_mul(lhs: &Value, rhs: &Value) -> Value {
     match (lhs, rhs) {
-        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a * b),
-        (Value::Real(a), Value::Real(b)) => Value::Real(a * b),
-        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a * b),
-        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 * b),
-        (Value::Real(a), Value::Integer(b)) => Value::Real(a * b as f32),
-        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 * b),
-        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a * b as f64),
-        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 * b),
-        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a * b as f64),
+        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a * *b),
+        (Value::Real(a), Value::Real(b)) => Value::Real(*a * *b),
+        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a * *b),
+        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 * *b),
+        (Value::Real(a), Value::Integer(b)) => Value::Real(*a * *b as f32),
+        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 * *b),
+        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a * *b as f64),
+        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 * *b),
+        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a * *b as f64),
     }
 }
 
-fn value_div(lhs: Value, rhs: Value) -> Value {
+fn value_div(lhs: &Value, rhs: &Value) -> Value {
     match (lhs, rhs) {
-        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a / b),
-        (Value::Real(a), Value::Real(b)) => Value::Real(a / b),
-        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a / b),
-        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 / b),
-        (Value::Real(a), Value::Integer(b)) => Value::Real(a / b as f32),
-        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 / b),
-        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a / b as f64),
-        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 / b),
-        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a / b as f64),
+        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a / *b),
+        (Value::Real(a), Value::Real(b)) => Value::Real(*a / *b),
+        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a / *b),
+        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 / *b),
+        (Value::Real(a), Value::Integer(b)) => Value::Real(*a / *b as f32),
+        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 / *b),
+        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a / *b as f64),
+        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 / *b),
+        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a / *b as f64),
     }
 }
 
-fn value_neg(value: Value) -> Value {
+fn value_neg(value: &Value) -> Value {
     match value {
-        Value::Integer(v) => Value::Integer(-v),
-        Value::Real(v) => Value::Real(-v),
-        Value::LongReal(v) => Value::LongReal(-v),
+        Value::Integer(v) => Value::Integer(-*v),
+        Value::Real(v) => Value::Real(-*v),
+        Value::LongReal(v) => Value::LongReal(-*v),
     }
 }
 
-fn value_not(value: Value) -> Value {
+fn value_not(value: &Value) -> Value {
     match value {
-        Value::Integer(v) => Value::Integer(if v != 0 { 0 } else { 1 }),
-        Value::Real(v) => Value::Integer(if v != 0.0 { 0 } else { 1 }),
-        Value::LongReal(v) => Value::Integer(if v != 0.0 { 0 } else { 1 }),
+        Value::Integer(v) => Value::Integer(if *v != 0 { 0 } else { 1 }),
+        Value::Real(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),
+        Value::LongReal(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),
     }
 }
 
-fn value_and(lhs: Value, rhs: Value) -> Value {
-    Value::Integer(if value_truthy(&lhs) && value_truthy(&rhs) { 1 } else { 0 })
+fn value_and(lhs: &Value, rhs: &Value) -> Value {
+    Value::Integer(if value_truthy(lhs) && value_truthy(rhs) { 1 } else { 0 })
 }
 
-fn value_or(lhs: Value, rhs: Value) -> Value {
-    Value::Integer(if value_truthy(&lhs) || value_truthy(&rhs) { 1 } else { 0 })
+fn value_or(lhs: &Value, rhs: &Value) -> Value {
+    Value::Integer(if value_truthy(lhs) || value_truthy(rhs) { 1 } else { 0 })
 }
 
-fn value_mod(lhs: Value, rhs: Value) -> Value {
+fn value_mod(lhs: &Value, rhs: &Value) -> Value {
     match (lhs, rhs) {
-        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a % b),
-        (Value::Real(a), Value::Real(b)) => Value::Real(a % b),
-        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a % b),
-        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 % b),
-        (Value::Real(a), Value::Integer(b)) => Value::Real(a % b as f32),
-        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 % b),
-        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a % b as f64),
-        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 % b),
-        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a % b as f64),
+        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a % *b),
+        (Value::Real(a), Value::Real(b)) => Value::Real(*a % *b),
+        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a % *b),
+        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 % *b),
+        (Value::Real(a), Value::Integer(b)) => Value::Real(*a % *b as f32),
+        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 % *b),
+        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a % *b as f64),
+        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 % *b),
+        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a % *b as f64),
     }
 }
 
-fn value_bool_from_cmp(lhs: Value, rhs: Value, cmp: fn(f64, f64) -> bool) -> Value {
+fn value_bool_from_cmp(lhs: &Value, rhs: &Value, cmp: fn(f64, f64) -> bool) -> Value {
     match (lhs, rhs) {
-        (Value::Integer(a), Value::Integer(b)) => Value::Integer(if cmp(a as f64, b as f64) { 1 } else { 0 }),
-        (Value::Real(a), Value::Real(b)) => Value::Integer(if cmp(a as f64, b as f64) { 1 } else { 0 }),
-        (Value::LongReal(a), Value::LongReal(b)) => Value::Integer(if cmp(a, b) { 1 } else { 0 }),
-        (Value::Integer(a), Value::Real(b)) => Value::Integer(if cmp(a as f64, b as f64) { 1 } else { 0 }),
-        (Value::Real(a), Value::Integer(b)) => Value::Integer(if cmp(a as f64, b as f64) { 1 } else { 0 }),
-        (Value::Integer(a), Value::LongReal(b)) => Value::Integer(if cmp(a as f64, b) { 1 } else { 0 }),
-        (Value::LongReal(a), Value::Integer(b)) => Value::Integer(if cmp(a, b as f64) { 1 } else { 0 }),
-        (Value::Real(a), Value::LongReal(b)) => Value::Integer(if cmp(a as f64, b) { 1 } else { 0 }),
-        (Value::LongReal(a), Value::Real(b)) => Value::Integer(if cmp(a, b as f64) { 1 } else { 0 }),
+        (Value::Integer(a), Value::Integer(b)) => Value::Integer(if cmp(*a as f64, *b as f64) { 1 } else { 0 }),
+        (Value::Real(a), Value::Real(b)) => Value::Integer(if cmp(*a as f64, *b as f64) { 1 } else { 0 }),
+        (Value::LongReal(a), Value::LongReal(b)) => Value::Integer(if cmp(*a, *b) { 1 } else { 0 }),
+        (Value::Integer(a), Value::Real(b)) => Value::Integer(if cmp(*a as f64, *b as f64) { 1 } else { 0 }),
+        (Value::Real(a), Value::Integer(b)) => Value::Integer(if cmp(*a as f64, *b as f64) { 1 } else { 0 }),
+        (Value::Integer(a), Value::LongReal(b)) => Value::Integer(if cmp(*a as f64, *b) { 1 } else { 0 }),
+        (Value::LongReal(a), Value::Integer(b)) => Value::Integer(if cmp(*a, *b as f64) { 1 } else { 0 }),
+        (Value::Real(a), Value::LongReal(b)) => Value::Integer(if cmp(*a as f64, *b) { 1 } else { 0 }),
+        (Value::LongReal(a), Value::Real(b)) => Value::Integer(if cmp(*a, *b as f64) { 1 } else { 0 }),
     }
 }
 

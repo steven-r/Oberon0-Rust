@@ -138,6 +138,8 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str(
         "// Comments preserve the mapping between Oberon0 names and generated Rust bindings.\n\n",
     );
+    out.push_str("#![allow(dead_code)]\n");
+    out.push_str("#![allow(unused_parens)]\n\n");
     out.push_str("use std::collections::BTreeMap;\n\n");
 
     if io_usage.any() {
@@ -145,6 +147,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
         out.push_str("use std::sync::{Mutex, OnceLock};\n\n");
     }
 
+    out.push_str("#[allow(dead_code)]\n");
     out.push_str("#[derive(Clone, Debug, PartialEq)]\n");
     out.push_str("enum Value {\n");
     out.push_str("    Integer(i64),\n");
@@ -161,18 +164,18 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("fn value_longreal(value: f64) -> Value {\n");
     out.push_str("    Value::LongReal(value)\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_as_real(value: Value) -> Value {\n");
+    out.push_str("fn value_as_real(value: &Value) -> Value {\n");
     out.push_str("    match value {\n");
-    out.push_str("        Value::Integer(v) => Value::Real(v as f32),\n");
-    out.push_str("        Value::Real(v) => Value::Real(v),\n");
-    out.push_str("        Value::LongReal(v) => Value::Real(v as f32),\n");
+    out.push_str("        Value::Integer(v) => Value::Real(*v as f32),\n");
+    out.push_str("        Value::Real(v) => Value::Real(*v),\n");
+    out.push_str("        Value::LongReal(v) => Value::Real(*v as f32),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_as_integer(value: Value) -> Value {\n");
+    out.push_str("fn value_as_integer(value: &Value) -> Value {\n");
     out.push_str("    match value {\n");
-    out.push_str("        Value::Integer(v) => Value::Integer(v),\n");
-    out.push_str("        Value::Real(v) => Value::Integer(v as i64),\n");
-    out.push_str("        Value::LongReal(v) => Value::Integer(v as i64),\n");
+    out.push_str("        Value::Integer(v) => Value::Integer(*v),\n");
+    out.push_str("        Value::Real(v) => Value::Integer(*v as i64),\n");
+    out.push_str("        Value::LongReal(v) => Value::Integer(*v as i64),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_truthy(value: &Value) -> bool {\n");
@@ -196,102 +199,148 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::LongReal(v) => println!(\"{}\", v),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_add(lhs: Value, rhs: Value) -> Value {\n");
+    out.push_str("fn value_add(lhs: &Value, rhs: &Value) -> Value {\n");
     out.push_str("    match (lhs, rhs) {\n");
-    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a + b),\n");
-    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(a + b),\n");
-    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a + b),\n");
-    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 + b),\n");
-    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(a + b as f32),\n");
-    out.push_str("        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 + b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a + b as f64),\n");
-    out.push_str("        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 + b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a + b as f64),\n");
+    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a + *b),\n");
+    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(*a + *b),\n");
+    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a + *b),\n");
+    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 + *b),\n");
+    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(*a + *b as f32),\n");
+    out.push_str(
+        "        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 + *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a + *b as f64),\n",
+    );
+    out.push_str(
+        "        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 + *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a + *b as f64),\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_sub(lhs: Value, rhs: Value) -> Value {\n");
+    out.push_str("fn value_sub(lhs: &Value, rhs: &Value) -> Value {\n");
     out.push_str("    match (lhs, rhs) {\n");
-    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a - b),\n");
-    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(a - b),\n");
-    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a - b),\n");
-    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 - b),\n");
-    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(a - b as f32),\n");
-    out.push_str("        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 - b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a - b as f64),\n");
-    out.push_str("        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 - b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a - b as f64),\n");
+    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a - *b),\n");
+    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(*a - *b),\n");
+    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a - *b),\n");
+    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 - *b),\n");
+    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(*a - *b as f32),\n");
+    out.push_str(
+        "        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 - *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a - *b as f64),\n",
+    );
+    out.push_str(
+        "        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 - *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a - *b as f64),\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_mul(lhs: Value, rhs: Value) -> Value {\n");
+    out.push_str("fn value_mul(lhs: &Value, rhs: &Value) -> Value {\n");
     out.push_str("    match (lhs, rhs) {\n");
-    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a * b),\n");
-    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(a * b),\n");
-    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a * b),\n");
-    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 * b),\n");
-    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(a * b as f32),\n");
-    out.push_str("        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 * b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a * b as f64),\n");
-    out.push_str("        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 * b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a * b as f64),\n");
+    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a * *b),\n");
+    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(*a * *b),\n");
+    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a * *b),\n");
+    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 * *b),\n");
+    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(*a * *b as f32),\n");
+    out.push_str(
+        "        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 * *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a * *b as f64),\n",
+    );
+    out.push_str(
+        "        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 * *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a * *b as f64),\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_div(lhs: Value, rhs: Value) -> Value {\n");
+    out.push_str("fn value_div(lhs: &Value, rhs: &Value) -> Value {\n");
     out.push_str("    match (lhs, rhs) {\n");
-    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a / b),\n");
-    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(a / b),\n");
-    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a / b),\n");
-    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 / b),\n");
-    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(a / b as f32),\n");
-    out.push_str("        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 / b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a / b as f64),\n");
-    out.push_str("        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 / b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a / b as f64),\n");
+    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a / *b),\n");
+    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(*a / *b),\n");
+    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a / *b),\n");
+    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 / *b),\n");
+    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(*a / *b as f32),\n");
+    out.push_str(
+        "        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 / *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a / *b as f64),\n",
+    );
+    out.push_str(
+        "        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 / *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a / *b as f64),\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_neg(value: Value) -> Value {\n");
+    out.push_str("fn value_neg(value: &Value) -> Value {\n");
     out.push_str("    match value {\n");
-    out.push_str("        Value::Integer(v) => Value::Integer(-v),\n");
-    out.push_str("        Value::Real(v) => Value::Real(-v),\n");
-    out.push_str("        Value::LongReal(v) => Value::LongReal(-v),\n");
+    out.push_str("        Value::Integer(v) => Value::Integer(-*v),\n");
+    out.push_str("        Value::Real(v) => Value::Real(-*v),\n");
+    out.push_str("        Value::LongReal(v) => Value::LongReal(-*v),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_not(value: Value) -> Value {\n");
+    out.push_str("fn value_not(value: &Value) -> Value {\n");
     out.push_str("    match value {\n");
-    out.push_str("        Value::Integer(v) => Value::Integer(if v != 0 { 0 } else { 1 }),\n");
-    out.push_str("        Value::Real(v) => Value::Integer(if v != 0.0 { 0 } else { 1 }),\n");
-    out.push_str("        Value::LongReal(v) => Value::Integer(if v != 0.0 { 0 } else { 1 }),\n");
+    out.push_str("        Value::Integer(v) => Value::Integer(if *v != 0 { 0 } else { 1 }),\n");
+    out.push_str("        Value::Real(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),\n");
+    out.push_str("        Value::LongReal(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_and(lhs: Value, rhs: Value) -> Value {\n");
-    out.push_str("    Value::Integer(if value_truthy(&lhs) && value_truthy(&rhs) { 1 } else { 0 })\n");
+    out.push_str("fn value_and(lhs: &Value, rhs: &Value) -> Value {\n");
+    out.push_str(
+        "    Value::Integer(if value_truthy(lhs) && value_truthy(rhs) { 1 } else { 0 })\n",
+    );
     out.push_str("}\n\n");
-    out.push_str("fn value_or(lhs: Value, rhs: Value) -> Value {\n");
-    out.push_str("    Value::Integer(if value_truthy(&lhs) || value_truthy(&rhs) { 1 } else { 0 })\n");
+    out.push_str("fn value_or(lhs: &Value, rhs: &Value) -> Value {\n");
+    out.push_str(
+        "    Value::Integer(if value_truthy(lhs) || value_truthy(rhs) { 1 } else { 0 })\n",
+    );
     out.push_str("}\n\n");
-    out.push_str("fn value_mod(lhs: Value, rhs: Value) -> Value {\n");
+    out.push_str("fn value_mod(lhs: &Value, rhs: &Value) -> Value {\n");
     out.push_str("    match (lhs, rhs) {\n");
-    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(a % b),\n");
-    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(a % b),\n");
-    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(a % b),\n");
-    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(a as f32 % b),\n");
-    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(a % b as f32),\n");
-    out.push_str("        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(a as f64 % b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(a % b as f64),\n");
-    out.push_str("        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(a as f64 % b),\n");
-    out.push_str("        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(a % b as f64),\n");
+    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(*a % *b),\n");
+    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Real(*a % *b),\n");
+    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::LongReal(*a % *b),\n");
+    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Real(*a as f32 % *b),\n");
+    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Real(*a % *b as f32),\n");
+    out.push_str(
+        "        (Value::Integer(a), Value::LongReal(b)) => Value::LongReal(*a as f64 % *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Integer(b)) => Value::LongReal(*a % *b as f64),\n",
+    );
+    out.push_str(
+        "        (Value::Real(a), Value::LongReal(b)) => Value::LongReal(*a as f64 % *b),\n",
+    );
+    out.push_str(
+        "        (Value::LongReal(a), Value::Real(b)) => Value::LongReal(*a % *b as f64),\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n\n");
-    out.push_str("fn value_bool_from_cmp(lhs: Value, rhs: Value, cmp: fn(f64, f64) -> bool) -> Value {\n");
+    out.push_str(
+        "fn value_bool_from_cmp(lhs: &Value, rhs: &Value, cmp: fn(f64, f64) -> bool) -> Value {\n",
+    );
     out.push_str("    match (lhs, rhs) {\n");
-    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(if cmp(a as f64, b as f64) { 1 } else { 0 }),\n");
-    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Integer(if cmp(a as f64, b as f64) { 1 } else { 0 }),\n");
-    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::Integer(if cmp(a, b) { 1 } else { 0 }),\n");
-    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Integer(if cmp(a as f64, b as f64) { 1 } else { 0 }),\n");
-    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Integer(if cmp(a as f64, b as f64) { 1 } else { 0 }),\n");
-    out.push_str("        (Value::Integer(a), Value::LongReal(b)) => Value::Integer(if cmp(a as f64, b) { 1 } else { 0 }),\n");
-    out.push_str("        (Value::LongReal(a), Value::Integer(b)) => Value::Integer(if cmp(a, b as f64) { 1 } else { 0 }),\n");
-    out.push_str("        (Value::Real(a), Value::LongReal(b)) => Value::Integer(if cmp(a as f64, b) { 1 } else { 0 }),\n");
-    out.push_str("        (Value::LongReal(a), Value::Real(b)) => Value::Integer(if cmp(a, b as f64) { 1 } else { 0 }),\n");
+    out.push_str("        (Value::Integer(a), Value::Integer(b)) => Value::Integer(if cmp(*a as f64, *b as f64) { 1 } else { 0 }),\n");
+    out.push_str("        (Value::Real(a), Value::Real(b)) => Value::Integer(if cmp(*a as f64, *b as f64) { 1 } else { 0 }),\n");
+    out.push_str("        (Value::LongReal(a), Value::LongReal(b)) => Value::Integer(if cmp(*a, *b) { 1 } else { 0 }),\n");
+    out.push_str("        (Value::Integer(a), Value::Real(b)) => Value::Integer(if cmp(*a as f64, *b as f64) { 1 } else { 0 }),\n");
+    out.push_str("        (Value::Real(a), Value::Integer(b)) => Value::Integer(if cmp(*a as f64, *b as f64) { 1 } else { 0 }),\n");
+    out.push_str("        (Value::Integer(a), Value::LongReal(b)) => Value::Integer(if cmp(*a as f64, *b) { 1 } else { 0 }),\n");
+    out.push_str("        (Value::LongReal(a), Value::Integer(b)) => Value::Integer(if cmp(*a, *b as f64) { 1 } else { 0 }),\n");
+    out.push_str("        (Value::Real(a), Value::LongReal(b)) => Value::Integer(if cmp(*a as f64, *b) { 1 } else { 0 }),\n");
+    out.push_str("        (Value::LongReal(a), Value::Real(b)) => Value::Integer(if cmp(*a, *b as f64) { 1 } else { 0 }),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
@@ -412,7 +461,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
         }
 
         if io_usage.uses_write_real {
-            out.push_str("fn write_real(value: Value) {\n");
+            out.push_str("fn write_real(value: &Value) {\n");
             out.push_str("    match value {\n");
             out.push_str("        Value::Real(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::Integer(v) => print!(\"{}\", v),\n");
@@ -422,7 +471,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
         }
 
         if io_usage.uses_write_longreal {
-            out.push_str("fn write_longreal(value: Value) {\n");
+            out.push_str("fn write_longreal(value: &Value) {\n");
             out.push_str("    match value {\n");
             out.push_str("        Value::Real(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::Integer(v) => print!(\"{}\", v),\n");
@@ -435,7 +484,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("fn runtime_state_string(vars: &BTreeMap<String, Value>) -> String {\n");
     out.push_str("    let entries = vars\n");
     out.push_str("        .iter()\n");
-    out.push_str("        .map(|(name, value)| format!(\"{:?}: {}\", name, value_to_string(value)))\n");
+    out.push_str(
+        "        .map(|(name, value)| format!(\"{:?}: {}\", name, value_to_string(value)))\n",
+    );
     out.push_str("        .collect::<Vec<_>>()\n");
     out.push_str("        .join(\", \");\n");
     out.push_str("    format!(\"{{{}}}\", entries)\n");
@@ -490,14 +541,18 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     let mut module_types = HashMap::new();
     for declaration in &module.declarations {
         match declaration {
-            HDeclaration::Var { id, declared_type, .. } => {
+            HDeclaration::Var {
+                id, declared_type, ..
+            } => {
                 if let Some(runtime_type) = runtime_type_from_type_ref(declared_type.as_ref()) {
                     module_types.insert(*id, runtime_type);
                 }
             }
             HDeclaration::Procedure { params, .. } => {
                 for param in params {
-                    if let Some(runtime_type) = runtime_type_from_type_ref(param.declared_type.as_ref()) {
+                    if let Some(runtime_type) =
+                        runtime_type_from_type_ref(param.declared_type.as_ref())
+                    {
                         module_types.insert(param.id, runtime_type);
                     }
                 }
@@ -826,7 +881,11 @@ fn format_procedure(
         ));
         out.push_str("    #[allow(unused_assignments)]\n");
         let local_type = procedure_ctx_types(&ctx, local.id);
-        out.push_str(&format!("    let mut local_{}: Value = {};\n", local.id, default_literal(local_type)));
+        out.push_str(&format!(
+            "    let mut local_{}: Value = {};\n",
+            local.id,
+            default_literal(local_type)
+        ));
         if emit_state {
             out.push_str(&format!(
                 "    set_procedure_var(vars, \"{}\", \"{}\", &local_{});\n",
@@ -869,9 +928,7 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
             } else {
                 format!(
                     "{}vars.insert(\"{}\".to_string(), {});\n",
-                    indent,
-                    target.name,
-                    rendered_value
+                    indent, target.name, rendered_value
                 )
             }
         }
@@ -892,7 +949,7 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
             } else if name.name == "WriteReal" {
                 match args.first() {
                     Some(first) => format!(
-                        "{}write_real({});\n",
+                        "{}write_real(&{});\n",
                         indent,
                         format_top_level_expr(first, ctx)
                     ),
@@ -901,7 +958,7 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
             } else if name.name == "WriteLongReal" {
                 match args.first() {
                     Some(first) => format!(
-                        "{}write_longreal({});\n",
+                        "{}write_longreal(&{});\n",
                         indent,
                         format_top_level_expr(first, ctx)
                     ),
@@ -1039,12 +1096,12 @@ fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
                 "eof()".to_string()
             } else if name.name == "FLT" {
                 match args.first() {
-                    Some(arg) => format!("value_as_real({})", format_expr(arg, ctx)),
+                    Some(arg) => format!("value_as_real(&{})", format_expr(arg, ctx)),
                     None => "value_real(0.0)".to_string(),
                 }
             } else if name.name == "FLOOR" {
                 match args.first() {
-                    Some(arg) => format!("value_as_integer({})", format_expr(arg, ctx)),
+                    Some(arg) => format!("value_as_integer(&{})", format_expr(arg, ctx)),
                     None => "value_integer(0)".to_string(),
                 }
             } else {
@@ -1063,32 +1120,35 @@ fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
             let rendered = format_expr(value, ctx);
             match op {
                 UnaryOp::Plus => rendered,
-                UnaryOp::Minus => format!("value_neg({})", rendered),
-                UnaryOp::Not => format!("value_not({})", rendered),
+                UnaryOp::Minus => format!("value_neg(&{})", rendered),
+                UnaryOp::Not => format!("value_not(&{})", rendered),
             }
         }
-        HExpr::Binary { op, left, right } => {
-            format_binary_expr(*op, &format_expr(left, ctx), &format_expr(right, ctx), true)
-        }
+        HExpr::Binary { op, left, right } => format_binary_expr(
+            *op,
+            &format_expr(left, ctx),
+            &format_expr(right, ctx),
+            false,
+        ),
     }
 }
 
 fn format_binary_expr(op: BinaryOp, left: &str, right: &str, wrap: bool) -> String {
     let rendered = match op {
-        BinaryOp::Add => format!("value_add({}, {})", left, right),
-        BinaryOp::Sub => format!("value_sub({}, {})", left, right),
-        BinaryOp::Or => format!("value_or({}, {})", left, right),
-        BinaryOp::Mul => format!("value_mul({}, {})", left, right),
-        BinaryOp::Div => format!("value_div({}, {})", left, right),
-        BinaryOp::IntDiv => format!("value_div({}, {})", left, right),
-        BinaryOp::Mod => format!("value_mod({}, {})", left, right),
-        BinaryOp::And => format!("value_and({}, {})", left, right),
-        BinaryOp::Eq => format!("value_bool_from_cmp({}, {}, |a, b| a == b)", left, right),
-        BinaryOp::Ne => format!("value_bool_from_cmp({}, {}, |a, b| a != b)", left, right),
-        BinaryOp::Lt => format!("value_bool_from_cmp({}, {}, |a, b| a < b)", left, right),
-        BinaryOp::Le => format!("value_bool_from_cmp({}, {}, |a, b| a <= b)", left, right),
-        BinaryOp::Gt => format!("value_bool_from_cmp({}, {}, |a, b| a > b)", left, right),
-        BinaryOp::Ge => format!("value_bool_from_cmp({}, {}, |a, b| a >= b)", left, right),
+        BinaryOp::Add => format!("value_add(&{}, &{})", left, right),
+        BinaryOp::Sub => format!("value_sub(&{}, &{})", left, right),
+        BinaryOp::Or => format!("value_or(&{}, &{})", left, right),
+        BinaryOp::Mul => format!("value_mul(&{}, &{})", left, right),
+        BinaryOp::Div => format!("value_div(&{}, &{})", left, right),
+        BinaryOp::IntDiv => format!("value_div(&{}, &{})", left, right),
+        BinaryOp::Mod => format!("value_mod(&{}, &{})", left, right),
+        BinaryOp::And => format!("value_and(&{}, &{})", left, right),
+        BinaryOp::Eq => format!("value_bool_from_cmp(&{}, &{}, |a, b| a == b)", left, right),
+        BinaryOp::Ne => format!("value_bool_from_cmp(&{}, &{}, |a, b| a != b)", left, right),
+        BinaryOp::Lt => format!("value_bool_from_cmp(&{}, &{}, |a, b| a < b)", left, right),
+        BinaryOp::Le => format!("value_bool_from_cmp(&{}, &{}, |a, b| a <= b)", left, right),
+        BinaryOp::Gt => format!("value_bool_from_cmp(&{}, &{}, |a, b| a > b)", left, right),
+        BinaryOp::Ge => format!("value_bool_from_cmp(&{}, &{}, |a, b| a >= b)", left, right),
     };
 
     if wrap {

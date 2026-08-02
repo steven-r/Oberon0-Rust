@@ -62,7 +62,9 @@ fn emits_procedure_function_and_call_from_main() {
     );
     assert!(generated.contains("/// Implements the Oberon0 procedure `AddAndPrint`."));
     assert!(generated.contains("/// - `param_2` corresponds to the Oberon0 parameter `a`."));
-    assert!(generated.contains("fn AddAndPrint(vars: &mut BTreeMap<String, Value>, param_2: Value)"));
+    assert!(
+        generated.contains("fn AddAndPrint(vars: &mut BTreeMap<String, Value>, param_2: Value)")
+    );
     assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"a\", &param_2);"));
     assert!(generated.contains("// Local variable backing the Oberon0 `x` binding."));
     assert!(generated.contains("let mut local_3: Value = value_integer(0);"));
@@ -137,8 +139,51 @@ fn binary_top_level_expr_is_not_wrapped_with_outer_parentheses() {
 
     let generated = generate_main_rs(&module, false);
     assert!(generated.contains("vars.insert(\"x\".to_string(),"));
-    assert!(generated.contains("value_add(value_integer(1),"));
-    assert!(generated.contains("value_mul(value_integer(2), value_integer(3))"));
+    assert!(generated.contains("value_add(&value_integer(1),"));
+    assert!(generated.contains("value_mul(&value_integer(2), &value_integer(3))"));
+}
+
+#[test]
+fn nested_binary_expressions_do_not_add_unnecessary_parentheses() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![HStatement::Assign {
+            target: ident(10, "x", SymbolKind::Variable),
+            value: HExpr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(HExpr::Integer(1)),
+                right: Box::new(HExpr::Binary {
+                    op: BinaryOp::Mul,
+                    left: Box::new(HExpr::Integer(2)),
+                    right: Box::new(HExpr::Integer(3)),
+                }),
+            },
+        }],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains(
+        "value_add(&value_integer(1), &value_mul(&value_integer(2), &value_integer(3)))"
+    ));
+    assert!(!generated.contains("value_add(value_integer(1), (value_mul"));
+}
+
+#[test]
+fn generated_runtime_helpers_are_marked_for_dead_code_suppression() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains("#![allow(dead_code)]"));
+    assert!(generated.contains("#[allow(dead_code)]\n#[derive(Clone, Debug, PartialEq)]"));
 }
 
 #[test]
@@ -178,9 +223,9 @@ fn emits_extended_unary_and_binary_operators() {
 
     let generated = generate_main_rs(&module, false);
     assert!(generated.contains("value_not("));
-    assert!(generated.contains("value_or(value_integer(1), value_integer(0))"));
+    assert!(generated.contains("value_or(&value_integer(1), &value_integer(0))"));
     assert!(generated.contains("value_mod("));
-    assert!(generated.contains("value_div(value_neg(value_integer(7)), value_integer(2))"));
+    assert!(generated.contains("value_div(&value_neg(&value_integer(7)), &value_integer(2))"));
     assert!(generated.contains("value_and("));
 }
 
@@ -244,18 +289,44 @@ fn emits_relational_operators_as_boolean_i64() {
     };
 
     let generated = generate_main_rs(&module, false);
-    assert!(generated.contains("value_bool_from_cmp(value_integer(1), value_integer(1), |a, b| a == b)"));
-    assert!(generated.contains("value_bool_from_cmp(value_integer(1), value_integer(2), |a, b| a != b)"));
-    assert!(generated.contains("value_bool_from_cmp(value_integer(2), value_integer(3), |a, b| a < b)"));
-    assert!(generated.contains("value_bool_from_cmp(value_integer(2), value_integer(2), |a, b| a <= b)"));
-    assert!(generated.contains("value_bool_from_cmp(value_integer(3), value_integer(2), |a, b| a > b)"));
-    assert!(generated.contains("value_bool_from_cmp(value_integer(3), value_integer(3), |a, b| a >= b)"));
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(1), &value_integer(1), |a, b| a == b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(1), &value_integer(2), |a, b| a != b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(2), &value_integer(3), |a, b| a < b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(2), &value_integer(2), |a, b| a <= b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(3), &value_integer(2), |a, b| a > b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(3), &value_integer(3), |a, b| a >= b)")
+    );
 }
 
 #[test]
 fn expr_needs_state_map_tracks_variable_reads_in_nested_expressions() {
-    assert!(super::expr_needs_state_map(&HExpr::Name(ident(2, "x", SymbolKind::Variable))));
-    assert!(!super::expr_needs_state_map(&HExpr::Name(ident(3, "C", SymbolKind::Constant))));
+    assert!(super::expr_needs_state_map(&HExpr::Name(ident(
+        2,
+        "x",
+        SymbolKind::Variable
+    ))));
+    assert!(!super::expr_needs_state_map(&HExpr::Name(ident(
+        3,
+        "C",
+        SymbolKind::Constant
+    ))));
     assert!(super::expr_needs_state_map(&HExpr::Binary {
         op: BinaryOp::Add,
         left: Box::new(HExpr::Name(ident(2, "x", SymbolKind::Variable))),
@@ -395,10 +466,12 @@ END Main.
     let generated = generate_main_rs(&hir, false);
     assert!(generated.contains("fn read_real() -> Value"));
     assert!(generated.contains("fn read_longreal() -> Value"));
-    assert!(generated.contains("fn write_real(value: Value)"));
-    assert!(generated.contains("fn write_longreal(value: Value)"));
-    assert!(generated.contains("write_real(x);") || generated.contains("write_real(get_var"));
-    assert!(generated.contains("write_longreal(y);") || generated.contains("write_longreal(get_var"));
+    assert!(generated.contains("fn write_real(value: &Value)"));
+    assert!(generated.contains("fn write_longreal(value: &Value)"));
+    assert!(generated.contains("write_real(&x);") || generated.contains("write_real(&get_var"));
+    assert!(
+        generated.contains("write_longreal(&y);") || generated.contains("write_longreal(&get_var")
+    );
 }
 
 #[test]
@@ -633,7 +706,9 @@ fn resolves_module_constants_in_generated_expressions() {
     };
 
     let generated = generate_main_rs(&module, true);
-    assert!(generated.contains("vars.insert(\"x\".to_string(), value_add(value_integer(10), value_integer(2)));"));
+    assert!(generated.contains(
+        "vars.insert(\"x\".to_string(), value_add(&value_integer(10), &value_integer(2)));"
+    ));
     assert!(!generated.contains("get_var(&vars, \"BASE\")"));
 }
 
