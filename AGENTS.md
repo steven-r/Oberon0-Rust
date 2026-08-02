@@ -33,6 +33,7 @@ This repository uses the following persistent collaboration rules:
 - Run cargo test for behavior-affecting changes.
 - Ensure pre-commit hooks pass.
 - Keep repository examples runnable when touched.
+- Ensure source code coverage is >90%, better would be 95% (local and overall)
 
 ## Source of Truth
 

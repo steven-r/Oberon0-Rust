@@ -40,6 +40,7 @@ This file is the single source of truth for team-level working agreements.
 - Run cargo test for behavior-affecting changes.
 - Ensure pre-commit hooks pass.
 - Keep repository examples runnable when touched.
+- Ensure source code coverage is >90%, better would be 95% (local and overall)
 
 ## Current Known Limitation
 
