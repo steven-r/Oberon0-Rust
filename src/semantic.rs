@@ -299,6 +299,7 @@ fn validate_const_expression_literal(declaration: &Declaration) -> Result<()> {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn type_ref_name_for_error(type_ref: &TypeRef) -> String {
     match type_ref {
         TypeRef::Integer => "INTEGER".to_string(),
@@ -318,6 +319,7 @@ fn type_ref_name_for_error(type_ref: &TypeRef) -> String {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn format_expr_for_error(expr: &Expr) -> String {
     match expr {
         Expr::Integer(v) => v.to_string(),
