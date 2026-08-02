@@ -51,9 +51,7 @@ fn build_module(module_pair: Pair<Rule>) -> Result<Module> {
 
     let (statements, end_name_pair) = if begin_pair.as_rule() == Rule::stmt_list {
         let stmts = parse_stmt_list(begin_pair)?;
-        let end_name_pair = inner
-            .next()
-            .context("Unexpected end after statements")?;
+        let end_name_pair = inner.next().context("Unexpected end after statements")?;
         (stmts, end_name_pair)
     } else {
         (Vec::new(), begin_pair)
@@ -109,16 +107,12 @@ fn parse_procedure_decl(decl: Pair<Rule>) -> Result<Declaration> {
 
     if next.as_rule() == Rule::formal_params {
         params = parse_formal_params(next)?;
-        next = parts
-            .next()
-            .context("Missing procedure body or END name")?;
+        next = parts.next().context("Missing procedure body or END name")?;
     }
 
     while next.as_rule() == Rule::var_section {
         local_vars.extend(parse_local_var_section(next)?);
-        next = parts
-            .next()
-            .context("Missing procedure body or END name")?;
+        next = parts.next().context("Missing procedure body or END name")?;
     }
 
     let (body, end_name_pair) = if next.as_rule() == Rule::stmt_list {
@@ -146,7 +140,9 @@ fn parse_local_var_section(section: Pair<Rule>) -> Result<Vec<LocalVarDecl>> {
 
     for item in section.into_inner() {
         let mut parts = item.into_inner();
-        let ident_list = parts.next().context("Missing procedure-local variable names")?;
+        let ident_list = parts
+            .next()
+            .context("Missing procedure-local variable names")?;
         let declared_type = parts
             .next()
             .map(|pair| parse_type_ref_name(pair.as_str().to_string()));
@@ -170,7 +166,9 @@ fn parse_formal_params(params: Pair<Rule>) -> Result<Vec<ParamDecl>> {
     let mut out = Vec::new();
     for section in params.into_inner() {
         let mut parts = section.into_inner();
-        let first = parts.next().context("Procedure parameter section is missing")?;
+        let first = parts
+            .next()
+            .context("Procedure parameter section is missing")?;
 
         let (is_var, ident_list_pair) = if first.as_rule() == Rule::var_modifier {
             (
@@ -209,10 +207,7 @@ fn parse_const_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
         let mut parts = item.into_inner();
         let name = take_ident(parts.next(), "constant name")?;
         let value_pair = parts.next().context("Missing constant value")?;
-        let value = value_pair
-            .as_str()
-            .parse::<i64>()
-            .with_context(|| format!("Invalid integer: {}", value_pair.as_str()))?;
+        let value = parse_expr(value_pair)?;
         out.push(Declaration::Const { name, value });
     }
 
@@ -233,11 +228,17 @@ fn parse_type_section(section: Pair<Rule>) -> Result<Vec<Declaration>> {
 
         if type_ref_pair.as_rule() == Rule::export_marker {
             is_exported = true;
-            type_ref_pair = parts.next().context("Missing type reference after export marker")?;
+            type_ref_pair = parts
+                .next()
+                .context("Missing type reference after export marker")?;
         }
 
         let target = parse_type_ref(type_ref_pair)?;
-        out.push(Declaration::Type { name, target, is_exported });
+        out.push(Declaration::Type {
+            name,
+            target,
+            is_exported,
+        });
     }
 
     Ok(out)
@@ -402,9 +403,7 @@ fn parse_simple_expr(expr: Pair<Rule>) -> Result<Expr> {
     let mut next = inner.next().context("Empty simple expression")?;
     if next.as_rule() == Rule::unary_sign {
         unary_sign = Some(parse_unary_sign(next)?);
-        next = inner
-            .next()
-            .context("Missing term after unary sign")?;
+        next = inner.next().context("Missing term after unary sign")?;
     }
 
     let mut left = parse_term(next)?;
@@ -470,12 +469,10 @@ fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
         .context("Empty primary factor")?;
 
     match inner.as_rule() {
-        Rule::integer => {
-            let value = inner
-                .as_str()
-                .parse::<i64>()
-                .with_context(|| format!("Invalid integer: {}", inner.as_str()))?;
-            Ok(Expr::Integer(value))
+        Rule::number => parse_number(inner),
+        Rule::boolean_literal => {
+            let value = inner.as_str() == "TRUE";
+            Ok(Expr::Boolean(value))
         }
         Rule::string => Ok(Expr::String(parse_pascal_string(inner.as_str())?)),
         Rule::call_or_var => {
@@ -494,14 +491,121 @@ fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
                 Ok(Expr::Call { module, name, args })
             } else {
                 match module {
-                    Some(mod_name) => Ok(Expr::QualifiedVariable { module: mod_name, name }),
+                    Some(mod_name) => Ok(Expr::QualifiedVariable {
+                        module: mod_name,
+                        name,
+                    }),
                     None => Ok(Expr::Variable(name)),
                 }
             }
         }
-        Rule::ident => Ok(Expr::Variable(inner.as_str().to_string())),
         Rule::expr => parse_expr(inner),
         _ => bail!("Unknown primary factor: {:?}", inner.as_rule()),
+    }
+}
+
+fn parse_number(number: Pair<Rule>) -> Result<Expr> {
+    let inner = number
+        .into_inner()
+        .next()
+        .context("Empty numeric literal")?;
+
+    match inner.as_rule() {
+        Rule::integer => {
+            let value = inner
+                .as_str()
+                .parse::<i64>()
+                .with_context(|| format!("Invalid integer: {}", inner.as_str()))?;
+            Ok(Expr::Integer(value))
+        }
+        Rule::real => parse_real_literal(inner.as_str()),
+        _ => bail!("Unknown numeric literal: {:?}", inner.as_rule()),
+    }
+}
+
+fn parse_real_literal(raw: &str) -> Result<Expr> {
+    let scale_pos = raw.find(['E', 'D']).unwrap_or(raw.len());
+    let base_text = &raw[..scale_pos];
+    let scale_text = if scale_pos < raw.len() {
+        &raw[scale_pos + 1..]
+    } else {
+        ""
+    };
+
+    let dot_pos = base_text
+        .find('.')
+        .context("Real literal is missing decimal point")?;
+    let whole_text = &base_text[..dot_pos];
+    let fractional_text = &base_text[dot_pos + 1..];
+
+    let mut value = whole_text
+        .parse::<f64>()
+        .with_context(|| format!("Invalid real literal mantissa: {}", whole_text))?;
+
+    if !fractional_text.is_empty() {
+        let fraction = fractional_text
+            .parse::<f64>()
+            .with_context(|| format!("Invalid real literal fraction: {}", fractional_text))?;
+        value += fraction / 10f64.powi(fractional_text.len().try_into().unwrap_or(0));
+    }
+
+    let exponent = if scale_text.is_empty() {
+        0
+    } else {
+        let mut chars = scale_text.chars();
+        let sign = match chars.next() {
+            Some('+') => 1,
+            Some('-') => -1,
+            Some(other) => {
+                let mut digits = String::new();
+                digits.push(other);
+                digits.extend(chars);
+                return parse_real_literal_with_exponent(
+                    &digits,
+                    value,
+                    raw.ends_with('D') || raw.ends_with('d'),
+                );
+            }
+            None => 1,
+        };
+
+        let digits = chars.collect::<String>();
+        let parsed = digits
+            .parse::<i32>()
+            .with_context(|| format!("Invalid real literal exponent: {}", scale_text))?;
+        parsed * sign
+    };
+
+    let scaled_value = if exponent == 0 {
+        value
+    } else {
+        value * 10f64.powi(exponent)
+    };
+
+    let is_long_real = raw.contains('D') || raw.contains('d');
+
+    if is_long_real {
+        Ok(Expr::LongReal(scaled_value))
+    } else {
+        Ok(Expr::Real(scaled_value as f32))
+    }
+}
+
+fn parse_real_literal_with_exponent(
+    exponent_text: &str,
+    base_value: f64,
+    is_long_real: bool,
+) -> Result<Expr> {
+    let exponent = exponent_text
+        .parse::<i32>()
+        .with_context(|| format!("Invalid real literal exponent: {}", exponent_text))?;
+
+    let scaled_value = base_value * 10f64.powi(exponent);
+
+    if is_long_real {
+        Ok(Expr::LongReal(scaled_value))
+    } else {
+        Ok(Expr::Real(scaled_value as f32))
     }
 }
 
@@ -546,7 +650,10 @@ fn parse_qualified_ident(pair: Pair<Rule>) -> Result<(Option<String>, String)> {
 }
 
 fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeRef> {
-    let qualified = pair.into_inner().next().context("Missing qualified_ident in type_ref")?;
+    let qualified = pair
+        .into_inner()
+        .next()
+        .context("Missing qualified_ident in type_ref")?;
     let (module, name) = parse_qualified_ident(qualified)?;
 
     match name.as_str() {
@@ -554,16 +661,13 @@ fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeRef> {
         "BOOLEAN" if module.is_none() => Ok(TypeRef::Boolean),
         "REAL" if module.is_none() => Ok(TypeRef::Real),
         "LONGREAL" if module.is_none() => Ok(TypeRef::LongReal),
-        _ => {
-            match module {
-                Some(mod_name) => {
-                    Ok(TypeRef::Qualified { module: mod_name, name })
-                },
-                None => {
-                    Ok(TypeRef::Named(name))
-                },
-            }
-        }
+        _ => match module {
+            Some(mod_name) => Ok(TypeRef::Qualified {
+                module: mod_name,
+                name,
+            }),
+            None => Ok(TypeRef::Named(name)),
+        },
     }
 }
 
@@ -578,7 +682,10 @@ fn parse_type_ref_name(name: String) -> TypeRef {
             if let Some(dot_pos) = name.find('.') {
                 let module = name[..dot_pos].to_string();
                 let type_name = name[dot_pos + 1..].to_string();
-                TypeRef::Qualified { module, name: type_name }
+                TypeRef::Qualified {
+                    module,
+                    name: type_name,
+                }
             } else {
                 TypeRef::Named(name)
             }
@@ -692,8 +799,12 @@ mod tests {
     fn repair_parser_invalid_case(name: &str, source: &str) -> String {
         match name {
             "bad_assign.ob0" => replace_required(source, "x = 1;", "x := 1;"),
-            "bad_const_decl.ob0" => replace_required(source, "CONST answer 42;", "CONST answer = 42;"),
-            "bad_string_literal.ob0" => replace_required(source, "WriteString(\"Hello)", "WriteString(\"Hello\")"),
+            "bad_const_decl.ob0" => {
+                replace_required(source, "CONST answer 42;", "CONST answer = 42;")
+            }
+            "bad_string_literal.ob0" => {
+                replace_required(source, "WriteString(\"Hello)", "WriteString(\"Hello\")")
+            }
             "bad_string_literal_embedded_quote.ob0" => replace_required(
                 source,
                 "WriteString(\"Hello \"Oberon\"\")",
@@ -704,9 +815,15 @@ mod tests {
                 "WriteString(\"Hello,\nOberon\")",
                 "WriteString(\"Hello, Oberon\")",
             ),
-            "import_leading_dot_module.ob0" => replace_required(source, "IMPORT .Module;", "IMPORT ModuleB;"),
+            "import_leading_dot_module.ob0" => {
+                replace_required(source, "IMPORT .Module;", "IMPORT ModuleB;")
+            }
             "if_call_condition.ob0" => replace_required(source, "IF WriteInt(1 THEN", "IF 1 THEN"),
-            "if_missing_end.ob0" => replace_required(source, "WriteInt(1)\nEND Main.", "WriteInt(1)\n  END\nEND Main."),
+            "if_missing_end.ob0" => replace_required(
+                source,
+                "WriteInt(1)\nEND Main.",
+                "WriteInt(1)\n  END\nEND Main.",
+            ),
             "missing_module_dot.ob0" => format!("{}.", source.trim_end()),
             "operator_div_missing_rhs.ob0" => {
                 replace_required(source, "x := 7 DIV", "x := 7 DIV 2")
@@ -714,15 +831,13 @@ mod tests {
             "operator_not_missing_operand.ob0" => {
                 replace_required(source, "flag := ~", "flag := ~flag")
             }
-            "qualified_member_missing_name.ob0" => {
-                replace_required(source, "B.", "B")
-            }
-            "relational_missing_rhs.ob0" => {
-                replace_required(source, "b := 1 =", "b := 1 = 1")
-            }
-            "procedure_missing_semicolon.ob0" => {
-                replace_required(source, "PROCEDURE P(x)\nBEGIN", "PROCEDURE P(x);\nBEGIN")
-            }
+            "qualified_member_missing_name.ob0" => replace_required(source, "B.", "B"),
+            "relational_missing_rhs.ob0" => replace_required(source, "b := 1 =", "b := 1 = 1"),
+            "procedure_missing_semicolon.ob0" => replace_required(
+                source,
+                "PROCEDURE P(x: INTEGER)\nBEGIN",
+                "PROCEDURE P(x: INTEGER);\nBEGIN",
+            ),
             other => panic!("missing parser invalid repair mapping for {other}"),
         }
     }
@@ -730,29 +845,53 @@ mod tests {
     fn repair_semantic_invalid_case(name: &str, source: &str) -> String {
         match name {
             "assignment_string_literal.ob0" => replace_required(source, "\"Hello\"", "42"),
-            "duplicate_import_alias.ob0" => replace_required(source, "IMPORT IO, IO;", "IMPORT IO;"),
+            "duplicate_import_alias.ob0" => {
+                replace_required(source, "IMPORT IO, IO;", "IMPORT IO;")
+            }
             "duplicate_type_decl.ob0" => replace_required(
                 source,
                 "TYPE Count = INTEGER;\nTYPE Count = INTEGER;",
                 "TYPE Count = INTEGER;\nTYPE CountAlias = INTEGER;",
             ),
-            "duplicate_var_decl.ob0" => replace_required(source, "VAR x, x: INTEGER;", "VAR x, y: INTEGER;"),
+            "duplicate_var_decl.ob0" => {
+                replace_required(source, "VAR x, x: INTEGER;", "VAR x, y: INTEGER;")
+            }
             "end_name_mismatch.ob0" => replace_required(source, "END NotMain.", "END Main."),
             "eof_with_arg.ob0" => replace_required(source, "EOF(1)", "EOF()"),
-            "if_undefined_condition.ob0" => replace_required(source, "IF unknown THEN", "IF 1 THEN"),
+            "if_undefined_condition.ob0" => {
+                replace_required(source, "IF unknown THEN", "IF TRUE THEN")
+            }
+            "boolean_assignment_type_mismatch.ob0" => {
+                replace_required(source, "x := flag", "x := 1")
+            }
+            "boolean_parameter_type_mismatch.ob0" => {
+                replace_required(source, "ExpectFlag(TRUE)", "ExpectFlag(FALSE)")
+            }
+            "boolean_repeat_condition_mismatch.ob0" => {
+                replace_required(source, "WHILE 1 DO", "WHILE TRUE DO")
+            }
+            "condition_requires_boolean.ob0" => {
+                replace_required(source, "IF x THEN", "IF TRUE THEN")
+            }
             "operator_div_requires_integer.ob0" => {
                 replace_required(source, "x := src DIV 2", "x := 7 DIV 2")
             }
             "operator_not_requires_boolean.ob0" => replace_required(source, "b := ~1", "b := ~b"),
-            "operator_or_requires_boolean.ob0" => replace_required(source, "b := 1 OR 0", "b := b OR b"),
+            "operator_or_requires_boolean.ob0" => {
+                replace_required(source, "b := 1 OR 0", "b := b OR b")
+            }
             "operator_unary_sign_requires_numeric.ob0" => {
                 replace_required(source, "x := +flag", "x := +1")
             }
             "relational_requires_numeric.ob0" => {
                 replace_required(source, "b1 := b1 < b2", "b1 := 1 < 1")
             }
-            "procedure_call_arity_mismatch.ob0" => replace_required(source, "AddAndPrint(2)", "AddAndPrint(2, 3)"),
-            "procedure_end_name_mismatch.ob0" => replace_required(source, "END WrongName;", "END Echo;"),
+            "procedure_call_arity_mismatch.ob0" => {
+                replace_required(source, "AddAndPrint(2)", "AddAndPrint(2, 3)")
+            }
+            "procedure_end_name_mismatch.ob0" => {
+                replace_required(source, "END WrongName;", "END Echo;")
+            }
             "procedure_local_var_self_shadows_type_alias.ob0" => {
                 replace_required(source, "VAR Count: Count;", "VAR value: Count;")
             }
@@ -768,7 +907,7 @@ mod tests {
             "qualified_type_reference_unsupported.ob0" => {
                 replace_required(source, "VAR x: B.IntType;", "VAR x: INTEGER;")
             }
-            "readint_statement_call.ob0" => r#"
+            "readint_statement_call.ob0" | "ReadInt_statement_call.ob0" => r#"
 MODULE Main;
 VAR x: INTEGER;
 BEGIN
@@ -776,9 +915,15 @@ BEGIN
 END Main.
 "#
             .to_string(),
-            "typed_assignment_bool_to_integer.ob0" => replace_required(source, "x := flag", "x := 1"),
-            "typed_assignment_real_to_integer.ob0" => replace_required(source, "x := src", "x := 1"),
-            "typed_boolean_arithmetic.ob0" => replace_required(source, "x := flag + 1", "x := 1 + 1"),
+            "typed_assignment_bool_to_integer.ob0" => {
+                replace_required(source, "x := flag", "x := 1")
+            }
+            "typed_assignment_real_to_integer.ob0" => {
+                replace_required(source, "x := src", "x := 1")
+            }
+            "typed_boolean_arithmetic.ob0" => {
+                replace_required(source, "x := flag + 1", "x := 1 + 1")
+            }
             "typed_param_self_shadows_type_alias.ob0" => {
                 let repaired = replace_required(
                     source,
@@ -796,7 +941,9 @@ END Main.
                 replace_required(&repaired, "WriteInt(INTEGER)", "WriteInt(value)")
             }
             "typed_param_type_mismatch.ob0" => replace_required(source, "UseInt(x)", "UseInt(1)"),
-            "typed_var_unknown_type.ob0" => replace_required(source, "VAR x: Missing;", "VAR x: INTEGER;"),
+            "typed_var_unknown_type.ob0" => {
+                replace_required(source, "VAR x: Missing;", "VAR x: INTEGER;")
+            }
             "undeclared_assignment_target.ob0" => r#"
 MODULE Main;
 VAR y: INTEGER;
@@ -816,20 +963,77 @@ BEGIN
 END Main.
 "#
             .to_string(),
-            "while_undefined_in_body.ob0" => replace_required(source, "x := y - 1", "x := x - 1"),
-            "writeint_string_literal.ob0" => replace_required(source, "WriteInt(\"Hello\")", "WriteInt(1)"),
-            "writeln_with_arg.ob0" => replace_required(source, "WriteLn(1)", "WriteLn()"),
-            "writestring_missing_arg.ob0" => replace_required(source, "WriteString", "WriteString(\"Hello\")"),
-            "writestring_non_string_arg.ob0" => replace_required(source, "WriteString(1)", "WriteString(\"1\")"),
-            "writestring_too_many_args.ob0" => {
-                replace_required(source, "WriteString(\"Hello\", \"World\")", "WriteString(\"Hello\")")
+            "while_undefined_in_body.ob0" => {
+                let repaired = replace_required(source, "WHILE x DO", "WHILE x > 0 DO");
+                replace_required(&repaired, "x := y - 1", "x := x - 1")
             }
-            "qualified_call_unknown_alias.ob0" => replace_required(source, "C.HELLO()", "B.HELLO()"),
-            "qualified_type_reference_non_exported.ob0" => replace_required(source, "B.HiddenType", "B.IntType"),
+            "writeint_string_literal.ob0" | "WriteInt_string_literal.ob0" => {
+                replace_required(source, "WriteInt(\"Hello\")", "WriteInt(1)")
+            }
+            "writeln_with_arg.ob0" => replace_required(source, "WriteLn(1)", "WriteLn()"),
+            "writestring_missing_arg.ob0" | "WriteString_missing_arg.ob0" => {
+                replace_required(source, "WriteString", "WriteString(\"Hello\")")
+            }
+            "writestring_non_string_arg.ob0" | "WriteString_non_string_arg.ob0" => {
+                replace_required(source, "WriteString(1)", "WriteString(\"1\")")
+            }
+            "writestring_too_many_args.ob0" | "WriteString_too_many_args.ob0" => replace_required(
+                source,
+                "WriteString(\"Hello\", \"World\")",
+                "WriteString(\"Hello\")",
+            ),
+            "qualified_call_unknown_alias.ob0" => {
+                replace_required(source, "C.HELLO()", "B.HELLO()")
+            }
+            "qualified_type_reference_non_exported.ob0" => {
+                replace_required(source, "B.HiddenType", "B.IntType")
+            }
             "qualified_variable_reference_unsupported.ob0" => {
                 replace_required(source, "x := B.value", "x := 1")
             }
             other => panic!("missing semantic invalid repair mapping for {other}"),
+        }
+    }
+
+    #[test]
+    fn parses_real_literals_with_scale_factors() {
+        let module = parse_module(
+            r#"
+MODULE Main;
+BEGIN
+    x := 12.3;
+    y := 4.567E8;
+    z := 0.57712566D-6
+END Main.
+"#,
+        )
+        .expect("real literals should parse");
+
+        let statements = module.statements;
+        assert_eq!(statements.len(), 3);
+
+        match &statements[0] {
+            Statement::Assign { value, .. } => match value {
+                Expr::Real(value) => assert!((value - 12.3).abs() < 0.0001),
+                other => panic!("expected first assignment to parse as REAL, got {other:?}"),
+            },
+            other => panic!("expected assignment statement, got {other:?}"),
+        }
+
+        match &statements[1] {
+            Statement::Assign { value, .. } => match value {
+                Expr::Real(value) => assert!((value - 456700000.0).abs() < 1.0),
+                other => panic!("expected scientific REAL literal to parse, got {other:?}"),
+            },
+            other => panic!("expected assignment statement, got {other:?}"),
+        }
+
+        match &statements[2] {
+            Statement::Assign { value, .. } => match value {
+                Expr::LongReal(value) => assert!((value - 0.00000057712566).abs() < 1e-16),
+                other => panic!("expected D-scale literal to parse as LONGREAL, got {other:?}"),
+            },
+            other => panic!("expected assignment statement, got {other:?}"),
         }
     }
 
@@ -860,14 +1064,10 @@ END Main.
             let base = strip_invalid_header_comment(&source);
             let repaired = repair_parser_invalid_case(&name, &base);
             scan(&repaired).unwrap_or_else(|err| {
-                panic!(
-                    "expected repaired parser case {name} to scan successfully, got: {err}"
-                )
+                panic!("expected repaired parser case {name} to scan successfully, got: {err}")
             });
             parse_module(&repaired).unwrap_or_else(|err| {
-                panic!(
-                    "expected repaired parser case {name} to parse successfully, got: {err}"
-                )
+                panic!("expected repaired parser case {name} to parse successfully, got: {err}")
             });
         }
     }
@@ -875,10 +1075,12 @@ END Main.
     #[test]
     fn semantic_valid_corpus_passes() {
         for (name, source) in read_dir_sources("tests/semantic_cases/valid") {
-            scan(&source)
-                .unwrap_or_else(|err| panic!("expected valid scan for semantic case {name}, got: {err}"));
-            let module = parse_module(&source)
-                .unwrap_or_else(|err| panic!("expected parse for semantic case {name}, got: {err}"));
+            scan(&source).unwrap_or_else(|err| {
+                panic!("expected valid scan for semantic case {name}, got: {err}")
+            });
+            let module = parse_module(&source).unwrap_or_else(|err| {
+                panic!("expected parse for semantic case {name}, got: {err}")
+            });
             analyze(&module, None).unwrap_or_else(|err| {
                 panic!("expected semantic success for {name}, got error: {err}")
             });
@@ -888,8 +1090,9 @@ END Main.
     #[test]
     fn semantic_invalid_corpus_fails() {
         for (name, source) in read_dir_sources("tests/semantic_cases/invalid") {
-            let module = parse_module(&source)
-                .unwrap_or_else(|err| panic!("expected parse for semantic case {name}, got: {err}"));
+            let module = parse_module(&source).unwrap_or_else(|err| {
+                panic!("expected parse for semantic case {name}, got: {err}")
+            });
             let result = analyze(&module, None);
             assert!(
                 result.is_err(),
@@ -904,14 +1107,10 @@ END Main.
             let base = strip_invalid_header_comment(&source);
             let repaired = repair_semantic_invalid_case(&name, &base);
             scan(&repaired).unwrap_or_else(|err| {
-                panic!(
-                    "expected repaired semantic case {name} to scan successfully, got: {err}"
-                )
+                panic!("expected repaired semantic case {name} to scan successfully, got: {err}")
             });
             let module = parse_module(&repaired).unwrap_or_else(|err| {
-                panic!(
-                    "expected repaired semantic case {name} to parse successfully, got: {err}"
-                )
+                panic!("expected repaired semantic case {name} to parse successfully, got: {err}")
             });
             analyze(&module, None).unwrap_or_else(|err| {
                 panic!(
@@ -953,15 +1152,17 @@ END Main.
             let manifest_path = path.join("oberon.toml");
             let manifest = if manifest_path.is_file() {
                 Some(
-                    ExternalManifest::from_file(&manifest_path)
-                        .unwrap_or_else(|err| panic!("example {name} manifest should load: {err:#}")),
+                    ExternalManifest::from_file(&manifest_path).unwrap_or_else(|err| {
+                        panic!("example {name} manifest should load: {err:#}")
+                    }),
                 )
             } else {
                 None
             };
 
-            analyze(&module, manifest.as_ref())
-                .unwrap_or_else(|err| panic!("example {name} should pass semantic analysis: {err}"));
+            analyze(&module, manifest.as_ref()).unwrap_or_else(|err| {
+                panic!("example {name} should pass semantic analysis: {err}")
+            });
         }
     }
 
@@ -1031,9 +1232,7 @@ END Main.
             .iter()
             .find_map(|decl| match decl {
                 crate::ast::Declaration::Procedure {
-                    name,
-                    is_exported,
-                    ..
+                    name, is_exported, ..
                 } => Some((name, is_exported)),
                 _ => None,
             })
@@ -1056,12 +1255,7 @@ END Main.
         )
         .expect("module with qualified names should parse");
 
-        let Statement::Call {
-            module,
-            name,
-            args,
-        } = &parsed.statements[0]
-        else {
+        let Statement::Call { module, name, args } = &parsed.statements[0] else {
             panic!("expected first statement to be a call");
         };
         assert_eq!(module.as_deref(), Some("B"));
@@ -1139,10 +1333,19 @@ END Main.
             panic!("expected top-level binary expression");
         };
         assert!(matches!(op, BinaryOp::Add));
-        assert!(matches!(left.as_ref(), Expr::Unary { op: UnaryOp::Minus, .. }));
+        assert!(matches!(
+            left.as_ref(),
+            Expr::Unary {
+                op: UnaryOp::Minus,
+                ..
+            }
+        ));
         assert!(matches!(
             right.as_ref(),
-            Expr::Binary { op: BinaryOp::Mod, .. }
+            Expr::Binary {
+                op: BinaryOp::Mod,
+                ..
+            }
         ));
 
         let Statement::Assign { value, .. } = &module.statements[1] else {
@@ -1152,8 +1355,20 @@ END Main.
             panic!("expected boolean binary expression");
         };
         assert!(matches!(op, BinaryOp::And));
-        assert!(matches!(left.as_ref(), Expr::Unary { op: UnaryOp::Not, .. }));
-        assert!(matches!(right.as_ref(), Expr::Binary { op: BinaryOp::Or, .. }));
+        assert!(matches!(
+            left.as_ref(),
+            Expr::Unary {
+                op: UnaryOp::Not,
+                ..
+            }
+        ));
+        assert!(matches!(
+            right.as_ref(),
+            Expr::Binary {
+                op: BinaryOp::Or,
+                ..
+            }
+        ));
     }
 
     #[test]

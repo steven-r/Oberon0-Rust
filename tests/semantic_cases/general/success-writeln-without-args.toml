@@ -1,0 +1,8 @@
+name = "write line without args"
+code = """
+MODULE Main;
+BEGIN
+    WriteLn()
+END Main.
+"""
+is_success = true

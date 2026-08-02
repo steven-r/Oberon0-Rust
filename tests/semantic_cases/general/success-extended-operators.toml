@@ -1,0 +1,15 @@
+name = "extended operators with valid types"
+code = """
+MODULE Main;
+VAR x: INTEGER;
+VAR y: INTEGER;
+VAR b1: BOOLEAN;
+VAR b2: BOOLEAN;
+BEGIN
+    x := -1 + (+2) * (7 DIV 3);
+    y := 7 MOD 3;
+    b1 := ~b1;
+    b2 := b1 & b2
+END Main.
+"""
+is_success = true

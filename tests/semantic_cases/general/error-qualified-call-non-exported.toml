@@ -1,0 +1,10 @@
+name = "non-exported qualified call"
+code = """
+  MODULE Main;
+  IMPORT B := ModuleB;
+BEGIN
+  B.HiddenProc
+END Main.
+"""
+result.code = "E014"
+result.messages = [ "is not exported from module" ]

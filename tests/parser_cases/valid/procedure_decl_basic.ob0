@@ -1,5 +1,5 @@
 MODULE Main;
-PROCEDURE PrintTwice(x);
+PROCEDURE PrintTwice(x: INTEGER);
 BEGIN
   WriteInt(x);
   WriteInt(x)

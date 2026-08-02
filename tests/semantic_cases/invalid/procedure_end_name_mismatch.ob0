@@ -1,6 +1,6 @@
 (* INVALID: procedure END name does not match PROCEDURE name *)
 MODULE Main;
-PROCEDURE Echo(x);
+PROCEDURE Echo(x: INTEGER);
 BEGIN
   WriteInt(x)
 END WrongName;

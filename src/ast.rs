@@ -91,7 +91,7 @@ pub enum Statement {
 /// Top-level declarations currently recognized by the compiler.
 pub enum Declaration {
     /// Constant declaration with an integer literal value.
-    Const { name: String, value: i64 },
+    Const { name: String, value: Expr },
     /// Named type alias declaration.
     Type {
         name: String,
@@ -119,12 +119,18 @@ pub enum Declaration {
 pub enum Expr {
     /// Integer literal.
     Integer(i64),
+    Real(f32),
+    LongReal(f64),
+    Boolean(bool),
     /// String literal using Pascal-style doubled quotes for embedded `"` characters.
     String(String),
     /// Reference to an identifier before semantic resolution.
     Variable(String),
     /// Qualified variable reference (e.g., B.T).
-    QualifiedVariable { module: String, name: String },
+    QualifiedVariable {
+        module: String,
+        name: String,
+    },
     /// Function-like call expression.
     Call {
         module: Option<String>,
@@ -144,7 +150,72 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+impl Expr {
+    /// Returns `true` if the expression is a literal (integer, real, long real, boolean, or string).
+    pub fn is_literal(&self) -> bool {
+        matches!(
+            self,
+            Expr::Integer(_)
+                | Expr::Real(_)
+                | Expr::LongReal(_)
+                | Expr::Boolean(_)
+                | Expr::String(_)
+        )
+    }
+}
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Expr::Integer(a), Expr::Integer(b)) => a == b,
+            (Expr::Real(a), Expr::Real(b)) => a == b,
+            (Expr::LongReal(a), Expr::LongReal(b)) => a == b,
+            (Expr::Boolean(a), Expr::Boolean(b)) => a == b,
+            (Expr::String(a), Expr::String(b)) => a == b,
+            (Expr::Variable(a), Expr::Variable(b)) => a == b,
+            (
+                Expr::QualifiedVariable {
+                    module: m1,
+                    name: n1,
+                },
+                Expr::QualifiedVariable {
+                    module: m2,
+                    name: n2,
+                },
+            ) => m1 == m2 && n1 == n2,
+            (
+                Expr::Call {
+                    module: m1,
+                    name: n1,
+                    args: a1,
+                },
+                Expr::Call {
+                    module: m2,
+                    name: n2,
+                    args: a2,
+                },
+            ) => m1 == m2 && n1 == n2 && a1 == a2,
+            (Expr::Unary { op: op1, value: v1 }, Expr::Unary { op: op2, value: v2 }) => {
+                op1 == op2 && v1 == v2
+            }
+            (
+                Expr::Binary {
+                    op: op1,
+                    left: l1,
+                    right: r1,
+                },
+                Expr::Binary {
+                    op: op2,
+                    left: l2,
+                    right: r2,
+                },
+            ) => op1 == op2 && l1 == l2 && r1 == r2,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 /// Supported binary operators in the current subset grammar.
 pub enum BinaryOp {
     Add,
@@ -166,7 +237,166 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Supported unary operators in the current subset.
 pub enum UnaryOp {
+    /// Unary plus operator (no effect on the value).
     Plus,
+    /// Unary minus operator (negates the value).
     Minus,
+    /// Logical negation operator (inverts boolean value).
     Not,
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests {
+    use super::{BinaryOp, Expr, UnaryOp};
+
+    #[test]
+    fn expr_is_literal_detects_literal_and_non_literal_nodes() {
+        assert!(Expr::Integer(42).is_literal());
+        assert!(Expr::Real(3.5).is_literal());
+        assert!(Expr::LongReal(4.5).is_literal());
+        assert!(Expr::Boolean(true).is_literal());
+        assert!(Expr::String("hello".to_string()).is_literal());
+
+        assert!(!Expr::Variable("value".to_string()).is_literal());
+        assert!(
+            !Expr::QualifiedVariable {
+                module: "M".to_string(),
+                name: "value".to_string(),
+            }
+            .is_literal()
+        );
+        assert!(
+            !Expr::Call {
+                module: None,
+                name: "f".to_string(),
+                args: vec![],
+            }
+            .is_literal()
+        );
+        assert!(
+            !Expr::Unary {
+                op: UnaryOp::Not,
+                value: Box::new(Expr::Boolean(true)),
+            }
+            .is_literal()
+        );
+        assert!(
+            !Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Integer(1)),
+                right: Box::new(Expr::Integer(2)),
+            }
+            .is_literal()
+        );
+    }
+
+    #[test]
+    fn expr_equality_matches_all_supported_expression_variants() {
+        assert_eq!(Expr::Integer(1), Expr::Integer(1));
+        assert_ne!(Expr::Integer(1), Expr::Integer(2));
+        assert_eq!(Expr::Real(1.5), Expr::Real(1.5));
+        assert_ne!(Expr::Real(1.5), Expr::Real(2.5));
+        assert_eq!(Expr::LongReal(1.25), Expr::LongReal(1.25));
+        assert_ne!(Expr::LongReal(1.25), Expr::LongReal(2.25));
+        assert_eq!(Expr::Boolean(true), Expr::Boolean(true));
+        assert_ne!(Expr::Boolean(true), Expr::Boolean(false));
+        assert_eq!(Expr::String("x".to_string()), Expr::String("x".to_string()));
+        assert_ne!(Expr::String("x".to_string()), Expr::String("y".to_string()));
+
+        assert_eq!(
+            Expr::Variable("name".to_string()),
+            Expr::Variable("name".to_string())
+        );
+        assert_ne!(
+            Expr::Variable("name".to_string()),
+            Expr::Variable("other".to_string())
+        );
+
+        assert_eq!(
+            Expr::QualifiedVariable {
+                module: "M".to_string(),
+                name: "name".to_string(),
+            },
+            Expr::QualifiedVariable {
+                module: "M".to_string(),
+                name: "name".to_string(),
+            }
+        );
+        assert_ne!(
+            Expr::QualifiedVariable {
+                module: "M".to_string(),
+                name: "name".to_string(),
+            },
+            Expr::QualifiedVariable {
+                module: "N".to_string(),
+                name: "name".to_string(),
+            }
+        );
+
+        let call = Expr::Call {
+            module: Some("M".to_string()),
+            name: "f".to_string(),
+            args: vec![Expr::Integer(1)],
+        };
+        assert_eq!(
+            call,
+            Expr::Call {
+                module: Some("M".to_string()),
+                name: "f".to_string(),
+                args: vec![Expr::Integer(1)],
+            }
+        );
+        assert_ne!(
+            call,
+            Expr::Call {
+                module: Some("M".to_string()),
+                name: "g".to_string(),
+                args: vec![Expr::Integer(1)],
+            }
+        );
+
+        let unary = Expr::Unary {
+            op: UnaryOp::Minus,
+            value: Box::new(Expr::Integer(3)),
+        };
+        assert_eq!(
+            unary,
+            Expr::Unary {
+                op: UnaryOp::Minus,
+                value: Box::new(Expr::Integer(3)),
+            }
+        );
+        assert_ne!(
+            unary,
+            Expr::Unary {
+                op: UnaryOp::Plus,
+                value: Box::new(Expr::Integer(3)),
+            }
+        );
+
+        let binary = Expr::Binary {
+            op: BinaryOp::Add,
+            left: Box::new(Expr::Integer(1)),
+            right: Box::new(Expr::Integer(2)),
+        };
+        assert_eq!(
+            binary,
+            Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Integer(1)),
+                right: Box::new(Expr::Integer(2)),
+            }
+        );
+        assert_ne!(
+            binary,
+            Expr::Binary {
+                op: BinaryOp::Sub,
+                left: Box::new(Expr::Integer(1)),
+                right: Box::new(Expr::Integer(2)),
+            }
+        );
+
+        assert_ne!(Expr::Integer(1), Expr::Boolean(true));
+    }
 }

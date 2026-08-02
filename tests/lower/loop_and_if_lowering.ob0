@@ -1,0 +1,11 @@
+MODULE Main;
+VAR
+  x: INTEGER;
+BEGIN
+  IF x > 0 THEN
+    x := x + 1
+  END;
+  WHILE x < 5 DO
+    x := x + 1
+  END
+END Main.

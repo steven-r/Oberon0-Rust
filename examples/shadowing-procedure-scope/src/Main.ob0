@@ -1,6 +1,6 @@
 MODULE Main;
 VAR x, y: INTEGER;
-PROCEDURE Mix(x);
+PROCEDURE Mix(x: INTEGER);
 BEGIN
   y := x + 1;
   WriteInt(x);

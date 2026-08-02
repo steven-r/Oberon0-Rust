@@ -159,7 +159,10 @@ mod tests {
         let has_while = tokens.iter().any(|t| matches!(t.token, Token::KwWhile));
         let has_do = tokens.iter().any(|t| matches!(t.token, Token::KwDo));
 
-        assert!(has_procedure, "scanner should tokenize PROCEDURE as a keyword");
+        assert!(
+            has_procedure,
+            "scanner should tokenize PROCEDURE as a keyword"
+        );
         assert!(has_if, "scanner should tokenize IF as a keyword");
         assert!(has_then, "scanner should tokenize THEN as a keyword");
         assert!(has_while, "scanner should tokenize WHILE as a keyword");
@@ -180,14 +183,19 @@ mod tests {
         assert!(tokens.iter().any(|t| matches!(t.token, Token::Minus)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::Hash)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::LessEqual)));
-        assert!(tokens.iter().any(|t| matches!(t.token, Token::GreaterEqual)));
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t.token, Token::GreaterEqual))
+        );
         assert!(tokens.iter().any(|t| matches!(t.token, Token::Less)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::Greater)));
     }
 
     #[test]
     fn scans_declaration_keywords_as_keywords() {
-        let source = "MODULE Main; CONST BASE = 10; TYPE Count = INTEGER; VAR x: Count; BEGIN END Main.";
+        let source =
+            "MODULE Main; CONST BASE = 10; TYPE Count = INTEGER; VAR x: Count; BEGIN END Main.";
         let tokens = scan(source).expect("scanner should accept declaration keywords");
 
         assert!(tokens.iter().any(|t| matches!(t.token, Token::KwModule)));

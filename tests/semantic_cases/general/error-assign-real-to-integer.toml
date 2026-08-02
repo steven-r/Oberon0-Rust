@@ -1,0 +1,11 @@
+name = "assign real to integer"
+code = """
+MODULE Main;
+VAR src: REAL;
+VAR x: INTEGER;
+BEGIN
+    x := src
+END Main.
+"""
+result.code = "E012"
+result.messages = ["cannot assign REAL to INTEGER 'x'"]

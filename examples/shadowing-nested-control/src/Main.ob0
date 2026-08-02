@@ -1,10 +1,10 @@
 MODULE Main;
 VAR x, sum: INTEGER;
-PROCEDURE Walk(x);
+PROCEDURE Walk(x: INTEGER);
 BEGIN
   sum := 0;
-  WHILE x DO
-    IF x - 1 THEN
+  WHILE x > 0 DO
+    IF x > 1 THEN
       sum := sum + x
     ELSE
       sum := sum + 100

@@ -1,6 +1,6 @@
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
-use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result};
 
@@ -107,7 +107,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
         "// Generated from Oberon0 module `{}`.\n",
         module.name
     ));
-    out.push_str("// Comments preserve the mapping between Oberon0 names and generated Rust bindings.\n\n");
+    out.push_str(
+        "// Comments preserve the mapping between Oberon0 names and generated Rust bindings.\n\n",
+    );
     out.push_str("use std::collections::BTreeMap;\n\n");
 
     if io_usage.any() {
@@ -117,7 +119,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
 
     out.push_str("/// Returns the current value of a module-level Oberon0 variable.\n");
     out.push_str("///\n");
-    out.push_str("/// Generated programs keep module state in `vars`, keyed by the original Oberon0 name.\n");
+    out.push_str(
+        "/// Generated programs keep module state in `vars`, keyed by the original Oberon0 name.\n",
+    );
     out.push_str("#[allow(dead_code)]\n");
     out.push_str("fn get_var(vars: &BTreeMap<String, i64>, name: &str) -> i64 {\n");
     out.push_str("    *vars.get(name).unwrap_or(&0)\n");
@@ -218,10 +222,15 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
         }
     }
 
-    out.push_str(&format!("/// Executes the Oberon0 module `{}`.\n", module.name));
+    out.push_str(&format!(
+        "/// Executes the Oberon0 module `{}`.\n",
+        module.name
+    ));
     out.push_str("fn main() {\n");
     if needs_runtime_state {
-        out.push_str("    // Runtime state keeps module variables and optional procedure-local snapshots.\n");
+        out.push_str(
+            "    // Runtime state keeps module variables and optional procedure-local snapshots.\n",
+        );
         out.push_str("    let mut vars: BTreeMap<String, i64> = BTreeMap::new();\n");
     }
 
@@ -229,7 +238,11 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
         locals: HashMap::new(),
         constants: module_constants,
         procedures: &procedure_names,
-        vars_arg: if needs_runtime_state { "&mut vars" } else { "&mut BTreeMap::new()" },
+        vars_arg: if needs_runtime_state {
+            "&mut vars"
+        } else {
+            "&mut BTreeMap::new()"
+        },
         procedure_name: None,
         track_procedure_locals: false,
     };
@@ -250,7 +263,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
 
 struct FormatContext<'a> {
     locals: HashMap<usize, String>,
-    constants: HashMap<usize, i64>,
+    constants: HashMap<usize, &'a HExpr>,
     procedures: &'a HashSet<String>,
     vars_arg: &'a str,
     procedure_name: Option<&'a str>,
@@ -275,12 +288,12 @@ fn collect_procedure_names(module: &HModule) -> HashSet<String> {
         .collect()
 }
 
-fn collect_module_constants(module: &HModule) -> HashMap<usize, i64> {
+fn collect_module_constants(module: &HModule) -> HashMap<usize, &HExpr> {
     module
         .declarations
         .iter()
         .filter_map(|decl| match decl {
-            HDeclaration::Const { id, value, .. } => Some((*id, *value)),
+            HDeclaration::Const { id, value, .. } => Some((*id, value)),
             _ => None,
         })
         .collect()
@@ -295,10 +308,11 @@ fn statements_need_state_map(stmts: &[HStatement], procedure_names: &HashSet<Str
 fn statement_needs_state_map(stmt: &HStatement, procedure_names: &HashSet<String>) -> bool {
     match stmt {
         HStatement::Assign { .. } => true,
-        HStatement::Call { module: _, name, args } => {
-            procedure_names.contains(&name.name)
-                || args.iter().any(expr_needs_state_map)
-        }
+        HStatement::Call {
+            module: _,
+            name,
+            args,
+        } => procedure_names.contains(&name.name) || args.iter().any(expr_needs_state_map),
         HStatement::If {
             condition,
             then_branch,
@@ -318,11 +332,17 @@ fn statement_needs_state_map(stmt: &HStatement, procedure_names: &HashSet<String
 
 fn expr_needs_state_map(expr: &HExpr) -> bool {
     match expr {
-        HExpr::Integer(_) | HExpr::String(_) => false,
+        HExpr::Integer(_)
+        | HExpr::String(_)
+        | HExpr::LongReal(_)
+        | HExpr::Real(_)
+        | HExpr::Boolean(_) => false,
         HExpr::Name(ident) => ident.kind != crate::symbols::SymbolKind::Constant,
         HExpr::Call { args, .. } => args.iter().any(expr_needs_state_map),
         HExpr::Unary { value, .. } => expr_needs_state_map(value),
-        HExpr::Binary { left, right, .. } => expr_needs_state_map(left) || expr_needs_state_map(right),
+        HExpr::Binary { left, right, .. } => {
+            expr_needs_state_map(left) || expr_needs_state_map(right)
+        }
     }
 }
 
@@ -354,9 +374,9 @@ fn statements_io_usage(stmts: &[HStatement]) -> IoUsage {
 fn statement_io_usage(stmt: &HStatement) -> IoUsage {
     match stmt {
         HStatement::Assign { value, .. } => expr_io_usage(value),
-        HStatement::Call { args, .. } => args
-            .iter()
-            .fold(IoUsage::default(), |acc, arg| merge_io_usage(acc, expr_io_usage(arg))),
+        HStatement::Call { args, .. } => args.iter().fold(IoUsage::default(), |acc, arg| {
+            merge_io_usage(acc, expr_io_usage(arg))
+        }),
         HStatement::If {
             condition,
             then_branch,
@@ -377,7 +397,12 @@ fn statement_io_usage(stmt: &HStatement) -> IoUsage {
 
 fn expr_io_usage(expr: &HExpr) -> IoUsage {
     match expr {
-        HExpr::Integer(_) | HExpr::String(_) | HExpr::Name(_) => IoUsage::default(),
+        HExpr::Integer(_)
+        | HExpr::String(_)
+        | HExpr::Name(_)
+        | HExpr::LongReal(_)
+        | HExpr::Real(_)
+        | HExpr::Boolean(_) => IoUsage::default(),
         HExpr::Call { name, args } => {
             let mut usage = IoUsage {
                 uses_read_int: name.name == "ReadInt",
@@ -417,10 +442,9 @@ fn statement_assigns_id(stmt: &HStatement, ident_id: usize) -> bool {
                         .any(|nested| statement_assigns_id(nested, ident_id))
                 })
         }
-        HStatement::While { body, .. } => {
-            body.iter()
-                .any(|nested| statement_assigns_id(nested, ident_id))
-        }
+        HStatement::While { body, .. } => body
+            .iter()
+            .any(|nested| statement_assigns_id(nested, ident_id)),
     }
 }
 
@@ -429,7 +453,7 @@ fn format_procedure(
     params: &[HParam],
     local_vars: &[HResolvedIdent],
     body: &[HStatement],
-    constants: &HashMap<usize, i64>,
+    constants: &HashMap<usize, &HExpr>,
     procedure_names: &HashSet<String>,
     emit_state: bool,
 ) -> String {
@@ -458,7 +482,10 @@ fn format_procedure(
         track_procedure_locals: emit_state,
     };
 
-    out.push_str(&format!("/// Implements the Oberon0 procedure `{}`.\n", name));
+    out.push_str(&format!(
+        "/// Implements the Oberon0 procedure `{}`.\n",
+        name
+    ));
     if !params.is_empty() {
         out.push_str("///\n");
         out.push_str("/// Parameter bindings:\n");
@@ -541,7 +568,11 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
                 )
             }
         }
-        HStatement::Call { module: _, name, args } => {
+        HStatement::Call {
+            module: _,
+            name,
+            args,
+        } => {
             if name.name == "WriteInt" {
                 match args.first() {
                     Some(first) => format!(
@@ -635,7 +666,12 @@ fn format_top_level_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
         HExpr::Binary { op, left, right } => {
             format!(
                 "{}",
-                format_binary_expr(*op, &format_expr(left, ctx), &format_expr(right, ctx), false)
+                format_binary_expr(
+                    *op,
+                    &format_expr(left, ctx),
+                    &format_expr(right, ctx),
+                    false
+                )
             )
         }
         _ => format_expr(expr, ctx),
@@ -653,10 +689,13 @@ fn format_block(stmts: &[HStatement], indent: &str, ctx: &FormatContext<'_>) -> 
 fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
     match expr {
         HExpr::Integer(v) => v.to_string(),
+        HExpr::Boolean(v) => v.to_string(),
+        HExpr::LongReal(v) => v.to_string(),
+        HExpr::Real(v) => v.to_string(),
         HExpr::String(value) => format!("{:?}", value),
         HExpr::Name(ident) => {
             if let Some(value) = ctx.constants.get(&ident.id) {
-                value.to_string()
+                value.to_string().to_string()
             } else {
                 match ctx.locals.get(&ident.id) {
                     Some(binding) => binding.clone(),
@@ -675,7 +714,10 @@ fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
                     .map(|arg| format_expr(arg, ctx))
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!("/* unsupported call expr {}({}) */ 0", name.name, rendered_args)
+                format!(
+                    "/* unsupported call expr {}({}) */ 0",
+                    name.name, rendered_args
+                )
             }
         }
         HExpr::Unary { op, value } => {

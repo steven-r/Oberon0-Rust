@@ -1,0 +1,8 @@
+MODULE Main;
+VAR
+    flag: BOOLEAN;
+BEGIN
+    WHILE 1 DO
+        flag := TRUE;
+    END;
+END Main.

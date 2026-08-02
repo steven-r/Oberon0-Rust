@@ -1,0 +1,14 @@
+name = "procedure-local var self-shadows type alias in declaration"
+code = """
+MODULE Main;
+TYPE Count = INTEGER;
+PROCEDURE P;
+VAR Count: Count;
+BEGIN
+END P;
+BEGIN
+    P
+END Main.
+"""
+result.code = "E004"
+result.messages = ["Duplicate symbol declaration: 'Count'"]

@@ -1,0 +1,12 @@
+code = """
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+    x := WriteInt(1)
+END Main.
+"""
+name = "non-function builtin in call expression"
+result = { code = "E007", messages = [
+  "Builtin 'WriteInt' received an invalid argument",
+  "currently support only ReadInt(), EOF(), FLT(), and FLOOR()",
+] }

@@ -1,0 +1,12 @@
+name = "parameter shadows global type alias"
+code = """
+MODULE Main;
+TYPE Count = INTEGER;
+PROCEDURE P(Count: INTEGER);
+BEGIN
+    WriteInt(Count)
+END P;
+BEGIN
+END Main.
+"""
+is_success = true

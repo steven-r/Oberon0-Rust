@@ -1,0 +1,12 @@
+code = """
+  MODULE Main;
+  VAR x: INTEGER;
+  BEGIN
+    x := "Hello, World!"
+  END Main.
+"""
+name = "string outside WriteString"
+result.code = "E008"
+result.messages = [
+  "String literals are only supported as arguments to 'WriteString'",
+]

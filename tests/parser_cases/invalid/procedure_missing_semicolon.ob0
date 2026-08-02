@@ -1,6 +1,6 @@
 (* INVALID: PROCEDURE header is missing semicolon before BEGIN *)
 MODULE Main;
-PROCEDURE P(x)
+PROCEDURE P(x: INTEGER)
 BEGIN
   WriteInt(x)
 END P;

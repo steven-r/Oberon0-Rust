@@ -2,6 +2,7 @@
 
 pub mod ast;
 pub mod codegen;
+pub mod expression_constant_handler;
 pub mod hir;
 pub mod lower;
 pub mod manifest;

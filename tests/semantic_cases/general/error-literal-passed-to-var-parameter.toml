@@ -1,0 +1,16 @@
+name = "literal passed to VAR parameter"
+code = """
+MODULE Main;
+PROCEDURE Bump(VAR target: INTEGER; amount: INTEGER);
+BEGIN
+END Bump;
+BEGIN
+    Bump(1, 2)
+END Main.
+"""
+result.code = "E011"
+result.messages = [
+  "Procedure 'Bump' received an invalid VAR argument",
+  "position 1",
+  "expected a variable designator",
+]

@@ -1,5 +1,5 @@
 MODULE Main;
-PROCEDURE AddAndPrint(a, b);
+PROCEDURE AddAndPrint(a, b: INTEGER);
 BEGIN
   WriteInt(a + b)
 END AddAndPrint;

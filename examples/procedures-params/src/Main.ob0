@@ -1,6 +1,6 @@
 MODULE Main;
 VAR x: INTEGER;
-PROCEDURE Show(x);
+PROCEDURE Show(x: INTEGER);
 BEGIN
   WriteInt(x);
   WriteLn()

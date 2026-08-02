@@ -1,0 +1,10 @@
+name = "unary not requires boolean"
+code = """
+MODULE Main;
+VAR b: BOOLEAN;
+BEGIN
+    b := ~1
+END Main.
+"""
+result.code = "E012"
+result.messages = ["operator '~' requires BOOLEAN operand"]

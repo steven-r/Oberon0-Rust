@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- allow `CONST` declarations to use full expressions (not only raw integer literals), with compile-time folding into literal values
+- carry constant expressions as HIR expressions and emit folded constant values in generated Rust
+- add semantic/lowering support for built-in conversion functions `FLT()` and `FLOOR()` for integer/real conversions
+
+### Fixes
+
+- add semantic validation for constant initializers and report `E016` when a `CONST` does not fold to a literal expression
+- validate types for procedure parameters (types where optional before)
+- extend numeric literal parsing so decimal literals with optional `E`/`D` scale factors are accepted as `REAL` or `LONGREAL`
+
+### Documentation
+
+- clarify README language-subset notes for constant expression initializers and literal expression coverage
+
 ## v0.8.0 - 2026-07-26
 
 ### Features

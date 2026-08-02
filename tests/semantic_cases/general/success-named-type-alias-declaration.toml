@@ -1,0 +1,10 @@
+name = "named type alias declaration"
+code = """
+MODULE Main;
+TYPE Count = REAL;
+VAR x: Count;
+BEGIN
+    x := 1
+END Main.
+"""
+is_success = true

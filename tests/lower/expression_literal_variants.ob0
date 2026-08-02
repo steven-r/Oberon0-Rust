@@ -1,0 +1,10 @@
+MODULE Main;
+VAR
+  r: REAL;
+  lr: LONGREAL;
+  b: BOOLEAN;
+BEGIN
+  r := 1.5;
+  lr := 2.5D+0;
+  b := TRUE
+END Main.

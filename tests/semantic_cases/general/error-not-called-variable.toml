@@ -1,0 +1,14 @@
+name = "not callable variable"
+code = """
+  MODULE Main;
+  VAR
+    x: INTEGER;
+  BEGIN
+    x()
+  END Main.
+"""
+
+result.messages = [
+  "Symbol 'x' is not callable"
+]
+result.code = "E009"

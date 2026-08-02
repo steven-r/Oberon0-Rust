@@ -22,7 +22,11 @@ keyword = {
 
 ident = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 export_marker = { "*" }
-integer = @{ unary_sign? ~ ASCII_DIGIT+ }
+integer = @{ ASCII_DIGIT+ }
+real = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* ~ scale_factor? }
+scale_factor = { ("E" | "D") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
+number = { real | integer }
+boolean_literal = { "TRUE" | "FALSE" }
 string = @{ "\"" ~ ("\"\"" | (!("\"" | NEWLINE) ~ ANY))* ~ "\"" }
 
 module = { SOI ~ "MODULE" ~ ident ~ ";" ~ import_section? ~ declaration_section* ~ ("BEGIN" ~ stmt_list?)? ~ "END" ~ ident ~ "." ~ EOI }
@@ -31,7 +35,7 @@ import_item = { ident ~ (":=" ~ ident)? }
 
 declaration_section = { const_section | type_section | var_section | procedure_decl }
 const_section = { "CONST" ~ const_item+ }
-const_item = { ident ~ "=" ~ integer ~ ";" }
+const_item = { ident ~ "=" ~ expr ~ ";" }
 type_section = { "TYPE" ~ type_item+ }
 type_item = { ident ~ export_marker? ~ "=" ~ type_ref ~ ";" }
 type_ref = { qualified_ident }
@@ -42,7 +46,7 @@ var_item = { ident_list ~ ":" ~ type_ref ~ ";" }
 ident_list = { ident ~ ("," ~ ident)* }
 procedure_decl = { "PROCEDURE" ~ ident ~ export_marker? ~ formal_params? ~ ";" ~ var_section* ~ "BEGIN" ~ stmt_list? ~ "END" ~ ident ~ ";" }
 formal_params = { "(" ~ formal_param_section? ~ (";" ~ formal_param_section)* ~ ")" }
-formal_param_section = { var_modifier? ~ ident_list ~ (":" ~ type_ref)? }
+formal_param_section = { var_modifier? ~ ident_list ~ ":" ~ type_ref }
 var_modifier = { "VAR" }
 
 stmt_list = { (statement ~ ";")* ~ statement? }
@@ -63,5 +67,5 @@ term = { factor ~ (mul_op ~ factor)* }
 mul_op = { "*" | "/" | "DIV" | "MOD" | "&" }
 factor = { not_factor | primary_factor }
 not_factor = { "~" ~ factor }
-primary_factor = { integer | string | call_or_var | "(" ~ expr ~ ")" }
+primary_factor = { number | boolean_literal | string | call_or_var | "(" ~ expr ~ ")" }
 call_or_var = { qualified_ident ~ ("(" ~ arg_list? ~ ")")? }

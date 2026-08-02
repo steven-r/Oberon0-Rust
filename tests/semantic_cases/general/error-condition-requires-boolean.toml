@@ -1,0 +1,10 @@
+name = "condition requires boolean"
+code = """
+MODULE Main;
+BEGIN
+    IF 1 THEN
+        WriteLn();
+    END;
+END Main.
+"""
+result = { code = "E012", messages = ["condition must be BOOLEAN"] }

@@ -3,6 +3,7 @@
 use anyhow::{Result, bail};
 
 use crate::ast::{Declaration, Expr, Module, Statement};
+use crate::expression_constant_handler::combine_expression;
 use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
 use crate::scope::ScopedMap;
 use crate::symbols::SymbolKind;
@@ -47,7 +48,9 @@ impl Resolver {
         };
         self.next_id += 1;
 
-        self.scopes.declare(name, resolved.clone(), |name| Self::declare_on_duplicate(name))?;
+        self.scopes.declare(name, resolved.clone(), |name| {
+            Self::declare_on_duplicate(name)
+        })?;
 
         Ok(resolved)
     }
@@ -71,6 +74,8 @@ pub fn lower_module(module: &Module) -> Result<HModule> {
     resolver.declare("WriteLn", SymbolKind::Procedure)?;
     resolver.declare("ReadInt", SymbolKind::Procedure)?;
     resolver.declare("EOF", SymbolKind::Procedure)?;
+    resolver.declare("FLT", SymbolKind::Procedure)?;
+    resolver.declare("FLOOR", SymbolKind::Procedure)?;
 
     let imports = module
         .imports
@@ -129,10 +134,12 @@ fn lower_declaration(declaration: &Declaration, resolver: &mut Resolver) -> Resu
             let resolved = resolver
                 .resolve(name)
                 .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown constant '{}'.", name))?;
+            let compiled = combine_expression(value)?;
+            let value = lower_expr(&compiled, resolver)?;
             Ok(HDeclaration::Const {
                 id: resolved.id,
                 name: name.clone(),
-                value: *value,
+                value: value,
             })
         }
         Declaration::Type { name, target, .. } => {
@@ -229,10 +236,12 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
                 value: lower_expr(value, resolver)?,
             })
         }
-        Statement::Call { module, name, args, .. } => {
-            let resolved = resolver
-                .resolve(name)
-                .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;
+        Statement::Call {
+            module, name, args, ..
+        } => {
+            let resolved = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name)
+            })?;
             let lowered_args = args
                 .iter()
                 .map(|arg| lower_expr(arg, resolver))
@@ -283,20 +292,27 @@ fn lower_statement(statement: &Statement, resolver: &mut Resolver) -> Result<HSt
 fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
     match expr {
         Expr::Integer(value) => Ok(HExpr::Integer(*value)),
+        Expr::Real(value) => Ok(HExpr::Real(*value)),
+        Expr::LongReal(value) => Ok(HExpr::LongReal(*value)),
+        Expr::Boolean(value) => Ok(HExpr::Boolean(*value)),
         Expr::String(value) => Ok(HExpr::String(value.clone())),
         Expr::QualifiedVariable { module: _, name: _ } => {
             bail!("Qualified variables are not yet supported in code generation")
         }
         Expr::Variable(name) => {
-            let resolved = resolver
-                .resolve(name)
-                .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown identifier '{}'.", name))?;
+            let resolved = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!("Lowering failed: unknown identifier '{}'.", name)
+            })?;
             Ok(HExpr::Name(resolved))
         }
-        Expr::Call { name, args, module: _ } => {
-            let resolved = resolver
-                .resolve(name)
-                .ok_or_else(|| anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name))?;
+        Expr::Call {
+            name,
+            args,
+            module: _,
+        } => {
+            let resolved = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!("Lowering failed: unknown call target '{}'.", name)
+            })?;
             let lowered_args = args
                 .iter()
                 .map(|arg| lower_expr(arg, resolver))
@@ -321,18 +337,32 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+
     use anyhow::Result;
 
-    use super::lower_module;
-    use crate::ast::TypeRef;
+    use super::{Resolver, lower_expr, lower_module, lower_statement};
+    use crate::ast::{Expr, Statement, TypeRef};
     use crate::hir::{HDeclaration, HExpr, HStatement};
     use crate::parser::parse_module;
     use crate::semantic::analyze;
+    use crate::symbols::SymbolKind;
 
     fn lower_from_source(source: &str) -> Result<crate::hir::HModule> {
         let module = parse_module(source)?;
         analyze(&module, None)?;
         lower_module(&module)
+    }
+
+    fn lower_from_fixture(name: &str) -> Result<crate::hir::HModule> {
+        let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("lower")
+            .join(name);
+        let source = fs::read_to_string(&fixture_path)
+            .unwrap_or_else(|err| panic!("fixture should be readable: {err}"));
+        lower_from_source(&source)
     }
 
     fn collect_assign_target_ids(stmts: &[HStatement], out: &mut Vec<usize>) {
@@ -360,11 +390,11 @@ mod tests {
         let source = r#"
 MODULE Main;
 VAR x: INTEGER;
-PROCEDURE P(p);
+PROCEDURE P(p: INTEGER);
 BEGIN
-  IF p THEN
+  IF p > 0 THEN
     x := p;
-    WHILE p DO
+    WHILE p > 0 DO
       x := x + 1
     END
   END
@@ -401,7 +431,11 @@ END Main.
             .expect("procedure P must exist");
 
         assert_eq!(proc.0.len(), 1, "expected exactly one parameter");
-        assert_eq!(proc.1.len(), 0, "expected no implicit procedure local variable");
+        assert_eq!(
+            proc.1.len(),
+            0,
+            "expected no implicit procedure local variable"
+        );
 
         let mut assign_ids = Vec::new();
         collect_assign_target_ids(proc.2, &mut assign_ids);
@@ -417,7 +451,10 @@ END Main.
 
         if let HStatement::If { condition, .. } = &proc.2[0] {
             match condition {
-                HExpr::Name(ident) => assert_eq!(ident.id, proc.0[0].id),
+                HExpr::Binary { left, .. } => match left.as_ref() {
+                    HExpr::Name(ident) => assert_eq!(ident.id, proc.0[0].id),
+                    _ => panic!("IF condition must resolve to parameter identifier"),
+                },
                 _ => panic!("IF condition must resolve to parameter identifier"),
             }
         } else {
@@ -480,7 +517,9 @@ END Main.
             .declarations
             .iter()
             .find_map(|decl| match decl {
-                HDeclaration::Procedure { name, params, .. } if name == "Bump" => Some(params.clone()),
+                HDeclaration::Procedure { name, params, .. } if name == "Bump" => {
+                    Some(params.clone())
+                }
                 _ => None,
             })
             .expect("procedure Bump must exist in HIR");
@@ -495,6 +534,242 @@ END Main.
         assert!(matches!(params[1].declared_type, Some(TypeRef::LongReal)));
     }
 
+    #[test]
+    fn fixture_const_and_call_lowering_keeps_constants_and_calls_in_hir() {
+        let hir = lower_from_fixture("const_and_call_lowering.ob0")
+            .expect("fixture-based lowering should succeed");
+
+        let const_values = hir
+            .declarations
+            .iter()
+            .filter_map(|decl| match decl {
+                HDeclaration::Const { name, value, .. } => Some((name.as_str(), value)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(const_values.len(), 2);
+        assert!(matches!(const_values[0].1, HExpr::Integer(2)));
+        assert!(matches!(const_values[1].1, HExpr::Integer(3)));
+
+        let call_stmt = hir
+            .statements
+            .iter()
+            .find_map(|stmt| match stmt {
+                HStatement::Call { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .expect("expected a call statement in the lowered HIR");
+        assert_eq!(call_stmt.name, "WriteInt");
+    }
+
+    #[test]
+    fn fixture_loop_and_if_lowering_preserves_nested_control_flow() {
+        let hir = lower_from_fixture("loop_and_if_lowering.ob0")
+            .expect("fixture-based lowering should succeed");
+
+        let if_stmt = hir
+            .statements
+            .iter()
+            .find_map(|stmt| match stmt {
+                HStatement::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                } => Some((condition, then_branch, else_branch)),
+                _ => None,
+            })
+            .expect("expected an IF statement in the lowered HIR");
+
+        assert!(matches!(if_stmt.0, HExpr::Binary { .. }));
+        assert_eq!(if_stmt.1.len(), 1);
+        assert!(if_stmt.2.is_none());
+
+        let while_stmt = hir
+            .statements
+            .iter()
+            .find_map(|stmt| match stmt {
+                HStatement::While { condition, body } => Some((condition, body)),
+                _ => None,
+            })
+            .expect("expected a WHILE statement in the lowered HIR");
+
+        assert!(matches!(while_stmt.0, HExpr::Binary { .. }));
+        assert_eq!(while_stmt.1.len(), 1);
+    }
+
+    #[test]
+    fn fixture_qualified_expression_lowering_reports_unsupported_input() {
+        let err = lower_from_fixture("qualified_imports.ob0").unwrap_err();
+        let message = err.to_string();
+
+        assert!(
+            message.contains("Qualified variables are not yet supported in code generation")
+                || message.contains("unknown call target"),
+            "unexpected lowering error: {message}"
+        );
+    }
+
+    #[test]
+    fn fixture_literal_variants_lower_to_expected_hir_nodes() {
+        let source = fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("lower")
+                .join("expression_literal_variants.ob0"),
+        )
+        .expect("fixture should be readable");
+        let module = parse_module(&source).expect("fixture should parse");
+        let hir = lower_module(&module).expect("fixture-based lowering should succeed");
+
+        let statements = &hir.statements;
+        assert_eq!(statements.len(), 3);
+
+        let mut saw_real = false;
+        let mut saw_boolean = false;
+
+        for stmt in statements {
+            if let HStatement::Assign { value, .. } = stmt {
+                match value {
+                    HExpr::Real(_) => saw_real = true,
+                    HExpr::Boolean(_) => saw_boolean = true,
+                    _ => {}
+                }
+            }
+        }
+
+        let resolver = Resolver::new();
+        let long_real_expr = lower_expr(&Expr::LongReal(2.5), &resolver)
+            .expect("longreal literal lowering should succeed");
+        let string_expr = lower_expr(&Expr::String("hello".to_string()), &resolver)
+            .expect("string literal lowering should succeed");
+
+        assert!(saw_real);
+        assert!(matches!(long_real_expr, HExpr::LongReal(2.5)));
+        assert!(saw_boolean);
+        assert!(matches!(string_expr, HExpr::String(value) if value == "hello"));
+    }
+
+    #[test]
+    fn fixture_qualified_variable_expression_is_rejected_by_lowerer() {
+        let resolver = Resolver::new();
+        let err = lower_expr(
+            &Expr::QualifiedVariable {
+                module: "B".to_string(),
+                name: "value".to_string(),
+            },
+            &resolver,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Qualified variables are not yet supported in code generation")
+        );
+    }
+
+    #[test]
+    fn lower_statement_preserves_if_else_branches() {
+        let source = r#"
+MODULE Main;
+BEGIN
+  IF TRUE THEN
+    WriteLn
+  ELSE
+    WriteInt(1)
+  END
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let hir = lower_module(&module).expect("lowering should succeed");
+
+        let if_stmt = hir.statements.iter().find_map(|stmt| match stmt {
+            HStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => Some((then_branch, else_branch)),
+            _ => None,
+        });
+
+        let (then_branch, else_branch) = if_stmt.expect("expected IF statement");
+        assert_eq!(then_branch.len(), 1);
+        assert!(else_branch.is_some());
+        assert_eq!(else_branch.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn lower_statement_preserves_call_module_metadata() {
+        let mut resolver = Resolver::new();
+        resolver
+            .declare("WriteInt", SymbolKind::Procedure)
+            .expect("builtin procedure should be declared");
+
+        let stmt = lower_statement(
+            &Statement::Call {
+                module: Some("B".to_string()),
+                name: "WriteInt".to_string(),
+                args: vec![],
+            },
+            &mut resolver,
+        )
+        .expect("call statement should lower");
+
+        match stmt {
+            HStatement::Call { module, name, .. } => {
+                assert_eq!(module, Some("B".to_string()));
+                assert_eq!(name.name, "WriteInt");
+            }
+            other => panic!("unexpected lowered statement: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lowering_reports_duplicate_symbol_declarations() {
+        let source = r#"
+MODULE Main;
+VAR x: INTEGER;
+VAR x: INTEGER;
+BEGIN
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let err = lower_module(&module).unwrap_err();
+        assert!(err.to_string().contains("duplicate symbol declaration"));
+    }
+
+    #[test]
+    fn lowering_reports_unknown_identifier_in_expression() {
+        let source = r#"
+MODULE Main;
+BEGIN
+  x := 1
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let err = lower_module(&module).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Lowering failed: unknown identifier")
+                || err.to_string().contains("unresolved assignment target")
+        );
+    }
+
+    #[test]
+    fn lowering_reports_unknown_call_target() {
+        let source = r#"
+MODULE Main;
+BEGIN
+  Missing(1)
+END Main.
+"#;
+
+        let module = parse_module(source).expect("source should parse");
+        let err = lower_module(&module).unwrap_err();
+        assert!(err.to_string().contains("unknown call target"));
+    }
     #[test]
     fn procedure_local_vars_survive_lowering_with_stable_ids() {
         let source = r#"
@@ -525,7 +800,11 @@ END Main.
             })
             .expect("procedure P must exist in HIR");
 
-        assert_eq!(local_vars.len(), 1, "procedure P should have one local variable");
+        assert_eq!(
+            local_vars.len(),
+            1,
+            "procedure P should have one local variable"
+        );
         assert_eq!(local_vars[0].name, "x");
 
         let assigned_id = body
@@ -549,7 +828,8 @@ END Main.
 "#;
 
         let module = parse_module(source).expect("source should parse");
-        let err = lower_module(&module).expect_err("lowering should fail on unresolved assignment target");
+        let err = lower_module(&module)
+            .expect_err("lowering should fail on unresolved assignment target");
         let msg = err.to_string();
         assert!(
             msg.contains("Lowering invariant violated: unresolved assignment target 'y'."),
@@ -574,12 +854,14 @@ END Main.
             .declarations
             .iter()
             .find_map(|decl| match decl {
-                HDeclaration::Const { name, value, .. } if name == "x" => Some(*value),
+                HDeclaration::Const { name, value, .. } if name == "x" => Some(value.clone()),
                 _ => None,
             })
             .expect("constant x must exist in HIR");
-        assert_eq!(c, 42, "constant x should have value 42 in HIR");
-
+        assert!(
+            matches!(c, HExpr::Integer(42)),
+            "constant x should have value 42 in HIR"
+        );
     }
 
     #[test]
@@ -599,12 +881,15 @@ END Main.
             .declarations
             .iter()
             .find_map(|decl| match decl {
-                HDeclaration::Const { name, value, .. } if name == "x" => Some(*value),
+                HDeclaration::Const { name, value, .. } if name == "x" => Some(value.clone()),
                 _ => None,
             })
             .expect("constant x must exist in HIR");
-        assert_eq!(c, -1, "constant x should have value -1 in HIR");
-
+        println!("Found constant x with value {:?}", c);
+        assert!(
+            matches!(c, HExpr::Integer(-1)),
+            "constant x should have value -1 in HIR"
+        );
     }
 
     #[test]
@@ -622,7 +907,11 @@ END Main.
             .statements
             .iter()
             .find_map(|decl| match decl {
-                HStatement::Call { module:_, name, args } if name.name == "WriteString" => {
+                HStatement::Call {
+                    module: _,
+                    name,
+                    args,
+                } if name.name == "WriteString" => {
                     if let HExpr::String(s) = &args[0] {
                         Some(s.clone())
                     } else {
@@ -632,7 +921,10 @@ END Main.
                 _ => None,
             })
             .expect("WriteString call must exist in HIR");
-        assert_eq!(c, "Hello World", "WriteString argument should be 'Hello World' in HIR");
+        assert_eq!(
+            c, "Hello World",
+            "WriteString argument should be 'Hello World' in HIR"
+        );
     }
 
     #[test]
@@ -653,8 +945,7 @@ END Main.
             .statements
             .iter()
             .find_map(|decl| match decl {
-                HStatement::Assign { target, value, .. } =>
-                {
+                HStatement::Assign { target, value, .. } => {
                     println!("Found assignment to {} with value {:?}", target.name, value);
                     if target.name == "x" {
                         Some(value.clone())
@@ -666,7 +957,11 @@ END Main.
             })
             .expect("assignment to x must exist in HIR");
         if let HExpr::Unary { op, value } = c {
-            assert_eq!(op, crate::ast::UnaryOp::Minus, "assignment to x should be a negation in HIR");
+            assert_eq!(
+                op,
+                crate::ast::UnaryOp::Minus,
+                "assignment to x should be a negation in HIR"
+            );
             if let HExpr::Integer(i) = *value {
                 assert_eq!(i, 1, "assignment to x should be negation of 1 in HIR");
             } else {
@@ -693,11 +988,17 @@ END Main.
             .imports
             .iter()
             .find_map(|decl| {
-                Some(decl.clone()).filter(|d| d.local_name == "LocalMath" && d.external_name == "Math")
+                Some(decl.clone())
+                    .filter(|d| d.local_name == "LocalMath" && d.external_name == "Math")
             })
             .expect("LocalMath import must exist in HIR");
-        assert_eq!(c.local_name, "LocalMath", "import local name should be 'LocalMath' in HIR");
-        assert_eq!(c.external_name, "Math", "import external name should be 'Math' in HIR");
+        assert_eq!(
+            c.local_name, "LocalMath",
+            "import local name should be 'LocalMath' in HIR"
+        );
+        assert_eq!(
+            c.external_name, "Math",
+            "import external name should be 'Math' in HIR"
+        );
     }
-
 }

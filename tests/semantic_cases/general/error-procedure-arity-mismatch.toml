@@ -1,0 +1,15 @@
+code = """
+  MODULE Main;
+  PROCEDURE Foo(x: INTEGER);
+  BEGIN
+  END Foo;
+
+  BEGIN
+    Foo()
+  END Main.
+"""
+name = "procedure arity mismatch"
+result.code = "E006"
+result.messages = [
+  "Procedure 'Foo' called with wrong arity: expected 1, got 0",
+]

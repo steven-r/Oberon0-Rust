@@ -1,0 +1,12 @@
+code = """
+MODULE Main;
+BEGIN
+    WriteString(1)
+END Main.
+"""
+name = "non-string WriteString argument"
+result.code = "E007"
+result.messages = [
+  "Builtin 'WriteString' received an invalid argument",
+  "expected a string literal",
+]

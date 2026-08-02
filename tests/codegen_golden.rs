@@ -77,14 +77,18 @@ fn run_golden_case(case_name: &str, case_dir: &Path) -> datatest_stable::Result<
         .expect("golden generated project should finish");
     let actual_exit_code = output.status.code().unwrap_or(-1);
     assert_eq!(
-        actual_exit_code, expected_exit_code,
+        actual_exit_code,
+        expected_exit_code,
         "golden exit code mismatch for case {case_name}; stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 
     let stdout = String::from_utf8(output.stdout).expect("golden stdout should be utf-8");
     if let Some(expected_stdout) = expected_stdout {
-        assert_eq!(stdout, expected_stdout, "golden stdout mismatch for case {case_name}");
+        assert_eq!(
+            stdout, expected_stdout,
+            "golden stdout mismatch for case {case_name}"
+        );
     }
 
     let stderr = String::from_utf8(output.stderr).expect("golden stderr should be utf-8");
@@ -138,8 +142,11 @@ fn temp_codegen_dir(name: &str) -> std::path::PathBuf {
 }
 
 fn run_golden_tests(path: &Path) -> datatest_stable::Result<()> {
-    let case_dir = path.parent().expect("golden test case should have a parent directory");
-    let case_name = case_dir.file_name()
+    let case_dir = path
+        .parent()
+        .expect("golden test case should have a parent directory");
+    let case_name = case_dir
+        .file_name()
         .expect("golden test case directory should have a name")
         .to_string_lossy()
         .to_string();

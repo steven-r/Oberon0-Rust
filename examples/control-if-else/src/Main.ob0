@@ -2,7 +2,7 @@ MODULE Main;
 VAR x: INTEGER;
 BEGIN
   x := 4;
-  IF x - 4 THEN
+  IF x > 0 THEN
     WriteInt(1);
     WriteLn()
   ELSE
