@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.9.1 - 2026-08-02
+
 ### Features
 
 - add a shared numeric type model for `INTEGER`, `REAL`, and `LONGREAL` with stricter compatibility rules for assignments and numeric conversions
