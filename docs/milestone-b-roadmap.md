@@ -81,7 +81,7 @@ Decision document:
 
 ## B4. Typed declaration model
 
-Status: In progress.
+Status: Completed.
 
 Tasks:
 
@@ -102,6 +102,7 @@ Current status:
 2. Symbol entries now carry declared type information for typed declarations.
 3. HIR now preserves `TYPE` declarations and typed `VAR` declarations explicitly, without changing current code generation behavior.
 4. Built-in scalar declaration support now covers `INTEGER`, `BOOLEAN`, `REAL`, and `LONGREAL`; expression-level typing and runtime representation remain follow-up work.
+5. The typed-declaration slice is complete enough to close the foundational issues for this phase (#5, #6, #17).
 
 ## B5. Array types and indexing
 
@@ -119,6 +120,11 @@ Definition of done:
 1. Arrays can be declared, assigned, and indexed.
 2. Invalid indexing produces semantic diagnostics.
 3. HIR models indexed l-values explicitly.
+
+Current status:
+
+1. The shared type model groundwork is in place, so the next implementation slice should start with array type syntax and indexed designators rather than adding another type layer.
+2. Array parsing, semantic validation, and HIR designator support are still to be implemented.
 
 ## B6. Record types and field access
 
@@ -154,15 +160,20 @@ Definition of done:
 2. Arrays and records do not rely on special-case validation outside the type model.
 3. Diagnostics are stable for type mismatches and invalid designators.
 
+Current status:
+
+1. The shared type-model foundation is established and tracked by the type-model issue slice (#61).
+2. Full consolidation still depends on array and record designators landing on the same compatibility path.
+
 ## Suggested implementation order
 
 1. B1
 2. B2
 3. B3
 4. B4
-5. B7
-6. B5
-7. B6
+5. B5
+6. B6
+7. B7
 
 ## Prioritized issue order (language-complete target)
 
@@ -177,7 +188,8 @@ Priority 1 (type system foundation):
 1. #5 (`TYPE` + typed `VAR` declarations)
 2. #6 (type information in symbols/HIR)
 3. #17 (builtin scalar types: `BOOLEAN`, `REAL`, `LONGREAL`)
-4. #22 (typed formal parameters with optional `VAR` mode)
+4. #61 (shared type model foundation)
+5. #22 (typed formal parameters with optional `VAR` mode)
 
 Priority 2 (expression and control-flow completeness):
 
