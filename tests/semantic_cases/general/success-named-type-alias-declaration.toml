@@ -7,4 +7,6 @@ BEGIN
     x := 1
 END Main.
 """
-is_success = true
+[result]
+code = "E012"
+messages = ["cannot assign INTEGER to REAL 'x'"]

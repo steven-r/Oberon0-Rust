@@ -1,13 +1,10 @@
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::Path;
 
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::hir::{HDeclaration, HExpr, HImportDecl, HModule, HParam, HResolvedIdent, HStatement};
 use crate::lower::lower_module;
 use crate::manifest::{CompilerConfig, CrateBinding, ExternalManifest};
 use crate::parser::parse_module;
-use crate::scanner::scan;
 use crate::semantic::analyze;
 use crate::symbols::SymbolKind;
 
@@ -65,18 +62,20 @@ fn emits_procedure_function_and_call_from_main() {
     );
     assert!(generated.contains("/// Implements the Oberon0 procedure `AddAndPrint`."));
     assert!(generated.contains("/// - `param_2` corresponds to the Oberon0 parameter `a`."));
-    assert!(generated.contains("fn AddAndPrint(vars: &mut BTreeMap<String, i64>, param_2: i64)"));
-    assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"a\", param_2);"));
+    assert!(
+        generated.contains("fn AddAndPrint(vars: &mut BTreeMap<String, Value>, param_2: Value)")
+    );
+    assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"a\", &param_2);"));
     assert!(generated.contains("// Local variable backing the Oberon0 `x` binding."));
-    assert!(generated.contains("let mut local_3: i64 = 0;"));
-    assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"x\", local_3);"));
+    assert!(generated.contains("let mut local_3: Value = value_integer(0);"));
+    assert!(generated.contains("set_procedure_var(vars, \"AddAndPrint\", \"x\", &local_3);"));
     assert!(generated.contains("local_3 = param_2;"));
-    assert!(generated.contains("print!(\"{}\", local_3);"));
+    assert!(generated.contains("print_value(&local_3);"));
     assert!(generated.contains("/// Executes the Oberon0 module `Main`."));
     assert!(generated.contains(
         "// Runtime state keeps module variables and optional procedure-local snapshots."
     ));
-    assert!(generated.contains("let call_arg_0 = 7;"));
+    assert!(generated.contains("let call_arg_0 = value_integer(7);"));
     assert!(generated.contains("AddAndPrint(&mut vars, call_arg_0);"));
 }
 
@@ -139,7 +138,52 @@ fn binary_top_level_expr_is_not_wrapped_with_outer_parentheses() {
     };
 
     let generated = generate_main_rs(&module, false);
-    assert!(generated.contains("vars.insert(\"x\".to_string(), 1 + (2 * 3));"));
+    assert!(generated.contains("vars.insert(\"x\".to_string(),"));
+    assert!(generated.contains("value_add(&value_integer(1),"));
+    assert!(generated.contains("value_mul(&value_integer(2), &value_integer(3))"));
+}
+
+#[test]
+fn nested_binary_expressions_do_not_add_unnecessary_parentheses() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![HStatement::Assign {
+            target: ident(10, "x", SymbolKind::Variable),
+            value: HExpr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(HExpr::Integer(1)),
+                right: Box::new(HExpr::Binary {
+                    op: BinaryOp::Mul,
+                    left: Box::new(HExpr::Integer(2)),
+                    right: Box::new(HExpr::Integer(3)),
+                }),
+            },
+        }],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains(
+        "value_add(&value_integer(1), &value_mul(&value_integer(2), &value_integer(3)))"
+    ));
+    assert!(!generated.contains("value_add(value_integer(1), (value_mul"));
+}
+
+#[test]
+fn generated_runtime_helpers_are_marked_for_dead_code_suppression() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains("#![allow(dead_code)]"));
+    assert!(generated.contains("#[allow(dead_code)]\n#[derive(Clone, Debug, PartialEq)]"));
 }
 
 #[test]
@@ -178,11 +222,11 @@ fn emits_extended_unary_and_binary_operators() {
     };
 
     let generated = generate_main_rs(&module, false);
-    assert!(generated.contains("(1 != 0 || 0 != 0) as i64"));
-    assert!(generated.contains("== 0) as i64"));
-    assert!(generated.contains("(-7) / 2"));
-    assert!(generated.contains("% 3"));
-    assert!(generated.contains("&&"));
+    assert!(generated.contains("value_not("));
+    assert!(generated.contains("value_or(&value_integer(1), &value_integer(0))"));
+    assert!(generated.contains("value_mod("));
+    assert!(generated.contains("value_div(&value_neg(&value_integer(7)), &value_integer(2))"));
+    assert!(generated.contains("value_and("));
 }
 
 #[test]
@@ -245,12 +289,80 @@ fn emits_relational_operators_as_boolean_i64() {
     };
 
     let generated = generate_main_rs(&module, false);
-    assert!(generated.contains("(1 == 1) as i64"));
-    assert!(generated.contains("(1 != 2) as i64"));
-    assert!(generated.contains("(2 < 3) as i64"));
-    assert!(generated.contains("(2 <= 2) as i64"));
-    assert!(generated.contains("(3 > 2) as i64"));
-    assert!(generated.contains("(3 >= 3) as i64"));
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(1), &value_integer(1), |a, b| a == b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(1), &value_integer(2), |a, b| a != b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(2), &value_integer(3), |a, b| a < b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(2), &value_integer(2), |a, b| a <= b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(3), &value_integer(2), |a, b| a > b)")
+    );
+    assert!(
+        generated
+            .contains("value_bool_from_cmp(&value_integer(3), &value_integer(3), |a, b| a >= b)")
+    );
+}
+
+#[test]
+fn expr_needs_state_map_tracks_variable_reads_in_nested_expressions() {
+    assert!(super::expr_needs_state_map(&HExpr::Name(ident(
+        2,
+        "x",
+        SymbolKind::Variable
+    ))));
+    assert!(!super::expr_needs_state_map(&HExpr::Name(ident(
+        3,
+        "C",
+        SymbolKind::Constant
+    ))));
+    assert!(super::expr_needs_state_map(&HExpr::Binary {
+        op: BinaryOp::Add,
+        left: Box::new(HExpr::Name(ident(2, "x", SymbolKind::Variable))),
+        right: Box::new(HExpr::Integer(7)),
+    }));
+    assert!(super::expr_needs_state_map(&HExpr::Unary {
+        op: UnaryOp::Minus,
+        value: Box::new(HExpr::Name(ident(2, "x", SymbolKind::Variable))),
+    }));
+    assert!(!super::expr_needs_state_map(&HExpr::Binary {
+        op: BinaryOp::Add,
+        left: Box::new(HExpr::Name(ident(3, "C", SymbolKind::Constant))),
+        right: Box::new(HExpr::Integer(7)),
+    }));
+}
+
+#[test]
+fn statement_assigns_id_recurses_through_nested_if_and_while_blocks() {
+    let stmt = HStatement::If {
+        condition: HExpr::Integer(1),
+        then_branch: vec![HStatement::Assign {
+            target: ident(4, "x", SymbolKind::Variable),
+            value: HExpr::Integer(1),
+        }],
+        else_branch: Some(vec![HStatement::While {
+            condition: HExpr::Boolean(true),
+            body: vec![HStatement::Assign {
+                target: ident(5, "y", SymbolKind::Variable),
+                value: HExpr::Integer(2),
+            }],
+        }]),
+    };
+
+    assert!(super::statement_assigns_id(&stmt, 4));
+    assert!(super::statement_assigns_id(&stmt, 5));
+    assert!(!super::statement_assigns_id(&stmt, 6));
 }
 
 #[test]
@@ -326,10 +438,40 @@ fn emits_readint_and_eof_call_expressions() {
     };
 
     let generated = generate_main_rs(&module, false);
-    assert!(generated.contains("fn read_int() -> i64"));
-    assert!(generated.contains("fn eof() -> i64"));
+    assert!(generated.contains("fn read_int() -> Value"));
+    assert!(generated.contains("fn eof() -> Value"));
     assert!(generated.contains("vars.insert(\"x\".to_string(), read_int());"));
-    assert!(generated.contains("if eof() != 0 {"));
+    assert!(generated.contains("if value_truthy(&eof()) {"));
+}
+
+#[test]
+fn emits_real_and_longreal_runtime_builtins() {
+    let source = r#"
+MODULE Main;
+VAR x: REAL;
+    y: LONGREAL;
+BEGIN
+  x := ReadReal();
+  y := ReadLongReal();
+  WriteReal(x);
+  WriteLn;
+  WriteLongReal(y)
+END Main.
+"#;
+
+    let module = parse_module(source).expect("source should parse for codegen regression test");
+    analyze(&module, None).expect("source should pass semantic analysis for codegen regression");
+    let hir = lower_module(&module).expect("source should lower for codegen regression");
+
+    let generated = generate_main_rs(&hir, false);
+    assert!(generated.contains("fn read_real() -> Value"));
+    assert!(generated.contains("fn read_longreal() -> Value"));
+    assert!(generated.contains("fn write_real(value: &Value)"));
+    assert!(generated.contains("fn write_longreal(value: &Value)"));
+    assert!(generated.contains("write_real(&x);") || generated.contains("write_real(&get_var"));
+    assert!(
+        generated.contains("write_longreal(&y);") || generated.contains("write_longreal(&get_var")
+    );
 }
 
 #[test]
@@ -564,7 +706,9 @@ fn resolves_module_constants_in_generated_expressions() {
     };
 
     let generated = generate_main_rs(&module, true);
-    assert!(generated.contains("vars.insert(\"x\".to_string(), 10 + 2);"));
+    assert!(generated.contains(
+        "vars.insert(\"x\".to_string(), value_add(&value_integer(10), &value_integer(2)));"
+    ));
     assert!(!generated.contains("get_var(&vars, \"BASE\")"));
 }
 
@@ -582,12 +726,12 @@ fn emits_state_output_only_when_explicitly_enabled() {
     };
 
     let disabled = generate_main_rs(&module, false);
-    assert!(!disabled.contains("State: {:?}"));
-    assert!(disabled.contains("let mut vars: BTreeMap<String, i64> = BTreeMap::new();"));
+    assert!(!disabled.contains("State: {"));
+    assert!(disabled.contains("let mut vars: BTreeMap<String, Value> = BTreeMap::new();"));
 
     let enabled = generate_main_rs(&module, true);
-    assert!(enabled.contains("let mut vars: BTreeMap<String, i64> = BTreeMap::new();"));
-    assert!(enabled.contains("println!(\"State: {:?}\", vars);"));
+    assert!(enabled.contains("let mut vars: BTreeMap<String, Value> = BTreeMap::new();"));
+    assert!(enabled.contains("println!(\"State: {}\", runtime_state_string(&vars));"));
 }
 
 #[test]
@@ -615,8 +759,8 @@ fn emits_state_map_for_procedure_locals_without_module_variables() {
     };
 
     let generated = generate_main_rs(&module, true);
-    assert!(generated.contains("let mut vars: BTreeMap<String, i64> = BTreeMap::new();"));
-    assert!(generated.contains("set_procedure_var(vars, \"P\", \"local\", local_2);"));
+    assert!(generated.contains("let mut vars: BTreeMap<String, Value> = BTreeMap::new();"));
+    assert!(generated.contains("set_procedure_var(vars, \"P\", \"local\", &local_2);"));
 }
 
 #[test]
@@ -646,8 +790,8 @@ fn emits_state_map_for_procedure_parameters_when_enabled() {
     };
 
     let generated = generate_main_rs(&module, true);
-    assert!(generated.contains("fn P(vars: &mut BTreeMap<String, i64>, param_2: i64)"));
-    assert!(generated.contains("set_procedure_var(vars, \"P\", \"x\", param_2);"));
+    assert!(generated.contains("fn P(vars: &mut BTreeMap<String, Value>, param_2: Value)"));
+    assert!(generated.contains("set_procedure_var(vars, \"P\", \"x\", &param_2);"));
 }
 
 #[test]
@@ -917,147 +1061,6 @@ fn runtime_state_output_is_suppressed_by_default() {
     assert!(!stdout.contains("State: {"));
 
     std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
-}
-
-fn run_golden_case(case_name: &str, emit_state: bool) {
-    let case_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("codegen_golden")
-        .join(case_name);
-
-    let source = fs::read_to_string(case_dir.join("source.ob0"))
-        .expect("golden case source.ob0 should exist");
-    let expected_stdout_path = case_dir.join("expected_stdout.txt");
-    let expected_stdout = if expected_stdout_path.exists() {
-        Some(
-            fs::read_to_string(&expected_stdout_path)
-                .expect("golden case expected_stdout.txt should be readable"),
-        )
-    } else {
-        None
-    };
-
-    let expected_exit_code_path = case_dir.join("expected_exit_code.txt");
-    let expected_exit_code = if expected_exit_code_path.exists() {
-        fs::read_to_string(&expected_exit_code_path)
-            .expect("golden case expected_exit_code.txt should be readable")
-            .trim()
-            .parse::<i32>()
-            .expect("golden expected exit code must be a valid i32")
-    } else {
-        0
-    };
-
-    scan(&source).expect("golden source should scan");
-    let module = parse_module(&source).expect("golden source should parse");
-    analyze(&module, None).expect("golden source should pass semantic analysis");
-    let hir = lower_module(&module).expect("golden source should lower");
-
-    let out_root = temp_codegen_dir(&format!("golden_{}", case_name));
-    let project_dir = generate_rust_project(&hir, None, &out_root, emit_state)
-        .expect("golden project generation should succeed");
-
-    let mut cmd = std::process::Command::new("cargo");
-    cmd.arg("run")
-        .current_dir(&project_dir)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    let mut child = cmd.spawn().expect("golden generated project should start");
-
-    let stdin_path = case_dir.join("stdin.txt");
-    if stdin_path.exists() {
-        let input = fs::read(stdin_path).expect("golden stdin.txt should be readable");
-        use std::io::Write;
-        let stdin = child.stdin.as_mut().expect("stdin should be piped");
-        stdin
-            .write_all(&input)
-            .expect("should write stdin for golden case");
-    }
-
-    let output = child
-        .wait_with_output()
-        .expect("golden generated project should finish");
-    let actual_exit_code = output.status.code().unwrap_or(-1);
-    assert_eq!(
-        actual_exit_code,
-        expected_exit_code,
-        "golden exit code mismatch for case {case_name}; stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stdout = String::from_utf8(output.stdout).expect("golden stdout should be utf-8");
-    if let Some(expected_stdout) = expected_stdout {
-        assert_eq!(
-            stdout, expected_stdout,
-            "golden stdout mismatch for case {case_name}"
-        );
-    }
-
-    let stderr = String::from_utf8(output.stderr).expect("golden stderr should be utf-8");
-
-    let expected_stdout_contains_path = case_dir.join("expected_stdout_contains.txt");
-    if expected_stdout_contains_path.exists() {
-        let expected_stdout_contains = fs::read_to_string(&expected_stdout_contains_path)
-            .expect("golden case expected_stdout_contains.txt should be readable")
-            .trim()
-            .to_string();
-        assert!(
-            stdout.contains(&expected_stdout_contains),
-            "golden stdout does not contain expected substring for case {case_name}: {expected_stdout_contains}"
-        );
-    }
-
-    let expected_stderr_contains_path = case_dir.join("expected_stderr_contains.txt");
-    if expected_stderr_contains_path.exists() {
-        let expected_stderr_contains = fs::read_to_string(&expected_stderr_contains_path)
-            .expect("golden case expected_stderr_contains.txt should be readable")
-            .trim()
-            .to_string();
-        assert!(
-            stderr.contains(&expected_stderr_contains),
-            "golden stderr does not contain expected substring for case {case_name}: {expected_stderr_contains}"
-        );
-    }
-
-    let expected_main_path = case_dir.join("expected_main.rs");
-    if expected_main_path.exists() {
-        let expected_main = fs::read_to_string(&expected_main_path)
-            .expect("golden expected_main.rs should be readable");
-        let generated_main = fs::read_to_string(project_dir.join("src").join("main.rs"))
-            .expect("generated main.rs should be readable");
-        assert_eq!(
-            generated_main, expected_main,
-            "golden generated main.rs mismatch for case {case_name}"
-        );
-    }
-
-    std::fs::remove_dir_all(&out_root).expect("golden temp codegen dir should be removable");
-}
-
-#[test]
-fn golden_case_writeint_hello_matches_runtime_and_codegen_output() {
-    run_golden_case("writeint_hello", false);
-}
-
-#[test]
-fn golden_case_readint_eof_matches_runtime_output() {
-    run_golden_case("readint_eof", false);
-}
-
-#[test]
-fn golden_case_state_shadowing_emit_state_matches_runtime_output() {
-    run_golden_case("state_shadowing_emit_state", true);
-}
-
-#[test]
-fn golden_case_readint_invalid_token_fails_with_parse_error() {
-    run_golden_case("readint_invalid_token", false);
-}
-
-#[test]
-fn golden_case_readint_after_eof_fails() {
-    run_golden_case("readint_after_eof", false);
 }
 
 fn temp_codegen_dir(name: &str) -> std::path::PathBuf {

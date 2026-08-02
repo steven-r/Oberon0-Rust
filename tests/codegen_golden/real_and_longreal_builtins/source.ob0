@@ -1,0 +1,10 @@
+MODULE Main;
+VAR x: REAL;
+    y: LONGREAL;
+BEGIN
+  x := ReadReal();
+  y := ReadLongReal();
+  WriteReal(x);
+  WriteLn();
+  WriteLongReal(y)
+END Main.

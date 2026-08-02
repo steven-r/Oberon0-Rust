@@ -72,7 +72,11 @@ pub fn lower_module(module: &Module) -> Result<HModule> {
     resolver.declare("WriteInt", SymbolKind::Procedure)?;
     resolver.declare("WriteString", SymbolKind::Procedure)?;
     resolver.declare("WriteLn", SymbolKind::Procedure)?;
+    resolver.declare("WriteReal", SymbolKind::Procedure)?;
+    resolver.declare("WriteLongReal", SymbolKind::Procedure)?;
     resolver.declare("ReadInt", SymbolKind::Procedure)?;
+    resolver.declare("ReadReal", SymbolKind::Procedure)?;
+    resolver.declare("ReadLongReal", SymbolKind::Procedure)?;
     resolver.declare("EOF", SymbolKind::Procedure)?;
     resolver.declare("FLT", SymbolKind::Procedure)?;
     resolver.declare("FLOOR", SymbolKind::Procedure)?;
@@ -469,7 +473,7 @@ MODULE Main;
 TYPE Count = REAL;
 VAR x: Count;
 BEGIN
-  x := 1
+  x := 1.0
 END Main.
 "#;
 

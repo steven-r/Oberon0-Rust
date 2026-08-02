@@ -59,6 +59,10 @@ The current implementation does not compile multiple Oberon0 modules in a single
 2. Provide import-to-crate mappings in `oberon.toml`.
 3. Use generated Cargo dependencies to compose runtime pieces at the Rust/Cargo layer.
 
+## Related documentation
+
+For a broader explanation of the compiler pipeline, the role of the HIR, and why code generation uses internal analysis helpers, see [compiler-pipeline.md](compiler-pipeline.md).
+
 ## Current limitations
 
 - Qualified variable expressions (for example `x := B.value`) are rejected with semantic error `E015`.
