@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.10.0 - 2026-08-03
+
 ### Features
 
 - add array type declarations in `TYPE` blocks, including constant-expression lengths that fold during semantic analysis (#7)
