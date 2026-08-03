@@ -1,4 +1,3 @@
-
 use super::{AssignTarget, BinaryOp, Expr, UnaryOp};
 
 #[test]
@@ -187,6 +186,13 @@ fn expr_equality_matches_all_supported_expression_variants() {
         },
         AssignTarget::Indexed {
             name: "values".to_string(),
+            index: Expr::Integer(0),
+        }
+    );
+    assert_ne!(
+        AssignTarget::Name("x".to_string()),
+        AssignTarget::Indexed {
+            name: "x".to_string(),
             index: Expr::Integer(0),
         }
     );

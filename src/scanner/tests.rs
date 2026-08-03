@@ -1,4 +1,3 @@
-
 use super::{Token, scan};
 
 #[test]

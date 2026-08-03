@@ -642,6 +642,7 @@ fn assignment_compatible_extended(
     expected_type.is_compatible_with(&actual_type, &HashMap::new())
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn format_type_name(type_ref: &TypeRef) -> &'static str {
     match type_ref {
         TypeRef::Integer => "INTEGER",

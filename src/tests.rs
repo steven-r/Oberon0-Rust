@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -79,4 +78,25 @@ fn cli_state_flags_override_manifest_setting() {
     let parsed = Cli::try_parse_from(["oberon0c", "src/Main.ob0", "--emit-state"])
         .expect("CLI parse should succeed");
     assert!(super::resolve_emit_state(&parsed, Some(&manifest)));
+}
+
+#[test]
+fn cli_uses_manifest_state_setting_when_no_flags_are_present() {
+    let parsed =
+        Cli::try_parse_from(["oberon0c", "src/Main.ob0"]).expect("CLI parse should succeed");
+
+    let enabled_manifest = oberon0c::manifest::ExternalManifest {
+        dependencies: std::collections::BTreeMap::new(),
+        compiler: oberon0c::manifest::CompilerConfig { emit_state: true },
+    };
+    assert!(super::resolve_emit_state(&parsed, Some(&enabled_manifest)));
+
+    let disabled_manifest = oberon0c::manifest::ExternalManifest {
+        dependencies: std::collections::BTreeMap::new(),
+        compiler: oberon0c::manifest::CompilerConfig { emit_state: false },
+    };
+    assert!(!super::resolve_emit_state(
+        &parsed,
+        Some(&disabled_manifest)
+    ));
 }

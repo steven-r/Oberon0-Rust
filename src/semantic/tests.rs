@@ -1368,3 +1368,282 @@ fn semantic_operator_type_matrix_is_fully_covered() {
         }
     }
 }
+
+#[test]
+fn semantic_assignment_compatible_extended_covers_qualified_fallback_paths() {
+    let import_aliases = HashMap::from([
+        ("B".to_string(), "ModuleB".to_string()),
+        ("X".to_string(), "MissingModule".to_string()),
+    ]);
+    let external_modules = ExternalModuleInfo::mock_resolver();
+
+    assert!(!assignment_compatible_extended(
+        &TypeRef::Qualified {
+            module: "B".to_string(),
+            name: "MissingType".to_string(),
+        },
+        &TypeRef::Integer,
+        &import_aliases,
+        &external_modules,
+    ));
+
+    assert!(!assignment_compatible_extended(
+        &TypeRef::Qualified {
+            module: "X".to_string(),
+            name: "IntType".to_string(),
+        },
+        &TypeRef::Integer,
+        &import_aliases,
+        &external_modules,
+    ));
+
+    assert!(!assignment_compatible_extended(
+        &TypeRef::Integer,
+        &TypeRef::Qualified {
+            module: "B".to_string(),
+            name: "MissingType".to_string(),
+        },
+        &import_aliases,
+        &external_modules,
+    ));
+
+    assert!(!assignment_compatible_extended(
+        &TypeRef::Integer,
+        &TypeRef::Qualified {
+            module: "X".to_string(),
+            name: "IntType".to_string(),
+        },
+        &import_aliases,
+        &external_modules,
+    ));
+
+    assert!(!assignment_compatible_extended(
+        &TypeRef::Integer,
+        &TypeRef::Qualified {
+            module: "Z".to_string(),
+            name: "IntType".to_string(),
+        },
+        &import_aliases,
+        &external_modules,
+    ));
+}
+
+#[test]
+fn semantic_infer_expr_type_covers_readreal_and_readlongreal_arity_paths() {
+    let symbols = SymbolTable::new();
+    let types = HashMap::from([
+        ("INTEGER".to_string(), TypeRef::Integer),
+        ("BOOLEAN".to_string(), TypeRef::Boolean),
+        ("REAL".to_string(), TypeRef::Real),
+        ("LONGREAL".to_string(), TypeRef::LongReal),
+    ]);
+
+    let err = infer_expr_type(
+        &Expr::Call {
+            module: None,
+            name: "ReadReal".to_string(),
+            args: vec![Expr::Integer(1)],
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("ReadReal with arguments should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E006");
+
+    let err = infer_expr_type(
+        &Expr::Call {
+            module: None,
+            name: "ReadLongReal".to_string(),
+            args: vec![Expr::Integer(1)],
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("ReadLongReal with arguments should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E006");
+}
+
+#[test]
+fn semantic_infer_expr_type_covers_unary_none_branch() {
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare_with_type(
+            "unknown_typed".to_string().as_str(),
+            SymbolKind::Variable,
+            Some(TypeRef::Named("MissingAlias".to_string())),
+        )
+        .expect("symbol should be declared");
+
+    let types = HashMap::from([
+        ("INTEGER".to_string(), TypeRef::Integer),
+        ("BOOLEAN".to_string(), TypeRef::Boolean),
+        ("REAL".to_string(), TypeRef::Real),
+        ("LONGREAL".to_string(), TypeRef::LongReal),
+    ]);
+
+    let inferred = infer_expr_type(
+        &Expr::Unary {
+            op: UnaryOp::Plus,
+            value: Box::new(Expr::Variable("unknown_typed".to_string())),
+        },
+        &symbols,
+        &types,
+    )
+    .expect("unary inference should succeed for unresolved inner type");
+    assert_eq!(inferred, None);
+}
+
+#[test]
+fn semantic_rejects_indexed_assignment_on_non_array_bindings() {
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+PROCEDURE P;
+BEGIN
+END P;
+BEGIN
+    P[0] := 1
+END Main.
+"#,
+    )
+    .expect_err("indexing a procedure binding should fail semantic analysis");
+    assert_eq!(err.code(), "E012");
+    assert!(err.to_string().contains("is not an array variable"));
+
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+    x[0] := 1
+END Main.
+"#,
+    )
+    .expect_err("indexed assignment to scalar should fail semantic analysis");
+    assert_eq!(err.code(), "E012");
+    assert!(err.to_string().contains("is not an array variable"));
+}
+
+#[test]
+fn semantic_rejects_indexed_assignment_value_type_mismatch() {
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+VAR flags: ARRAY 2 OF BOOLEAN;
+BEGIN
+    flags[0] := 1
+END Main.
+"#,
+    )
+    .expect_err("indexed assignment with wrong element type should fail");
+
+    assert_eq!(err.code(), "E012");
+    assert!(
+        err.to_string()
+            .contains("cannot assign INTEGER to array element 'flags' of type BOOLEAN")
+    );
+}
+
+#[test]
+fn semantic_qualified_call_validates_argument_expressions() {
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+IMPORT B := ModuleB;
+BEGIN
+    B.HELLO(missing)
+END Main.
+"#,
+    )
+    .expect_err("qualified call should still validate each argument expression");
+
+    assert_eq!(err.code(), "E005");
+    assert!(
+        err.to_string()
+            .contains("Undefined symbol usage: 'missing'")
+    );
+}
+
+#[test]
+fn semantic_infer_indexed_expr_type_covers_remaining_error_paths() {
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare("proc_like", SymbolKind::Procedure)
+        .expect("procedure should be declared");
+    symbols
+        .declare_with_type(
+            "unknown_alias_var",
+            SymbolKind::Variable,
+            Some(TypeRef::Named("MissingAlias".to_string())),
+        )
+        .expect("variable should be declared");
+
+    let types = HashMap::from([
+        ("INTEGER".to_string(), TypeRef::Integer),
+        ("BOOLEAN".to_string(), TypeRef::Boolean),
+        ("REAL".to_string(), TypeRef::Real),
+        ("LONGREAL".to_string(), TypeRef::LongReal),
+    ]);
+
+    let err = infer_expr_type(
+        &Expr::Indexed {
+            name: "arr".to_string(),
+            index: Box::new(Expr::Boolean(true)),
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("non-integer index should fail in indexed expression inference");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E012");
+
+    let err = infer_expr_type(
+        &Expr::Indexed {
+            name: "missing".to_string(),
+            index: Box::new(Expr::Integer(0)),
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("unknown indexed symbol should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = infer_expr_type(
+        &Expr::Indexed {
+            name: "proc_like".to_string(),
+            index: Box::new(Expr::Integer(0)),
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("procedure binding cannot be indexed as array");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E012");
+
+    let err = infer_expr_type(
+        &Expr::Indexed {
+            name: "unknown_alias_var".to_string(),
+            index: Box::new(Expr::Integer(0)),
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("unresolvable named type cannot be indexed as array");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E012");
+}

@@ -1,4 +1,3 @@
-
 use super::{SymbolKind, SymbolTable};
 use crate::semantic::SemanticError;
 

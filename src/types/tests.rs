@@ -1,4 +1,3 @@
-
 use super::{ScalarType, Type};
 use crate::ast::TypeRef;
 use std::collections::HashMap;
