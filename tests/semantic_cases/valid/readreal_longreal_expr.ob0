@@ -1,0 +1,10 @@
+MODULE Main;
+VAR r: REAL;
+    lr: LONGREAL;
+    i: INTEGER;
+BEGIN
+  r := ReadReal();
+  lr := ReadLongReal();
+  i := FLOOR(lr);
+  r := FLT(i)
+END Main.

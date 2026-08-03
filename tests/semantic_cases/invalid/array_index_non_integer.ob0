@@ -1,0 +1,7 @@
+MODULE Main;
+TYPE IntArray = ARRAY 4 OF INTEGER;
+VAR a: IntArray;
+    i: REAL;
+BEGIN
+  a[i] := 1
+END Main.

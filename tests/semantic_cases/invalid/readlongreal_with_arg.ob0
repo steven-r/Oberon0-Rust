@@ -1,0 +1,5 @@
+MODULE Main;
+VAR lr: LONGREAL;
+BEGIN
+  lr := ReadLongReal(1)
+END Main.

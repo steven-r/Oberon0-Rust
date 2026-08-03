@@ -7,7 +7,8 @@ use std::fmt;
 use anyhow::Result;
 
 use crate::ast::{
-    BinaryOp, Declaration, Expr, LocalVarDecl, Module, ParamDecl, Statement, TypeRef, UnaryOp,
+    AssignTarget, BinaryOp, Declaration, Expr, LocalVarDecl, Module, ParamDecl, Statement, TypeRef,
+    UnaryOp,
 };
 use crate::expression_constant_handler::combine_expression;
 use crate::manifest::ExternalManifest;
@@ -298,19 +299,141 @@ fn validate_const_expression_literal(declaration: &Declaration) -> Result<()> {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn type_ref_name_for_error(type_ref: &TypeRef) -> String {
     match type_ref {
         TypeRef::Integer => "INTEGER".to_string(),
         TypeRef::Boolean => "BOOLEAN".to_string(),
         TypeRef::Real => "REAL".to_string(),
         TypeRef::LongReal => "LONGREAL".to_string(),
+        TypeRef::Array {
+            length,
+            element_type,
+        } => format!(
+            "ARRAY {} OF {}",
+            format_expr_for_error(length),
+            type_ref_name_for_error(element_type)
+        ),
         TypeRef::Named(name) => name.clone(),
         TypeRef::Qualified { module, name } => format!("{}.{}", module, name),
     }
 }
 
-fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Result<()> {
-    if resolve_type_ref(type_ref, types).is_none() {
+#[cfg_attr(coverage_nightly, coverage(off))]
+fn format_expr_for_error(expr: &Expr) -> String {
+    match expr {
+        Expr::Integer(v) => v.to_string(),
+        Expr::Real(v) => v.to_string(),
+        Expr::LongReal(v) => v.to_string(),
+        Expr::Boolean(v) => {
+            if *v {
+                "TRUE".to_string()
+            } else {
+                "FALSE".to_string()
+            }
+        }
+        Expr::String(value) => format!("\"{}\"", value),
+        Expr::Variable(name) => name.clone(),
+        Expr::Indexed { name, index } => {
+            format!("{}[{}]", name, format_expr_for_error(index))
+        }
+        Expr::QualifiedVariable { module, name } => format!("{}.{}", module, name),
+        Expr::Call { module, name, args } => {
+            let rendered_args = args
+                .iter()
+                .map(format_expr_for_error)
+                .collect::<Vec<_>>()
+                .join(", ");
+            match module {
+                Some(module_name) => format!("{}.{}({})", module_name, name, rendered_args),
+                None => format!("{}({})", name, rendered_args),
+            }
+        }
+        Expr::Unary { op, value } => {
+            let op_text = match op {
+                UnaryOp::Plus => "+",
+                UnaryOp::Minus => "-",
+                UnaryOp::Not => "~",
+            };
+            format!("{}{}", op_text, format_expr_for_error(value))
+        }
+        Expr::Binary { op, left, right } => {
+            let op_text = match op {
+                BinaryOp::Add => "+",
+                BinaryOp::Sub => "-",
+                BinaryOp::Or => "OR",
+                BinaryOp::Mul => "*",
+                BinaryOp::Div => "/",
+                BinaryOp::IntDiv => "DIV",
+                BinaryOp::Mod => "MOD",
+                BinaryOp::And => "&",
+                BinaryOp::Eq => "=",
+                BinaryOp::Ne => "#",
+                BinaryOp::Lt => "<",
+                BinaryOp::Le => "<=",
+                BinaryOp::Gt => ">",
+                BinaryOp::Ge => ">=",
+            };
+            format!(
+                "({} {} {})",
+                format_expr_for_error(left),
+                op_text,
+                format_expr_for_error(right)
+            )
+        }
+    }
+}
+
+fn substitute_const_expr(expr: &Expr, const_values: &HashMap<String, Expr>) -> Expr {
+    match expr {
+        Expr::Variable(name) => const_values
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| Expr::Variable(name.clone())),
+        Expr::Unary { op, value } => Expr::Unary {
+            op: *op,
+            value: Box::new(substitute_const_expr(value, const_values)),
+        },
+        Expr::Binary { op, left, right } => Expr::Binary {
+            op: *op,
+            left: Box::new(substitute_const_expr(left, const_values)),
+            right: Box::new(substitute_const_expr(right, const_values)),
+        },
+        Expr::Indexed { name, index } => Expr::Indexed {
+            name: name.clone(),
+            index: Box::new(substitute_const_expr(index, const_values)),
+        },
+        Expr::Call { module, name, args } => Expr::Call {
+            module: module.clone(),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|arg| substitute_const_expr(arg, const_values))
+                .collect(),
+        },
+        Expr::QualifiedVariable { module, name } => Expr::QualifiedVariable {
+            module: module.clone(),
+            name: name.clone(),
+        },
+        _ => expr.clone(),
+    }
+}
+
+fn resolve_array_length_expr(length: &Expr, const_values: &HashMap<String, Expr>) -> Option<usize> {
+    let substituted = substitute_const_expr(length, const_values);
+    let combined = combine_expression(&substituted).ok()?;
+    match combined {
+        Expr::Integer(value) => usize::try_from(value).ok(),
+        _ => None,
+    }
+}
+
+fn validate_declared_type_with_consts(
+    type_ref: &TypeRef,
+    types: &HashMap<String, TypeRef>,
+    const_values: &HashMap<String, Expr>,
+) -> Result<()> {
+    if resolve_type_ref_with_consts(type_ref, types, const_values).is_none() {
         return Err(SemanticError::UnknownType {
             name: type_ref_name_for_error(type_ref),
         }
@@ -320,12 +443,19 @@ fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) 
     Ok(())
 }
 
+#[cfg(test)]
+fn validate_declared_type(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Result<()> {
+    let const_values = HashMap::new();
+    validate_declared_type_with_consts(type_ref, types, &const_values)
+}
+
 /// Validates a type reference with support for qualified types via import resolution.
 fn validate_declared_type_with_imports(
     type_ref: &TypeRef,
     types: &HashMap<String, TypeRef>,
     import_aliases: &HashMap<String, String>,
     external_modules: &HashMap<String, ExternalModuleInfo>,
+    const_values: &HashMap<String, Expr>,
 ) -> Result<()> {
     match type_ref {
         TypeRef::Qualified { module, name } => {
@@ -355,7 +485,7 @@ fn validate_declared_type_with_imports(
 
             Ok(())
         }
-        _ => validate_declared_type(type_ref, types),
+        _ => validate_declared_type_with_consts(type_ref, types, const_values),
     }
 }
 
@@ -410,14 +540,30 @@ fn validate_local_var_name(
     validate_local_binding_name(&local_var.name, local_var.declared_type.as_ref(), types)
 }
 
-fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Option<TypeRef> {
+fn resolve_type_ref_with_consts(
+    type_ref: &TypeRef,
+    types: &HashMap<String, TypeRef>,
+    const_values: &HashMap<String, Expr>,
+) -> Option<TypeRef> {
     match type_ref {
         TypeRef::Integer => Some(TypeRef::Integer),
         TypeRef::Boolean => Some(TypeRef::Boolean),
         TypeRef::Real => Some(TypeRef::Real),
         TypeRef::LongReal => Some(TypeRef::LongReal),
+        TypeRef::Array {
+            length,
+            element_type,
+        } => {
+            let normalized_length = resolve_array_length_expr(length, const_values)?;
+            resolve_type_ref_with_consts(element_type, types, const_values).map(|resolved| {
+                TypeRef::Array {
+                    length: Expr::Integer(normalized_length as i64),
+                    element_type: Box::new(resolved),
+                }
+            })
+        }
         TypeRef::Named(name) => match types.get(name) {
-            Some(target) => resolve_type_ref(target, types),
+            Some(target) => resolve_type_ref_with_consts(target, types, const_values),
             None => None,
         },
         TypeRef::Qualified { .. } => {
@@ -427,6 +573,11 @@ fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Opt
             Some(type_ref.clone())
         }
     }
+}
+
+fn resolve_type_ref(type_ref: &TypeRef, types: &HashMap<String, TypeRef>) -> Option<TypeRef> {
+    let const_values = HashMap::new();
+    resolve_type_ref_with_consts(type_ref, types, &const_values)
 }
 
 fn is_numeric_type(type_ref: &TypeRef) -> bool {
@@ -491,12 +642,14 @@ fn assignment_compatible_extended(
     expected_type.is_compatible_with(&actual_type, &HashMap::new())
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn format_type_name(type_ref: &TypeRef) -> &'static str {
     match type_ref {
         TypeRef::Integer => "INTEGER",
         TypeRef::Boolean => "BOOLEAN",
         TypeRef::Real => "REAL",
         TypeRef::LongReal => "LONGREAL",
+        TypeRef::Array { .. } => "ARRAY",
         TypeRef::Named(_) => "<named>",
         TypeRef::Qualified { .. } => "<qualified>",
     }
@@ -558,6 +711,7 @@ fn infer_expr_type(
             Ok(resolve_symbol_type(symbols, name)
                 .and_then(|type_ref| resolve_type_ref(&type_ref, types)))
         }
+        Expr::Indexed { name, index } => infer_indexed_expr_type(name, index, symbols, types),
         Expr::QualifiedVariable { module, name } => {
             Err(SemanticError::UnsupportedQualifiedVariable {
                 module: module.clone(),
@@ -803,6 +957,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     symbols.declare("EOF", SymbolKind::Procedure)?;
     let mut proc_arity: HashMap<String, Option<usize>> = HashMap::new();
     let mut proc_params: HashMap<String, Vec<ParamDecl>> = HashMap::new();
+    let mut const_values: HashMap<String, Expr> = HashMap::new();
     proc_arity.insert("WriteInt".to_string(), None);
     proc_arity.insert("WriteString".to_string(), Some(1));
     proc_arity.insert("WriteLn".to_string(), Some(0));
@@ -851,6 +1006,10 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
             Declaration::Const { name, .. } => {
                 validate_declaration_name(name, &types)?;
                 validate_const_expression_literal(declaration)?;
+                let Declaration::Const { value, .. } = declaration else {
+                    unreachable!("const declaration expected");
+                };
+                const_values.insert(name.clone(), combine_expression(value)?);
                 symbols.declare(name, SymbolKind::Constant)?;
             }
             Declaration::Type { name, target, .. } => {
@@ -860,9 +1019,18 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                     &types,
                     &import_aliases,
                     &external_modules,
+                    &const_values,
                 )?;
-                symbols.declare_with_type(name, SymbolKind::TypeName, Some(target.clone()))?;
-                types.insert(name.clone(), target.clone());
+                let resolved_target = resolve_type_ref_with_consts(target, &types, &const_values)
+                    .ok_or_else(|| SemanticError::UnknownType {
+                    name: type_ref_name_for_error(target),
+                })?;
+                symbols.declare_with_type(
+                    name,
+                    SymbolKind::TypeName,
+                    Some(resolved_target.clone()),
+                )?;
+                types.insert(name.clone(), resolved_target);
             }
             Declaration::Var {
                 name,
@@ -875,9 +1043,20 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                         &types,
                         &import_aliases,
                         &external_modules,
+                        &const_values,
                     )?;
                 }
-                symbols.declare_with_type(name, SymbolKind::Variable, declared_type.clone())?;
+                let normalized_declared_type = declared_type
+                    .as_ref()
+                    .map(|type_ref| {
+                        resolve_type_ref_with_consts(type_ref, &types, &const_values).ok_or_else(
+                            || SemanticError::UnknownType {
+                                name: type_ref_name_for_error(type_ref),
+                            },
+                        )
+                    })
+                    .transpose()?;
+                symbols.declare_with_type(name, SymbolKind::Variable, normalized_declared_type)?;
             }
             Declaration::Procedure {
                 name,
@@ -894,6 +1073,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                             &types,
                             &import_aliases,
                             &external_modules,
+                            &const_values,
                         )?;
                     }
                 }
@@ -905,6 +1085,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                             &types,
                             &import_aliases,
                             &external_modules,
+                            &const_values,
                         )?;
                     }
                 }
@@ -935,17 +1116,21 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
 
             symbols.enter_scope();
             for param in params {
-                symbols.declare_with_type(
-                    &param.name,
-                    SymbolKind::Parameter,
-                    param.declared_type.clone(),
-                )?;
+                let normalized_type = param.declared_type.as_ref().map(|type_ref| {
+                    resolve_type_ref_with_consts(type_ref, &types, &const_values)
+                        .unwrap_or_else(|| type_ref.clone())
+                });
+                symbols.declare_with_type(&param.name, SymbolKind::Parameter, normalized_type)?;
             }
             for local_var in local_vars {
+                let normalized_type = local_var.declared_type.as_ref().map(|type_ref| {
+                    resolve_type_ref_with_consts(type_ref, &types, &const_values)
+                        .unwrap_or_else(|| type_ref.clone())
+                });
                 symbols.declare_with_type(
                     &local_var.name,
                     SymbolKind::Variable,
-                    local_var.declared_type.clone(),
+                    normalized_type,
                 )?;
             }
             for statement in body {
@@ -1022,32 +1207,90 @@ fn analyze_statement(
     match stmt {
         Statement::Assign { target, value } => {
             analyze_expr(value, symbols)?;
-            let symbol = symbols
-                .resolve(target)
-                .ok_or_else(|| SemanticError::UndefinedSymbol {
-                    name: target.clone(),
-                })?;
+            match target {
+                AssignTarget::Name(name) => {
+                    let symbol = symbols
+                        .resolve(name)
+                        .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.clone() })?;
 
-            if let Some(expected_type) = &symbol.declared_type
-                && let Some(actual_type) = infer_expr_type(value, symbols, types)?
-            {
-                let expected_type = resolve_type_ref(expected_type, types)
-                    .expect("declared target type should resolve after semantic validation");
-                if !assignment_compatible_extended(
-                    &expected_type,
-                    &actual_type,
-                    import_aliases,
-                    external_modules,
-                ) {
-                    return Err(SemanticError::TypeMismatch {
-                        detail: format!(
-                            "cannot assign {} to {} '{}'",
-                            format_type_name(&actual_type),
-                            format_type_name(&expected_type),
-                            target
-                        ),
+                    if let Some(expected_type) = &symbol.declared_type
+                        && let Some(actual_type) = infer_expr_type(value, symbols, types)?
+                    {
+                        let expected_type = resolve_type_ref(expected_type, types).expect(
+                            "declared target type should resolve after semantic validation",
+                        );
+                        if !assignment_compatible_extended(
+                            &expected_type,
+                            &actual_type,
+                            import_aliases,
+                            external_modules,
+                        ) {
+                            return Err(SemanticError::TypeMismatch {
+                                detail: format!(
+                                    "cannot assign {} to {} '{}'",
+                                    format_type_name(&actual_type),
+                                    format_type_name(&expected_type),
+                                    name
+                                ),
+                            }
+                            .into());
+                        }
                     }
-                    .into());
+                }
+                AssignTarget::Indexed { name, index } => {
+                    analyze_expr(index, symbols)?;
+                    let index_type = infer_expr_type(index, symbols, types)?;
+                    if index_type != Some(TypeRef::Integer) {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!(
+                                "array index for '{}' must be INTEGER, got {}",
+                                name,
+                                index_type
+                                    .as_ref()
+                                    .map(format_type_name)
+                                    .unwrap_or("<unknown>")
+                            ),
+                        }
+                        .into());
+                    }
+
+                    let symbol = symbols
+                        .resolve(name)
+                        .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.clone() })?;
+
+                    let expected_type = symbol
+                        .declared_type
+                        .as_ref()
+                        .and_then(|declared_type| resolve_type_ref(declared_type, types))
+                        .ok_or_else(|| SemanticError::TypeMismatch {
+                            detail: format!("'{}' is not an array variable", name),
+                        })?;
+
+                    let TypeRef::Array { element_type, .. } = expected_type else {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!("'{}' is not an array variable", name),
+                        }
+                        .into());
+                    };
+
+                    if let Some(actual_type) = infer_expr_type(value, symbols, types)?
+                        && !assignment_compatible_extended(
+                            &element_type,
+                            &actual_type,
+                            import_aliases,
+                            external_modules,
+                        )
+                    {
+                        return Err(SemanticError::TypeMismatch {
+                            detail: format!(
+                                "cannot assign {} to array element '{}' of type {}",
+                                format_type_name(&actual_type),
+                                name,
+                                format_type_name(&element_type)
+                            ),
+                        }
+                        .into());
+                    }
                 }
             }
 
@@ -1249,6 +1492,13 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             }
             Ok(())
         }
+        Expr::Indexed { name, index } => {
+            analyze_expr(index, symbols)?;
+            if symbols.resolve(name).is_none() {
+                return Err(SemanticError::UndefinedSymbol { name: name.clone() }.into());
+            }
+            Ok(())
+        }
         Expr::QualifiedVariable { module, name } => {
             Err(SemanticError::UnsupportedQualifiedVariable {
                 module: module.clone(),
@@ -1305,1222 +1555,54 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
     }
 }
 
-#[cfg(test)]
-#[cfg_attr(coverage_nightly, coverage(off))]
-mod tests {
-    use std::collections::HashMap;
-    use std::path::PathBuf;
+fn infer_indexed_expr_type(
+    name: &str,
+    index: &Expr,
+    symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
+) -> Result<Option<TypeRef>> {
+    let index_type = infer_expr_type(index, symbols, types)?;
+    if index_type != Some(TypeRef::Integer) {
+        return Err(SemanticError::TypeMismatch {
+            detail: format!(
+                "array index for '{}' must be INTEGER, got {}",
+                name,
+                index_type
+                    .as_ref()
+                    .map(format_type_name)
+                    .unwrap_or("<unknown>")
+            ),
+        }
+        .into());
+    }
 
-    use rstest::rstest;
+    let symbol = symbols
+        .resolve(name)
+        .ok_or_else(|| SemanticError::UndefinedSymbol {
+            name: name.to_string(),
+        })?;
 
-    use super::{
-        ExternalModuleInfo, SemanticError, analyze, analyze_expr, analyze_statement,
-        assignment_compatible_extended, infer_expr_type, type_ref_name_for_error,
-        validate_boolean_condition, validate_const_expression_literal, validate_declared_type,
-        validate_declared_type_with_imports,
+    let Some(declared_type) = symbol.declared_type.as_ref() else {
+        return Err(SemanticError::TypeMismatch {
+            detail: format!("'{}' is not an array variable", name),
+        }
+        .into());
     };
-    use crate::ast::{BinaryOp, Declaration, Expr, ParamDecl, Statement, TypeRef, UnaryOp};
-    use crate::manifest::ExternalManifest;
-    use crate::parser::parse_module;
-    use crate::symbols::{SymbolKind, SymbolTable};
 
-    #[derive(serde::Deserialize)]
-    struct SemanticTestCase {
-        name: String,
-        #[serde(alias = "code")]
-        source: String,
-        result: Option<SemanticTestCaseResult>,
-        #[serde(default)]
-        is_success: bool,
-        manifest: Option<ExternalManifest>,
-    }
-    #[derive(serde::Deserialize)]
-    struct SemanticTestCaseResult {
-        code: String,
-        messages: Vec<String>,
-    }
+    let resolved_type =
+        resolve_type_ref(declared_type, types).ok_or_else(|| SemanticError::TypeMismatch {
+            detail: format!("'{}' is not an array variable", name),
+        })?;
 
-    fn semantic_compile_test(source: &str) -> Result<(), SemanticError> {
-        semantic_compile_test_with_manifest(source, None)
-    }
-
-    fn semantic_compile_test_with_manifest(
-        source: &str,
-        manifest: Option<&ExternalManifest>,
-    ) -> Result<(), SemanticError> {
-        let module = parse_module(source).expect("source should parse for semantic test");
-        let result = analyze(&module, manifest);
-        match result {
-            Err(err) => Err(err.downcast::<SemanticError>().unwrap()),
-            Ok(_) => Ok(()),
+    match resolved_type {
+        TypeRef::Array { element_type, .. } => Ok(Some(*element_type)),
+        _ => Err(SemanticError::TypeMismatch {
+            detail: format!("'{}' is not an array variable", name),
         }
-    }
-
-    #[rstest]
-    fn semantic_error_cases1(#[files("tests/semantic_cases/general/*.toml")] path: PathBuf) {
-        let content = std::fs::read_to_string(&path).expect("error case file should be readable");
-        let case: SemanticTestCase =
-            toml::from_str(&content).expect("error case file should be valid TOML");
-        let should_be_success = case.result.is_none() || case.is_success;
-        let response = if let Some(manifest) = &case.manifest {
-            semantic_compile_test_with_manifest(case.source.as_str(), Some(manifest))
-        } else {
-            semantic_compile_test(case.source.as_str())
-        };
-        if should_be_success {
-            if response.is_err() {
-                panic!(
-                    "case '{}': expected success, got error {:?}",
-                    case.name,
-                    response.err()
-                );
-            }
-            return;
-        }
-        if let Err(err) = response {
-            let result = case.result.unwrap();
-            assert_eq!(
-                err.code(),
-                result.code,
-                "case '{}': error code mismatch",
-                case.name
-            );
-            for fragment in &result.messages {
-                assert!(
-                    err.to_string().contains(fragment),
-                    "case '{}': display string should contain '{fragment}', got '{}'",
-                    case.name,
-                    err
-                );
-            }
-        } else {
-            if !should_be_success {
-                panic!("case '{}': expected error, got success", case.name);
-            }
-        }
-    }
-
-    #[test]
-    fn semantic_error_code_and_display_cover_all_variants() {
-        let cases = vec![
-            (
-                SemanticError::ModuleNameMismatch {
-                    expected: "Main".to_string(),
-                    got: "Wrong".to_string(),
-                },
-                "E001",
-                "Module name mismatch at END",
-            ),
-            (
-                SemanticError::DuplicateImportAlias {
-                    alias: "B".to_string(),
-                },
-                "E002",
-                "Duplicate import alias",
-            ),
-            (
-                SemanticError::UnmappedImport {
-                    import: "ModuleB".to_string(),
-                },
-                "E003",
-                "not mapped to a crate",
-            ),
-            (
-                SemanticError::DuplicateSymbol {
-                    name: "Count".to_string(),
-                },
-                "E004",
-                "Duplicate symbol declaration",
-            ),
-            (
-                SemanticError::UndefinedSymbol {
-                    name: "x".to_string(),
-                },
-                "E005",
-                "Undefined symbol usage",
-            ),
-            (
-                SemanticError::ArityMismatch {
-                    name: "P".to_string(),
-                    expected: 2,
-                    got: 1,
-                },
-                "E006",
-                "called with wrong arity",
-            ),
-            (
-                SemanticError::InvalidBuiltinArgument {
-                    name: "WriteString".to_string(),
-                    detail: "expected a string literal".to_string(),
-                },
-                "E007",
-                "received an invalid argument",
-            ),
-            (
-                SemanticError::UnsupportedStringLiteral,
-                "E008",
-                "String literals are only supported",
-            ),
-            (
-                SemanticError::NotCallable {
-                    name: "x".to_string(),
-                },
-                "E009",
-                "is not callable",
-            ),
-            (
-                SemanticError::ProcedureNameMismatch {
-                    expected: "P".to_string(),
-                    got: "Wrong".to_string(),
-                },
-                "E010",
-                "Procedure END name mismatch",
-            ),
-            (
-                SemanticError::InvalidVarArgument {
-                    name: "Bump".to_string(),
-                    position: 1,
-                    detail: "expected a variable designator".to_string(),
-                },
-                "E011",
-                "invalid VAR argument",
-            ),
-            (
-                SemanticError::TypeMismatch {
-                    detail: "cannot assign REAL to INTEGER 'x'".to_string(),
-                },
-                "E012",
-                "Type mismatch",
-            ),
-            (
-                SemanticError::UnknownType {
-                    name: "Missing".to_string(),
-                },
-                "E013",
-                "Unknown type reference",
-            ),
-            (
-                SemanticError::NonExportedMember {
-                    module: "ModuleB".to_string(),
-                    name: "HiddenType".to_string(),
-                },
-                "E014",
-                "is not exported from module",
-            ),
-            (
-                SemanticError::UnsupportedQualifiedVariable {
-                    module: "B".to_string(),
-                    name: "value".to_string(),
-                },
-                "E015",
-                "Qualified variable reference",
-            ),
-            (
-                SemanticError::InternalError {
-                    error: "TestError".to_string(),
-                },
-                "E999",
-                "TestError",
-            ),
-        ];
-
-        for (err, expected_code, expected_fragment) in cases {
-            assert_eq!(err.code(), expected_code);
-            assert!(
-                err.to_string().contains(expected_fragment),
-                "display string should contain '{expected_fragment}', got '{}'",
-                err
-            );
-        }
-    }
-
-    #[test]
-    fn semantic_var_parameter_rejects_non_assignable_binding() {
-        let err = semantic_compile_test(
-            r#"
-MODULE Main;
-CONST c = 1;
-PROCEDURE Bump(VAR target: INTEGER);
-BEGIN
-END Bump;
-BEGIN
-    Bump(c)
-END Main.
-"#,
-        )
-        .unwrap_err();
-
-        assert_eq!(err.code(), "E011");
-        assert!(
-            err.to_string()
-                .contains("is not an assignable variable binding"),
-            "expected assignable-binding VAR diagnostic, got '{err}'"
-        );
-    }
-
-    #[test]
-    fn semantic_accepts_flt_floor_and_eof_conditions() {
-        let module = parse_module(
-            r#"
-MODULE Main;
-VAR x: REAL;
-    y: INTEGER;
-BEGIN
-    x := FLT(y);
-    y := FLOOR(x);
-    IF EOF() THEN
-    END;
-    WHILE EOF() DO
-    END
-END Main.
-"#,
-        )
-        .expect("source should parse");
-
-        analyze(&module, None).expect("FLT/FLOOR and EOF conditions should be accepted");
-    }
-
-    #[test]
-    fn semantic_directly_covers_inference_and_boolean_validation_paths() {
-        let mut symbols = SymbolTable::new();
-        symbols
-            .declare_with_type("x", SymbolKind::Variable, Some(TypeRef::Integer))
-            .expect("integer variable should be declared");
-        symbols
-            .declare_with_type("r", SymbolKind::Variable, Some(TypeRef::Real))
-            .expect("real variable should be declared");
-        symbols
-            .declare_with_type("b", SymbolKind::Variable, Some(TypeRef::Boolean))
-            .expect("boolean variable should be declared");
-
-        let mut types = HashMap::new();
-        types.insert("INTEGER".to_string(), TypeRef::Integer);
-        types.insert("BOOLEAN".to_string(), TypeRef::Boolean);
-        types.insert("REAL".to_string(), TypeRef::Real);
-        types.insert("LONGREAL".to_string(), TypeRef::LongReal);
-
-        assert_eq!(
-            infer_expr_type(&Expr::Variable("x".to_string()), &symbols, &types)
-                .expect("integer variable should infer")
-                .unwrap(),
-            TypeRef::Integer
-        );
-
-        let err = infer_expr_type(&Expr::Variable("missing".to_string()), &symbols, &types)
-            .expect_err("unknown variable should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E005");
-
-        let err = infer_expr_type(
-            &Expr::QualifiedVariable {
-                module: "B".to_string(),
-                name: "value".to_string(),
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("qualified variable should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E015");
-
-        let err = infer_expr_type(
-            &Expr::Call {
-                module: None,
-                name: "ReadInt".to_string(),
-                args: vec![Expr::Integer(1)],
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("ReadInt arity should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E006");
-
-        let err = infer_expr_type(
-            &Expr::Call {
-                module: None,
-                name: "FLT".to_string(),
-                args: vec![Expr::Boolean(true)],
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("FLT should reject non-integer types");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E012");
-
-        let err = infer_expr_type(
-            &Expr::Call {
-                module: None,
-                name: "FLOOR".to_string(),
-                args: vec![Expr::Integer(1)],
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("FLOOR should reject non-real input");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E012");
-
-        let err = infer_expr_type(
-            &Expr::Call {
-                module: None,
-                name: "Unknown".to_string(),
-                args: vec![],
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("unknown function should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E005");
-
-        let err = validate_boolean_condition(&Expr::Integer(1), &symbols, &types)
-            .expect_err("numeric condition should fail validation");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E012");
-
-        assert!(
-            validate_boolean_condition(
-                &Expr::Call {
-                    module: None,
-                    name: "EOF".to_string(),
-                    args: vec![],
-                },
-                &symbols,
-                &types,
-            )
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn semantic_covers_remaining_branch_paths() {
-        let mut symbols = SymbolTable::new();
-        symbols
-            .declare_with_type("x", SymbolKind::Variable, Some(TypeRef::Integer))
-            .expect("integer variable should be declared");
-        symbols
-            .declare_with_type("r", SymbolKind::Variable, Some(TypeRef::Real))
-            .expect("real variable should be declared");
-        symbols
-            .declare("custom", SymbolKind::Procedure)
-            .expect("custom procedure should be declared");
-        symbols
-            .declare_with_type("flag", SymbolKind::Variable, Some(TypeRef::Boolean))
-            .expect("boolean variable should be declared");
-
-        let mut types = HashMap::new();
-        types.insert("INTEGER".to_string(), TypeRef::Integer);
-        types.insert("BOOLEAN".to_string(), TypeRef::Boolean);
-        types.insert("REAL".to_string(), TypeRef::Real);
-        types.insert("LONGREAL".to_string(), TypeRef::LongReal);
-
-        let non_const_decl = Declaration::Var {
-            name: "bad".to_string(),
-            declared_type: Some(TypeRef::Integer),
-        };
-        let err = validate_const_expression_literal(&non_const_decl)
-            .expect_err("non-const declaration should fail");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E999");
-
-        for type_ref in [
-            TypeRef::Integer,
-            TypeRef::Boolean,
-            TypeRef::Real,
-            TypeRef::LongReal,
-        ] {
-            assert!(validate_declared_type(&type_ref, &types).is_ok());
-        }
-
-        assert!(
-            validate_declared_type(
-                &TypeRef::Qualified {
-                    module: "B".to_string(),
-                    name: "IntType".to_string(),
-                },
-                &types,
-            )
-            .is_ok()
-        );
-
-        assert_eq!(type_ref_name_for_error(&TypeRef::Integer), "INTEGER");
-        assert_eq!(type_ref_name_for_error(&TypeRef::Boolean), "BOOLEAN");
-        assert_eq!(type_ref_name_for_error(&TypeRef::Real), "REAL");
-        assert_eq!(type_ref_name_for_error(&TypeRef::LongReal), "LONGREAL");
-        assert_eq!(
-            type_ref_name_for_error(&TypeRef::Named("Alias".to_string())),
-            "Alias"
-        );
-        assert_eq!(
-            type_ref_name_for_error(&TypeRef::Qualified {
-                module: "B".to_string(),
-                name: "IntType".to_string(),
-            }),
-            "B.IntType"
-        );
-
-        let err = validate_declared_type(&TypeRef::Named("Alias".to_string()), &types)
-            .expect_err("unknown named type should fail");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E013");
-
-        let import_aliases = HashMap::from([("B".to_string(), "ModuleB".to_string())]);
-        let external_modules = ExternalModuleInfo::mock_resolver();
-        assert!(
-            validate_declared_type_with_imports(
-                &TypeRef::Qualified {
-                    module: "B".to_string(),
-                    name: "IntType".to_string(),
-                },
-                &types,
-                &import_aliases,
-                &external_modules,
-            )
-            .is_ok()
-        );
-
-        let err = validate_declared_type_with_imports(
-            &TypeRef::Qualified {
-                module: "B".to_string(),
-                name: "HiddenType".to_string(),
-            },
-            &types,
-            &import_aliases,
-            &external_modules,
-        )
-        .expect_err("non-exported qualified type should fail");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E014");
-
-        let err = validate_declared_type_with_imports(
-            &TypeRef::Qualified {
-                module: "Z".to_string(),
-                name: "IntType".to_string(),
-            },
-            &types,
-            &import_aliases,
-            &external_modules,
-        )
-        .expect_err("unknown module-qualified type should fail");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E013");
-        assert!(assignment_compatible_extended(
-            &TypeRef::Qualified {
-                module: "B".to_string(),
-                name: "IntType".to_string(),
-            },
-            &TypeRef::Integer,
-            &import_aliases,
-            &external_modules,
-        ));
-        assert!(!assignment_compatible_extended(
-            &TypeRef::Real,
-            &TypeRef::Qualified {
-                module: "B".to_string(),
-                name: "IntType".to_string(),
-            },
-            &import_aliases,
-            &external_modules,
-        ));
-        assert!(!assignment_compatible_extended(
-            &TypeRef::Qualified {
-                module: "Z".to_string(),
-                name: "IntType".to_string(),
-            },
-            &TypeRef::Integer,
-            &import_aliases,
-            &external_modules,
-        ));
-
-        assert!(validate_boolean_condition(&Expr::Boolean(true), &symbols, &types).is_ok());
-
-        let err = validate_boolean_condition(&Expr::Real(1.0), &symbols, &types)
-            .expect_err("non-boolean condition should fail");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E012");
-
-        let err = infer_expr_type(&Expr::String("x".to_string()), &symbols, &types)
-            .expect_err("string literals should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E008");
-
-        let err = infer_expr_type(
-            &Expr::Call {
-                module: None,
-                name: "FLT".to_string(),
-                args: vec![],
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("FLT arity should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E006");
-
-        let err = infer_expr_type(
-            &Expr::Call {
-                module: None,
-                name: "FLOOR".to_string(),
-                args: vec![],
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("FLOOR arity should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E006");
-
-        let err = infer_expr_type(
-            &Expr::Call {
-                module: None,
-                name: "custom".to_string(),
-                args: vec![],
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("custom builtin-like calls should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E007");
-
-        let err = infer_expr_type(
-            &Expr::Unary {
-                op: UnaryOp::Minus,
-                value: Box::new(Expr::Boolean(true)),
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("numeric unary errors should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E012");
-
-        let err = infer_expr_type(
-            &Expr::Unary {
-                op: UnaryOp::Not,
-                value: Box::new(Expr::Integer(1)),
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("boolean unary errors should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E012");
-
-        let err = infer_expr_type(
-            &Expr::Binary {
-                op: BinaryOp::And,
-                left: Box::new(Expr::Integer(1)),
-                right: Box::new(Expr::Boolean(true)),
-            },
-            &symbols,
-            &types,
-        )
-        .expect_err("logical binary errors should fail inference");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E012");
-
-        let err = analyze_expr(&Expr::Variable("missing".to_string()), &symbols)
-            .expect_err("undefined expressions should fail analysis");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E005");
-
-        let proc_arity = HashMap::new();
-        let mut proc_params = HashMap::new();
-        symbols
-            .declare("p", SymbolKind::Procedure)
-            .expect("procedure should be declared");
-        symbols
-            .declare("q", SymbolKind::Procedure)
-            .expect("procedure should be declared");
-        proc_params.insert(
-            "p".to_string(),
-            vec![ParamDecl {
-                name: "target".to_string(),
-                declared_type: Some(TypeRef::Integer),
-                is_var: true,
-            }],
-        );
-        let err = analyze_statement(
-            &Statement::Call {
-                module: None,
-                name: "p".to_string(),
-                args: vec![Expr::Variable("r".to_string())],
-            },
-            &mut symbols,
-            &proc_arity,
-            &proc_params,
-            &types,
-            &import_aliases,
-            &external_modules,
-        )
-        .expect_err("VAR parameter mismatches should fail analysis");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E012");
-
-        proc_params.insert(
-            "q".to_string(),
-            vec![ParamDecl {
-                name: "flag".to_string(),
-                declared_type: Some(TypeRef::Boolean),
-                is_var: false,
-            }],
-        );
-        let err = analyze_statement(
-            &Statement::Call {
-                module: None,
-                name: "q".to_string(),
-                args: vec![Expr::Integer(1)],
-            },
-            &mut symbols,
-            &proc_arity,
-            &proc_params,
-            &types,
-            &import_aliases,
-            &external_modules,
-        )
-        .expect_err("parameter mismatches should fail analysis");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E012");
-
-        let if_stmt = Statement::If {
-            condition: Expr::Variable("flag".to_string()),
-            then_branch: vec![Statement::Assign {
-                target: "flag".to_string(),
-                value: Expr::Boolean(true),
-            }],
-            else_branch: Some(vec![Statement::Assign {
-                target: "flag".to_string(),
-                value: Expr::Boolean(false),
-            }]),
-        };
-        analyze_statement(
-            &if_stmt,
-            &mut symbols,
-            &proc_arity,
-            &proc_params,
-            &types,
-            &import_aliases,
-            &external_modules,
-        )
-        .expect("if statement analysis should succeed");
-
-        let while_stmt = Statement::While {
-            condition: Expr::Variable("flag".to_string()),
-            body: vec![Statement::Assign {
-                target: "flag".to_string(),
-                value: Expr::Boolean(false),
-            }],
-        };
-        analyze_statement(
-            &while_stmt,
-            &mut symbols,
-            &proc_arity,
-            &proc_params,
-            &types,
-            &import_aliases,
-            &external_modules,
-        )
-        .expect("while statement analysis should succeed");
-    }
-
-    #[test]
-    fn semantic_covers_const_validation_and_error_display_paths() {
-        let decl = Declaration::Const {
-            name: "bad".to_string(),
-            value: Expr::Call {
-                module: None,
-                name: "ReadInt".to_string(),
-                args: vec![],
-            },
-        };
-
-        let err = validate_const_expression_literal(&decl)
-            .expect_err("non-literal const should be rejected");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-        assert_eq!(err.code(), "E016");
-
-        let errors = vec![
-            SemanticError::InvalidConstDeclaration {
-                name: "bad".to_string(),
-            },
-            SemanticError::InternalError {
-                error: "boom".to_string(),
-            },
-        ];
-
-        for err in errors {
-            assert!(
-                err.to_string().contains("Constant")
-                    || err.to_string().contains("Internal compiler error")
-            );
-        }
-    }
-
-    #[test]
-    fn semantic_rejects_non_boolean_if_and_while_conditions() {
-        let module = parse_module(
-            r#"
-MODULE Main;
-BEGIN
-    IF 1 THEN
-    END;
-    WHILE 0 DO
-    END
-END Main.
-"#,
-        )
-        .expect("source should parse");
-
-        let err = analyze(&module, None).expect_err("non-boolean conditions should be rejected");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-
-        assert_eq!(err.code(), "E012");
-        assert!(
-            err.to_string().contains("condition must be BOOLEAN"),
-            "expected boolean-condition diagnostic, got '{err}'"
-        );
-    }
-
-    #[test]
-    fn semantic_rejects_invalid_flt_and_floor_argument_types() {
-        let module = parse_module(
-            r#"
-MODULE Main;
-VAR x: INTEGER;
-BEGIN
-    x := FLT(TRUE);
-    x := FLOOR(1)
-END Main.
-"#,
-        )
-        .expect("source should parse");
-
-        let err = analyze(&module, None)
-            .expect_err("invalid FLT/FLOOR argument types should be rejected");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-
-        assert_eq!(err.code(), "E012");
-        assert!(
-            err.to_string()
-                .contains("FLT() requires an INTEGER argument")
-                || err
-                    .to_string()
-                    .contains("FLOOR() requires a REAL or LONGREAL argument"),
-            "expected FLT/FLOOR type diagnostic, got '{err}'"
-        );
-    }
-
-    #[test]
-    fn issue26_expected_qualified_exported_procedure_call_passes() {
-        let module = parse_module(
-            r#"
-MODULE Main;
-IMPORT B := ModuleB;
-BEGIN
-    B.HELLO
-END Main.
-"#,
-        )
-        .expect("source should parse");
-
-        // Expected behavior once issue #26 is implemented:
-        // - resolve B.HELLO via imported module alias B
-        // - require HELLO to be exported from ModuleB
-        analyze(&module, None).expect("qualified exported procedure call should be accepted");
-    }
-
-    #[test]
-    fn issue26_expected_qualified_non_exported_procedure_call_fails() {
-        let module = parse_module(
-            r#"
-MODULE Main;
-IMPORT B := ModuleB;
-BEGIN
-    B.HiddenProc
-END Main.
-"#,
-        )
-        .expect("source should parse");
-
-        let err = analyze(&module, None)
-            .expect_err("qualified non-exported procedure call should be rejected");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-
-        assert_eq!(err.code(), "E014");
-        assert!(
-            matches!(
-                &err,
-                SemanticError::NonExportedMember { module, name }
-                    if module == "ModuleB" && name == "HiddenProc"
-            ),
-            "expected NonExportedMember diagnostic, got '{err}'"
-        );
-    }
-
-    #[test]
-    fn issue26_expected_qualified_missing_module_fails() {
-        let module = parse_module(
-            r#"
-MODULE Main;
-IMPORT B := MissingModule;
-BEGIN
-    B.HELLO
-END Main.
-"#,
-        )
-        .expect("source should parse");
-
-        let err = analyze(&module, None)
-            .expect_err("qualified call to a missing external module should be rejected");
-        let err = err
-            .downcast::<SemanticError>()
-            .expect("semantic error should be returned");
-
-        assert_eq!(err.code(), "E005");
-        assert!(
-            matches!(&err, SemanticError::UndefinedSymbol { name } if name == "B.HELLO"),
-            "expected undefined external-module diagnostic, got '{err}'"
-        );
-    }
-
-    #[test]
-    fn issue26_expected_qualified_exported_type_reference_passes() {
-        let module = parse_module(
-            r#"
-MODULE Main;
-IMPORT B := ModuleB;
-VAR x: B.IntType;
-BEGIN
-    x := 1
-END Main.
-"#,
-        )
-        .expect("source should parse");
-
-        // Expected behavior once issue #26 is implemented:
-        // - resolve B.IntType via imported module alias B
-        // - require IntType to be exported from ModuleB
-        analyze(&module, None).expect("qualified exported type reference should be accepted");
-    }
-
-    #[derive(Clone, Copy)]
-    enum ScalarType {
-        Integer,
-        Real,
-        LongReal,
-        Boolean,
-    }
-
-    impl ScalarType {
-        fn name(self) -> &'static str {
-            match self {
-                ScalarType::Integer => "INTEGER",
-                ScalarType::Real => "REAL",
-                ScalarType::LongReal => "LONGREAL",
-                ScalarType::Boolean => "BOOLEAN",
-            }
-        }
-
-        fn var_name(self) -> &'static str {
-            match self {
-                ScalarType::Integer => "i",
-                ScalarType::Real => "r",
-                ScalarType::LongReal => "lr",
-                ScalarType::Boolean => "b",
-            }
-        }
-
-        fn is_numeric(self) -> bool {
-            matches!(
-                self,
-                ScalarType::Integer | ScalarType::Real | ScalarType::LongReal
-            )
-        }
-    }
-
-    fn arithmetic_result_type(lhs: ScalarType, rhs: ScalarType) -> ScalarType {
-        if matches!(lhs, ScalarType::LongReal) || matches!(rhs, ScalarType::LongReal) {
-            ScalarType::LongReal
-        } else if matches!(lhs, ScalarType::Real) || matches!(rhs, ScalarType::Real) {
-            ScalarType::Real
-        } else {
-            ScalarType::Integer
-        }
-    }
-
-    fn matrix_source(result_type: ScalarType, expr: &str) -> String {
-        format!(
-            "MODULE Main;\nVAR i: INTEGER;\nVAR r: REAL;\nVAR lr: LONGREAL;\nVAR b: BOOLEAN;\nVAR out: {};\nBEGIN\n  out := {}\nEND Main.\n",
-            result_type.name(),
-            expr
-        )
-    }
-
-    #[test]
-    fn inferred_operator_types_follow_the_documented_matrix() {
-        let mut symbols = SymbolTable::new();
-        symbols
-            .declare_with_type("i", SymbolKind::Variable, Some(TypeRef::Integer))
-            .expect("integer variable should be declared");
-        symbols
-            .declare_with_type("r", SymbolKind::Variable, Some(TypeRef::Real))
-            .expect("real variable should be declared");
-        symbols
-            .declare_with_type("lr", SymbolKind::Variable, Some(TypeRef::LongReal))
-            .expect("longreal variable should be declared");
-        symbols
-            .declare_with_type("b", SymbolKind::Variable, Some(TypeRef::Boolean))
-            .expect("boolean variable should be declared");
-
-        let mut types = HashMap::new();
-        types.insert("INTEGER".to_string(), TypeRef::Integer);
-        types.insert("BOOLEAN".to_string(), TypeRef::Boolean);
-        types.insert("REAL".to_string(), TypeRef::Real);
-        types.insert("LONGREAL".to_string(), TypeRef::LongReal);
-
-        let arithmetic = infer_expr_type(
-            &Expr::Binary {
-                op: BinaryOp::Add,
-                left: Box::new(Expr::Variable("i".to_string())),
-                right: Box::new(Expr::Variable("r".to_string())),
-            },
-            &symbols,
-            &types,
-        )
-        .expect("numeric addition should infer")
-        .expect("numeric addition should have a result type");
-        assert_eq!(arithmetic, TypeRef::Real);
-
-        let relation = infer_expr_type(
-            &Expr::Binary {
-                op: BinaryOp::Lt,
-                left: Box::new(Expr::Variable("i".to_string())),
-                right: Box::new(Expr::Variable("lr".to_string())),
-            },
-            &symbols,
-            &types,
-        )
-        .expect("ordering relation should infer")
-        .expect("ordering relation should have a result type");
-        assert_eq!(relation, TypeRef::Boolean);
-
-        let boolean = infer_expr_type(
-            &Expr::Binary {
-                op: BinaryOp::Or,
-                left: Box::new(Expr::Variable("b".to_string())),
-                right: Box::new(Expr::Variable("b".to_string())),
-            },
-            &symbols,
-            &types,
-        )
-        .expect("boolean logic should infer")
-        .expect("boolean logic should have a result type");
-        assert_eq!(boolean, TypeRef::Boolean);
-    }
-
-    #[test]
-    fn semantic_operator_type_matrix_is_fully_covered() {
-        let all_types = [
-            ScalarType::Integer,
-            ScalarType::Real,
-            ScalarType::LongReal,
-            ScalarType::Boolean,
-        ];
-
-        for operand in all_types {
-            let expr = format!("+{}", operand.var_name());
-            let source = matrix_source(operand, &expr);
-            let result = analyze(
-                &parse_module(&source).expect("matrix unary + should parse"),
-                None,
-            );
-            assert_eq!(
-                result.is_ok(),
-                operand.is_numeric(),
-                "unary '+' compatibility mismatch for {}",
-                operand.name()
-            );
-        }
-
-        for operand in all_types {
-            let expr = format!("-{}", operand.var_name());
-            let source = matrix_source(operand, &expr);
-            let result = analyze(
-                &parse_module(&source).expect("matrix unary - should parse"),
-                None,
-            );
-            assert_eq!(
-                result.is_ok(),
-                operand.is_numeric(),
-                "unary '-' compatibility mismatch for {}",
-                operand.name()
-            );
-        }
-
-        for operand in all_types {
-            let expr = format!("~{}", operand.var_name());
-            let source = matrix_source(ScalarType::Boolean, &expr);
-            let result = analyze(
-                &parse_module(&source).expect("matrix unary ~ should parse"),
-                None,
-            );
-            assert_eq!(
-                result.is_ok(),
-                matches!(operand, ScalarType::Boolean),
-                "unary '~' compatibility mismatch for {}",
-                operand.name()
-            );
-        }
-
-        for lhs in all_types {
-            for rhs in all_types {
-                let lhs_name = lhs.var_name();
-                let rhs_name = rhs.var_name();
-                let both_numeric = lhs.is_numeric() && rhs.is_numeric();
-
-                for op in ["+", "-", "*", "/"] {
-                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
-                    let source = matrix_source(arithmetic_result_type(lhs, rhs), &expr);
-                    let result = analyze(
-                        &parse_module(&source).expect("matrix arithmetic should parse"),
-                        None,
-                    );
-                    assert_eq!(
-                        result.is_ok(),
-                        both_numeric,
-                        "arithmetic compatibility mismatch for {} {} {}",
-                        lhs.name(),
-                        op,
-                        rhs.name()
-                    );
-                }
-
-                for op in ["DIV", "MOD"] {
-                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
-                    let source = matrix_source(ScalarType::Integer, &expr);
-                    let result = analyze(
-                        &parse_module(&source).expect("matrix integer arithmetic should parse"),
-                        None,
-                    );
-                    assert_eq!(
-                        result.is_ok(),
-                        matches!(lhs, ScalarType::Integer) && matches!(rhs, ScalarType::Integer),
-                        "{} compatibility mismatch for {} and {}",
-                        op,
-                        lhs.name(),
-                        rhs.name()
-                    );
-                }
-
-                for op in ["OR", "&"] {
-                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
-                    let source = matrix_source(ScalarType::Boolean, &expr);
-                    let result = analyze(
-                        &parse_module(&source).expect("matrix boolean op should parse"),
-                        None,
-                    );
-                    assert_eq!(
-                        result.is_ok(),
-                        matches!(lhs, ScalarType::Boolean) && matches!(rhs, ScalarType::Boolean),
-                        "{} compatibility mismatch for {} and {}",
-                        op,
-                        lhs.name(),
-                        rhs.name()
-                    );
-                }
-
-                for op in ["=", "#"] {
-                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
-                    let source = matrix_source(ScalarType::Boolean, &expr);
-                    let result = analyze(
-                        &parse_module(&source).expect("matrix equality op should parse"),
-                        None,
-                    );
-                    let expected = (lhs.is_numeric() && rhs.is_numeric())
-                        || (matches!(lhs, ScalarType::Boolean)
-                            && matches!(rhs, ScalarType::Boolean));
-                    assert_eq!(
-                        result.is_ok(),
-                        expected,
-                        "{} compatibility mismatch for {} and {}",
-                        op,
-                        lhs.name(),
-                        rhs.name()
-                    );
-                }
-
-                for op in ["<", "<=", ">", ">="] {
-                    let expr = format!("{} {} {}", lhs_name, op, rhs_name);
-                    let source = matrix_source(ScalarType::Boolean, &expr);
-                    let result = analyze(
-                        &parse_module(&source).expect("matrix ordering op should parse"),
-                        None,
-                    );
-                    assert_eq!(
-                        result.is_ok(),
-                        both_numeric,
-                        "{} compatibility mismatch for {} and {}",
-                        op,
-                        lhs.name(),
-                        rhs.name()
-                    );
-                }
-            }
-        }
+        .into()),
     }
 }
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod tests;

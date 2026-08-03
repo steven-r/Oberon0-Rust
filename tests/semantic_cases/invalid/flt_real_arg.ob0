@@ -1,0 +1,5 @@
+MODULE Main;
+VAR r: REAL;
+BEGIN
+  r := FLT(1.0)
+END Main.

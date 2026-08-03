@@ -45,7 +45,7 @@ pub struct LocalVarDecl {
     pub declared_type: Option<TypeRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 /// Type references supported by the current typed-declaration milestone.
 pub enum TypeRef {
     /// Built-in INTEGER scalar type.
@@ -56,6 +56,11 @@ pub enum TypeRef {
     Real,
     /// Built-in LONGREAL scalar type.
     LongReal,
+    /// Array type with a constant length expression and nested element type.
+    Array {
+        length: Expr,
+        element_type: Box<TypeRef>,
+    },
     /// Named type alias or user-defined type reference.
     Named(String),
     /// Qualified type reference (e.g., B.T for module B's exported type T).
@@ -66,7 +71,7 @@ pub enum TypeRef {
 /// Executable statements supported by the current Oberon0 subset.
 pub enum Statement {
     /// Assigns the evaluated expression to an existing identifier.
-    Assign { target: String, value: Expr },
+    Assign { target: AssignTarget, value: Expr },
     /// Invokes a built-in, imported, or user-defined procedure.
     Call {
         module: Option<String>,
@@ -126,6 +131,11 @@ pub enum Expr {
     String(String),
     /// Reference to an identifier before semantic resolution.
     Variable(String),
+    /// Indexed array element reference before semantic resolution.
+    Indexed {
+        name: String,
+        index: Box<Expr>,
+    },
     /// Qualified variable reference (e.g., B.T).
     QualifiedVariable {
         module: String,
@@ -174,6 +184,16 @@ impl PartialEq for Expr {
             (Expr::String(a), Expr::String(b)) => a == b,
             (Expr::Variable(a), Expr::Variable(b)) => a == b,
             (
+                Expr::Indexed {
+                    name: n1,
+                    index: i1,
+                },
+                Expr::Indexed {
+                    name: n2,
+                    index: i2,
+                },
+            ) => n1 == n2 && i1 == i2,
+            (
                 Expr::QualifiedVariable {
                     module: m1,
                     name: n1,
@@ -215,6 +235,36 @@ impl PartialEq for Expr {
     }
 }
 
+#[derive(Debug, Clone)]
+/// Assignable designators supported by the current subset grammar.
+pub enum AssignTarget {
+    /// Assign to a named binding.
+    Name(String),
+    /// Assign to an indexed array element.
+    Indexed { name: String, index: Expr },
+}
+
+impl PartialEq for AssignTarget {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (AssignTarget::Name(a), AssignTarget::Name(b)) => a == b,
+            (
+                AssignTarget::Indexed {
+                    name: n1,
+                    index: i1,
+                },
+                AssignTarget::Indexed {
+                    name: n2,
+                    index: i2,
+                },
+            ) => n1 == n2 && i1 == i2,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for AssignTarget {}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// Supported binary operators in the current subset grammar.
 pub enum BinaryOp {
@@ -247,156 +297,4 @@ pub enum UnaryOp {
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]
-mod tests {
-    use super::{BinaryOp, Expr, UnaryOp};
-
-    #[test]
-    fn expr_is_literal_detects_literal_and_non_literal_nodes() {
-        assert!(Expr::Integer(42).is_literal());
-        assert!(Expr::Real(3.5).is_literal());
-        assert!(Expr::LongReal(4.5).is_literal());
-        assert!(Expr::Boolean(true).is_literal());
-        assert!(Expr::String("hello".to_string()).is_literal());
-
-        assert!(!Expr::Variable("value".to_string()).is_literal());
-        assert!(
-            !Expr::QualifiedVariable {
-                module: "M".to_string(),
-                name: "value".to_string(),
-            }
-            .is_literal()
-        );
-        assert!(
-            !Expr::Call {
-                module: None,
-                name: "f".to_string(),
-                args: vec![],
-            }
-            .is_literal()
-        );
-        assert!(
-            !Expr::Unary {
-                op: UnaryOp::Not,
-                value: Box::new(Expr::Boolean(true)),
-            }
-            .is_literal()
-        );
-        assert!(
-            !Expr::Binary {
-                op: BinaryOp::Add,
-                left: Box::new(Expr::Integer(1)),
-                right: Box::new(Expr::Integer(2)),
-            }
-            .is_literal()
-        );
-    }
-
-    #[test]
-    fn expr_equality_matches_all_supported_expression_variants() {
-        assert_eq!(Expr::Integer(1), Expr::Integer(1));
-        assert_ne!(Expr::Integer(1), Expr::Integer(2));
-        assert_eq!(Expr::Real(1.5), Expr::Real(1.5));
-        assert_ne!(Expr::Real(1.5), Expr::Real(2.5));
-        assert_eq!(Expr::LongReal(1.25), Expr::LongReal(1.25));
-        assert_ne!(Expr::LongReal(1.25), Expr::LongReal(2.25));
-        assert_eq!(Expr::Boolean(true), Expr::Boolean(true));
-        assert_ne!(Expr::Boolean(true), Expr::Boolean(false));
-        assert_eq!(Expr::String("x".to_string()), Expr::String("x".to_string()));
-        assert_ne!(Expr::String("x".to_string()), Expr::String("y".to_string()));
-
-        assert_eq!(
-            Expr::Variable("name".to_string()),
-            Expr::Variable("name".to_string())
-        );
-        assert_ne!(
-            Expr::Variable("name".to_string()),
-            Expr::Variable("other".to_string())
-        );
-
-        assert_eq!(
-            Expr::QualifiedVariable {
-                module: "M".to_string(),
-                name: "name".to_string(),
-            },
-            Expr::QualifiedVariable {
-                module: "M".to_string(),
-                name: "name".to_string(),
-            }
-        );
-        assert_ne!(
-            Expr::QualifiedVariable {
-                module: "M".to_string(),
-                name: "name".to_string(),
-            },
-            Expr::QualifiedVariable {
-                module: "N".to_string(),
-                name: "name".to_string(),
-            }
-        );
-
-        let call = Expr::Call {
-            module: Some("M".to_string()),
-            name: "f".to_string(),
-            args: vec![Expr::Integer(1)],
-        };
-        assert_eq!(
-            call,
-            Expr::Call {
-                module: Some("M".to_string()),
-                name: "f".to_string(),
-                args: vec![Expr::Integer(1)],
-            }
-        );
-        assert_ne!(
-            call,
-            Expr::Call {
-                module: Some("M".to_string()),
-                name: "g".to_string(),
-                args: vec![Expr::Integer(1)],
-            }
-        );
-
-        let unary = Expr::Unary {
-            op: UnaryOp::Minus,
-            value: Box::new(Expr::Integer(3)),
-        };
-        assert_eq!(
-            unary,
-            Expr::Unary {
-                op: UnaryOp::Minus,
-                value: Box::new(Expr::Integer(3)),
-            }
-        );
-        assert_ne!(
-            unary,
-            Expr::Unary {
-                op: UnaryOp::Plus,
-                value: Box::new(Expr::Integer(3)),
-            }
-        );
-
-        let binary = Expr::Binary {
-            op: BinaryOp::Add,
-            left: Box::new(Expr::Integer(1)),
-            right: Box::new(Expr::Integer(2)),
-        };
-        assert_eq!(
-            binary,
-            Expr::Binary {
-                op: BinaryOp::Add,
-                left: Box::new(Expr::Integer(1)),
-                right: Box::new(Expr::Integer(2)),
-            }
-        );
-        assert_ne!(
-            binary,
-            Expr::Binary {
-                op: BinaryOp::Sub,
-                left: Box::new(Expr::Integer(1)),
-                right: Box::new(Expr::Integer(2)),
-            }
-        );
-
-        assert_ne!(Expr::Integer(1), Expr::Boolean(true));
-    }
-}
+mod tests;

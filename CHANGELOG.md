@@ -6,6 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- add array type declarations in `TYPE` blocks, including constant-expression lengths that fold during semantic analysis (#7)
+- add indexed designators for expressions and assignment targets, including lowering and Rust code generation support (`a[i]`, `a[i] := expr`) (#8)
+
+### Fixes
+
+- propagate `VAR` array parameter mutations back to caller/module state in generated runtime code paths (#8)
+- fix the quicksort golden sample loop bounds/initialization so the algorithm executes and produces sorted output
+
+### Documentation
+
+- update README subset notes to describe array type and indexed-designator support (#7, #8)
+
+### Tests
+
+- add parser and semantic valid corpus coverage for array type declarations, constant-expression array lengths, and indexed designators (#7, #8)
+- add codegen regression coverage for indexed read/write emission and `VAR` array roundtrip behavior (#8)
+
 ## v0.9.1 - 2026-08-02
 
 ### Features

@@ -55,7 +55,7 @@ Covered by existing issues:
 
 1. String literals / `WriteString`: #2, #3.
 2. IO baseline and follow-up split: #4, #12, #13.
-3. Typed model and type-carrying pipeline: #5, #6.
+3. Typed model and type-carrying pipeline: #5, #6, #61.
 4. Arrays and indexed designators: #7, #8.
 5. Records and field access: #9, #10.
 6. Type-checking consolidation: #11.
