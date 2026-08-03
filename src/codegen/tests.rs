@@ -1264,6 +1264,309 @@ fn var_array_parameter_updates_module_variable() {
     std::fs::remove_dir_all(&out_root).expect("temp codegen dir should be removable");
 }
 
+#[test]
+fn runtime_type_helpers_cover_boolean_array_and_alias_resolution() {
+    let mut aliases = std::collections::HashMap::new();
+    aliases.insert("AliasReal".to_string(), TypeRef::Real);
+    aliases.insert(
+        "AliasArray".to_string(),
+        TypeRef::Array {
+            length: Expr::Integer(2),
+            element_type: Box::new(TypeRef::Integer),
+        },
+    );
+
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![
+            HDeclaration::Type {
+                id: 1,
+                name: "AliasReal".to_string(),
+                target: TypeRef::Real,
+            },
+            HDeclaration::Type {
+                id: 2,
+                name: "AliasArray".to_string(),
+                target: TypeRef::Array {
+                    length: Expr::Integer(2),
+                    element_type: Box::new(TypeRef::Integer),
+                },
+            },
+        ],
+        statements: vec![],
+    };
+
+    let collected_aliases = super::collect_type_aliases(&module);
+    assert_eq!(
+        super::runtime_type_from_type_ref(Some(&TypeRef::Boolean)),
+        Some(super::RuntimeType::Boolean)
+    );
+    assert_eq!(
+        super::runtime_type_from_type_ref(Some(&TypeRef::Array {
+            length: Expr::Integer(1),
+            element_type: Box::new(TypeRef::Integer),
+        })),
+        Some(super::RuntimeType::Array)
+    );
+    assert_eq!(
+        super::resolve_runtime_type(Some(&TypeRef::Named("AliasReal".to_string())), &aliases),
+        Some(super::RuntimeType::Real)
+    );
+    assert_eq!(
+        super::resolve_runtime_type(Some(&TypeRef::Named("AliasArray".to_string())), &aliases),
+        Some(super::RuntimeType::Array)
+    );
+    assert_eq!(
+        super::resolve_runtime_type(
+            Some(&TypeRef::Named("AliasArray".to_string())),
+            &collected_aliases
+        ),
+        Some(super::RuntimeType::Array)
+    );
+    assert_eq!(
+        super::resolve_named_type(&TypeRef::Named("Missing".to_string()), &aliases),
+        &TypeRef::Named("Missing".to_string())
+    );
+    assert_eq!(super::default_literal(super::RuntimeType::Real), "value_real(0.0)");
+    assert_eq!(
+        super::default_literal(super::RuntimeType::LongReal),
+        "value_longreal(0.0)"
+    );
+    assert_eq!(
+        super::default_literal(super::RuntimeType::Array),
+        "value_array(0)"
+    );
+}
+
+#[test]
+fn generate_cargo_toml_reports_missing_manifest_binding() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![HImportDecl {
+            local_name: "IO".to_string(),
+            external_name: "IO".to_string(),
+        }],
+        declarations: vec![],
+        statements: vec![],
+    };
+
+    let manifest = ExternalManifest {
+        dependencies: BTreeMap::new(),
+        compiler: CompilerConfig::default(),
+    };
+
+    let error = generate_cargo_toml(&module, Some(&manifest))
+        .expect_err("missing manifest import should return an error");
+    assert!(
+        error
+            .to_string()
+            .contains("Import 'IO' was not found in the manifest")
+    );
+}
+
+#[test]
+fn statement_needs_state_map_covers_while_and_indexed_condition_paths() {
+    let procedures = std::collections::HashSet::new();
+    let while_stmt = HStatement::While {
+        condition: HExpr::Indexed {
+            name: ident(10, "arr", SymbolKind::Variable),
+            index: Box::new(HExpr::Name(ident(11, "i", SymbolKind::Variable))),
+        },
+        body: vec![HStatement::Call {
+            module: None,
+            name: ident(12, "WriteLn", SymbolKind::Procedure),
+            args: vec![],
+        }],
+    };
+
+    assert!(super::statement_needs_state_map(&while_stmt, &procedures));
+}
+
+#[test]
+fn expr_io_usage_tracks_nested_call_arguments() {
+    let expr = HExpr::Call {
+        name: ident(20, "SomeCall", SymbolKind::Procedure),
+        args: vec![HExpr::Call {
+            name: ident(21, "ReadLongReal", SymbolKind::Procedure),
+            args: vec![HExpr::Call {
+                name: ident(22, "ReadReal", SymbolKind::Procedure),
+                args: vec![],
+            }],
+        }],
+    };
+
+    let usage = super::expr_io_usage(&expr);
+    assert!(usage.uses_read_real);
+    assert!(usage.uses_read_longreal);
+}
+
+#[test]
+fn format_statement_covers_by_ref_locals_and_var_argument_temporaries() {
+    let mut locals = std::collections::HashMap::new();
+    locals.insert(31, "param_31".to_string());
+    locals.insert(32, "param_32".to_string());
+
+    let mut by_ref_locals = std::collections::HashSet::new();
+    by_ref_locals.insert(31);
+    by_ref_locals.insert(32);
+
+    let mut procedures = std::collections::HashSet::new();
+    procedures.insert("Bump".to_string());
+
+    let mut procedure_param_modes = std::collections::HashMap::new();
+    procedure_param_modes.insert("Bump".to_string(), vec![true, true]);
+
+    let ctx = super::FormatContext {
+        locals,
+        by_ref_locals,
+        constants: std::collections::HashMap::new(),
+        procedures: &procedures,
+        procedure_param_modes: &procedure_param_modes,
+        vars_arg: "vars",
+        procedure_name: Some("P"),
+        track_procedure_locals: true,
+        types: std::collections::HashMap::new(),
+    };
+
+    let assign_name = HStatement::Assign {
+        target: assign_target(31, "x", SymbolKind::Parameter),
+        value: HExpr::Integer(1),
+    };
+    let assign_indexed = HStatement::Assign {
+        target: indexed_target(32, "arr", SymbolKind::Parameter, HExpr::Integer(0)),
+        value: HExpr::Integer(9),
+    };
+    let call_var_proc = HStatement::Call {
+        module: None,
+        name: ident(40, "Bump", SymbolKind::Procedure),
+        args: vec![
+            HExpr::Name(ident(31, "x", SymbolKind::Parameter)),
+            HExpr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(HExpr::Integer(2)),
+                right: Box::new(HExpr::Integer(3)),
+            },
+        ],
+    };
+
+    let rendered_assign_name = super::format_statement(&assign_name, "    ", &ctx);
+    assert!(rendered_assign_name.contains("*param_31 = value_integer(1);"));
+    assert!(rendered_assign_name.contains("set_procedure_var(vars, \"P\", \"x\", &*param_31);"));
+
+    let rendered_assign_indexed = super::format_statement(&assign_indexed, "    ", &ctx);
+    assert!(rendered_assign_indexed.contains("value_set_index(&mut *param_32"));
+    assert!(
+        rendered_assign_indexed.contains("set_procedure_var(vars, \"P\", \"arr\", &*param_32);")
+    );
+
+    let rendered_call = super::format_statement(&call_var_proc, "    ", &ctx);
+    assert!(rendered_call.contains("Bump(vars, &mut *param_31, &mut call_arg_1);"));
+    assert!(
+        rendered_call.contains("let mut call_arg_1 = value_add(&value_integer(2), &value_integer(3));")
+    );
+}
+
+#[test]
+fn format_statement_defaults_and_format_expr_extended_paths() {
+    let procedures = std::collections::HashSet::new();
+    let procedure_param_modes = std::collections::HashMap::new();
+    let ctx = super::FormatContext {
+        locals: std::collections::HashMap::new(),
+        by_ref_locals: std::collections::HashSet::new(),
+        constants: std::collections::HashMap::new(),
+        procedures: &procedures,
+        procedure_param_modes: &procedure_param_modes,
+        vars_arg: "vars",
+        procedure_name: None,
+        track_procedure_locals: false,
+        types: std::collections::HashMap::new(),
+    };
+
+    let write_int = HStatement::Call {
+        module: None,
+        name: ident(50, "WriteInt", SymbolKind::Procedure),
+        args: vec![],
+    };
+    let write_real = HStatement::Call {
+        module: None,
+        name: ident(51, "WriteReal", SymbolKind::Procedure),
+        args: vec![],
+    };
+    let write_longreal = HStatement::Call {
+        module: None,
+        name: ident(52, "WriteLongReal", SymbolKind::Procedure),
+        args: vec![],
+    };
+    let write_string = HStatement::Call {
+        module: None,
+        name: ident(53, "WriteString", SymbolKind::Procedure),
+        args: vec![],
+    };
+
+    assert!(super::format_statement(&write_int, "    ", &ctx).contains("print_value(&value_integer(0));"));
+    assert!(super::format_statement(&write_real, "    ", &ctx).contains("write_real(0.0);"));
+    assert!(
+        super::format_statement(&write_longreal, "    ", &ctx).contains("write_longreal(0.0);")
+    );
+    assert!(super::format_statement(&write_string, "    ", &ctx).contains("print!(\"\");"));
+
+    assert_eq!(super::format_expr(&HExpr::Boolean(true), &ctx), "value_integer(1)");
+    assert_eq!(super::format_expr(&HExpr::LongReal(1.5), &ctx), "value_longreal(1.5)");
+    assert_eq!(super::format_expr(&HExpr::Real(2.5), &ctx), "value_real(2.5)");
+    assert_eq!(
+        super::format_expr(
+            &HExpr::Unary {
+                op: UnaryOp::Plus,
+                value: Box::new(HExpr::Integer(7)),
+            },
+            &ctx
+        ),
+        "value_integer(7)"
+    );
+
+    assert_eq!(
+        super::format_expr(
+            &HExpr::Call {
+                name: ident(54, "FLT", SymbolKind::Procedure),
+                args: vec![]
+            },
+            &ctx
+        ),
+        "value_real(0.0)"
+    );
+    assert_eq!(
+        super::format_expr(
+            &HExpr::Call {
+                name: ident(55, "FLOOR", SymbolKind::Procedure),
+                args: vec![]
+            },
+            &ctx
+        ),
+        "value_integer(0)"
+    );
+    assert!(
+        super::format_expr(
+            &HExpr::Call {
+                name: ident(56, "Unknown", SymbolKind::Procedure),
+                args: vec![HExpr::Integer(1), HExpr::Integer(2)]
+            },
+            &ctx
+        )
+        .contains("/* unsupported call expr Unknown(value_integer(1), value_integer(2)) */ 0")
+    );
+    assert_eq!(
+        super::format_binary_expr(BinaryOp::Div, "lhs", "rhs", false),
+        "value_div(&lhs, &rhs)"
+    );
+    assert_eq!(
+        super::format_binary_expr(BinaryOp::Add, "lhs", "rhs", true),
+        "(value_add(&lhs, &rhs))"
+    );
+}
+
 fn temp_codegen_dir(name: &str) -> std::path::PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
