@@ -218,7 +218,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("fn value_index(array: &Value, index: &Value) -> Value {\n");
     out.push_str("    let idx = value_index_from_value(index);\n");
     out.push_str("    match array {\n");
-    out.push_str("        Value::Array(values) => values.get(idx).cloned().unwrap_or(Value::Integer(0)),\n");
+    out.push_str(
+        "        Value::Array(values) => values.get(idx).cloned().unwrap_or(Value::Integer(0)),\n",
+    );
     out.push_str("        _ => panic!(\"Runtime error: indexed access on non-array value\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
@@ -231,7 +233,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("            }\n");
     out.push_str("            values[idx] = new_value;\n");
     out.push_str("        }\n");
-    out.push_str("        _ => panic!(\"Runtime error: indexed assignment on non-array value\"),\n");
+    out.push_str(
+        "        _ => panic!(\"Runtime error: indexed assignment on non-array value\"),\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_as_real(value: &Value) -> Value {\n");
@@ -239,7 +243,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Integer(v) => Value::Real(*v as f32),\n");
     out.push_str("        Value::Real(v) => Value::Real(*v),\n");
     out.push_str("        Value::LongReal(v) => Value::Real(*v as f32),\n");
-    out.push_str("        Value::Array(_) => panic!(\"Runtime error: cannot cast ARRAY to REAL\"),\n");
+    out.push_str(
+        "        Value::Array(_) => panic!(\"Runtime error: cannot cast ARRAY to REAL\"),\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_as_integer(value: &Value) -> Value {\n");
@@ -247,7 +253,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Integer(v) => Value::Integer(*v),\n");
     out.push_str("        Value::Real(v) => Value::Integer(*v as i64),\n");
     out.push_str("        Value::LongReal(v) => Value::Integer(*v as i64),\n");
-    out.push_str("        Value::Array(_) => panic!(\"Runtime error: cannot cast ARRAY to INTEGER\"),\n");
+    out.push_str(
+        "        Value::Array(_) => panic!(\"Runtime error: cannot cast ARRAY to INTEGER\"),\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_truthy(value: &Value) -> bool {\n");
@@ -442,7 +450,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("}\n\n");
     out.push_str("#[allow(dead_code)]\n");
     out.push_str("fn set_var_index(vars: &mut BTreeMap<String, Value>, name: &str, index: &Value, value: Value) {\n");
-    out.push_str("    let entry = vars.entry(name.to_string()).or_insert_with(|| value_array(0));\n");
+    out.push_str(
+        "    let entry = vars.entry(name.to_string()).or_insert_with(|| value_array(0));\n",
+    );
     out.push_str("    value_set_index(entry, index, value);\n");
     out.push_str("}\n\n");
     out.push_str("#[allow(dead_code)]\n");
@@ -1072,7 +1082,10 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
                     if let Some(binding) = ctx.locals.get(&ident.id) {
                         let mut out = String::new();
                         if ctx.by_ref_locals.contains(&ident.id) {
-                            out.push_str(&format!("{}*{} = {};\n", indent, binding, rendered_value));
+                            out.push_str(&format!(
+                                "{}*{} = {};\n",
+                                indent, binding, rendered_value
+                            ));
                         } else {
                             out.push_str(&format!("{}{} = {};\n", indent, binding, rendered_value));
                         }

@@ -24,12 +24,7 @@ fn assign_target(id: usize, name: &str, kind: SymbolKind) -> HTarget {
     HTarget::Name(ident(id, name, kind))
 }
 
-fn indexed_target(
-    id: usize,
-    name: &str,
-    kind: SymbolKind,
-    index: HExpr,
-) -> HTarget {
+fn indexed_target(id: usize, name: &str, kind: SymbolKind, index: HExpr) -> HTarget {
     HTarget::Indexed {
         name: ident(id, name, kind),
         index,
@@ -150,7 +145,9 @@ fn emits_runtime_call_for_indexed_assignment_target() {
     let generated = generate_main_rs(&module, false);
     assert!(generated.contains("let indexed_idx_10 = (value_integer(1)).clone();"));
     assert!(generated.contains("let indexed_value_10 = (value_integer(42)).clone();"));
-    assert!(generated.contains("set_var_index(&mut vars, \"arr\", &indexed_idx_10, indexed_value_10);"));
+    assert!(
+        generated.contains("set_var_index(&mut vars, \"arr\", &indexed_idx_10, indexed_value_10);")
+    );
 }
 
 #[test]
@@ -1255,7 +1252,10 @@ fn var_array_parameter_updates_module_variable() {
     );
 
     let stdout = String::from_utf8(output.stdout).expect("stdout should be utf-8");
-    assert!(stdout.contains("42"), "expected updated first element, got: {stdout}");
+    assert!(
+        stdout.contains("42"),
+        "expected updated first element, got: {stdout}"
+    );
     assert!(
         stdout.contains("\"arr\": [42]"),
         "expected propagated array state, got: {stdout}"
