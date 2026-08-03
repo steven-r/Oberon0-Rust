@@ -198,6 +198,88 @@ fn binary_top_level_expr_is_not_wrapped_with_outer_parentheses() {
 }
 
 #[test]
+fn emits_local_binding_branches_for_indexed_assignments_var_calls_and_builtin_exprs() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![
+            HDeclaration::Procedure {
+                id: 1,
+                name: "Bump".to_string(),
+                params: vec![HParam {
+                    id: 2,
+                    name: "target".to_string(),
+                    declared_type: Some(TypeRef::Integer),
+                    is_var: true,
+                }],
+                local_vars: vec![],
+                body: vec![],
+                end_name: "Bump".to_string(),
+            },
+            HDeclaration::Procedure {
+                id: 3,
+                name: "Worker".to_string(),
+                params: vec![HParam {
+                    id: 4,
+                    name: "input".to_string(),
+                    declared_type: Some(TypeRef::Integer),
+                    is_var: true,
+                }],
+                local_vars: vec![
+                    ident(5, "arr", SymbolKind::Variable),
+                    ident(6, "x", SymbolKind::Variable),
+                ],
+                body: vec![
+                    HStatement::Assign {
+                        target: indexed_target(5, "arr", SymbolKind::Variable, HExpr::Integer(0)),
+                        value: HExpr::Name(ident(4, "input", SymbolKind::Parameter)),
+                    },
+                    HStatement::Assign {
+                        target: assign_target(6, "x", SymbolKind::Variable),
+                        value: HExpr::Indexed {
+                            name: ident(5, "arr", SymbolKind::Variable),
+                            index: Box::new(HExpr::Integer(1)),
+                        },
+                    },
+                    HStatement::Assign {
+                        target: assign_target(6, "x", SymbolKind::Variable),
+                        value: HExpr::Call {
+                            name: ident(7, "FLT", SymbolKind::Procedure),
+                            args: vec![HExpr::Name(ident(6, "x", SymbolKind::Variable))],
+                        },
+                    },
+                    HStatement::Assign {
+                        target: assign_target(6, "x", SymbolKind::Variable),
+                        value: HExpr::Call {
+                            name: ident(8, "FLOOR", SymbolKind::Procedure),
+                            args: vec![HExpr::Real(1.5)],
+                        },
+                    },
+                    HStatement::Call {
+                        module: None,
+                        name: ident(1, "Bump", SymbolKind::Procedure),
+                        args: vec![HExpr::Name(ident(6, "x", SymbolKind::Variable))],
+                    },
+                ],
+                end_name: "Worker".to_string(),
+            },
+        ],
+        statements: vec![],
+    };
+
+    let generated = generate_main_rs(&module, true);
+
+    assert!(generated.contains("value_set_index(&mut local_5, &indexed_idx_5, indexed_value_5);"));
+    assert!(generated.contains("set_procedure_var(vars, \"Worker\", \"arr\", &local_5);"));
+    assert!(generated.contains("(*param_4).clone()"));
+    assert!(generated.contains("value_index(&local_5, &value_integer(1))"));
+    assert!(generated.contains("value_as_real(&local_6)"));
+    assert!(generated.contains("value_as_integer(&value_real(1.5))"));
+    assert!(generated.contains("Bump(vars, &mut local_6);"));
+}
+
+#[test]
 fn nested_binary_expressions_do_not_add_unnecessary_parentheses() {
     let module = HModule {
         name: "Main".to_string(),

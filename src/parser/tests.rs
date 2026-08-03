@@ -1,11 +1,23 @@
 use std::fs;
 use std::path::Path;
 
-use super::parse_module;
+use pest::Parser;
+
+use super::{
+    Oberon0Parser, Rule, parse_assignment_target, parse_module, parse_pascal_string,
+    parse_primary_factor, parse_real_literal, split_call_text,
+};
 use crate::ast::{AssignTarget, BinaryOp, Expr, Statement, UnaryOp};
 use crate::manifest::ExternalManifest;
 use crate::scanner::scan;
 use crate::semantic::analyze;
+
+fn parse_pair(rule: Rule, source: &str) -> pest::iterators::Pair<'_, Rule> {
+    Oberon0Parser::parse(rule, source)
+        .expect("test input should parse for helper extraction")
+        .next()
+        .expect("parser should yield exactly one top-level pair")
+}
 
 fn read_dir_sources(dir: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -279,6 +291,59 @@ END Main.
         },
         other => panic!("expected assignment statement, got {other:?}"),
     }
+}
+
+#[test]
+fn parser_rejects_indexed_designators_as_calls() {
+    let err = parse_primary_factor(parse_pair(Rule::primary_factor, "arr[0]()"))
+        .expect_err("indexed designators cannot be called");
+    assert!(err.to_string().contains("Indexed designators cannot be called"));
+}
+
+#[test]
+fn parser_rejects_unsupported_designator_shapes() {
+    let err = parse_primary_factor(parse_pair(Rule::primary_factor, "B.arr[0]"))
+        .expect_err("indexed qualified designators should be rejected");
+    assert!(
+        err.to_string()
+            .contains("Indexed qualified designators are not yet supported")
+    );
+
+    let err = parse_primary_factor(parse_pair(Rule::primary_factor, "arr[0][1]"))
+        .expect_err("multiple indexes should be rejected");
+    assert!(
+        err.to_string()
+            .contains("Multiple index selectors are not yet supported")
+    );
+
+    let err = parse_assignment_target(parse_pair(Rule::designator, "B.arr"))
+        .expect_err("qualified assignment targets should be rejected");
+    assert!(
+        err.to_string()
+            .contains("Qualified assignment targets are not yet supported")
+    );
+
+    let err = parse_assignment_target(parse_pair(Rule::designator, "arr[0][1]"))
+        .expect_err("multiple index selectors should be rejected in assignment targets");
+    assert!(
+        err.to_string()
+            .contains("Multiple index selectors are not yet supported")
+    );
+}
+
+#[test]
+fn parser_helper_paths_cover_unsigned_exponents_and_malformed_inputs() {
+    assert_eq!(
+        parse_real_literal("1.25D3").expect("unsigned D exponent should parse"),
+        Expr::LongReal(1250.0)
+    );
+
+    let err = split_call_text("f)(x(").expect_err("reversed parentheses should be rejected");
+    assert!(err.to_string().contains("Malformed call syntax"));
+
+    let err = parse_pascal_string("\"unterminated")
+        .expect_err("unterminated Pascal strings should be rejected");
+    assert!(err.to_string().contains("String literal is malformed"));
 }
 
 #[test]
