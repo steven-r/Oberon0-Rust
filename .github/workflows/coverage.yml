@@ -1,0 +1,68 @@
+name: Coverage
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+          components: llvm-tools-preview
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install coverage tooling
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate LCOV coverage report
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov \
+            --workspace \
+            --all-targets \
+            --fail-under-lines 90 \
+            --lcov \
+            --output-path coverage/lcov.info
+
+      - name: Upload LCOV artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lcov-report
+          path: coverage/lcov.info
+          if-no-files-found: error
+
+      - name: Upload coverage to Codecov (token)
+        if: "${{ !cancelled() && env.CODECOV_TOKEN != '' }}"
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage/lcov.info
+          fail_ci_if_error: true
+          disable_search: true
+          token: ${{ env.CODECOV_TOKEN }}
+
+      - name: Upload coverage to Codecov (tokenless fallback)
+        if: "${{ !cancelled() && env.CODECOV_TOKEN == '' }}"
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage/lcov.info
+          fail_ci_if_error: false
+          disable_search: true

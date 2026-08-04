@@ -23,6 +23,11 @@ All notable changes to this project will be documented in this file.
 
 - add semantic regression coverage for qualified builtin imports, missing imports, wrong call contexts, and direct builtin-resolution/inference branches
 
+### CI
+
+- add a dedicated coverage workflow that generates LCOV via `cargo llvm-cov --workspace --all-targets --lcov --output-path coverage/lcov.info`, uploads it as an artifact, and publishes the same report to Codecov
+- enforce coverage gates with local CI line coverage >=90% and Codecov status checks for project >=90% and patch >=95%
+
 ## v0.10.0 - 2026-08-03
 
 ### Features

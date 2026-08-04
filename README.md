@@ -81,6 +81,10 @@ Run CLI argument parsing tests:
 
     cargo test tests::cli_
 
+Generate coverage locally (same LCOV format as CI/Codecov):
+
+    cargo llvm-cov --workspace --all-targets --lcov --output-path coverage/lcov.info
+
 ## Git workflow and commit policy
 
 This repository uses:
