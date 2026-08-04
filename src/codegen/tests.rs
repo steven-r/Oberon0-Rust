@@ -98,8 +98,8 @@ fn emits_dependency_entries_with_package_and_features() {
         name: "Main".to_string(),
         end_name: "Main".to_string(),
         imports: vec![HImportDecl {
-            local_name: "IO".to_string(),
-            external_name: "IO".to_string(),
+            local_name: "Color".to_string(),
+            external_name: "TermColor".to_string(),
         }],
         declarations: vec![],
         statements: vec![],
@@ -107,7 +107,7 @@ fn emits_dependency_entries_with_package_and_features() {
 
     let mut dependencies = BTreeMap::new();
     dependencies.insert(
-        "IO".to_string(),
+        "TermColor".to_string(),
         CrateBinding {
             crate_name: "termcolor".to_string(),
             version: "1.4".to_string(),
@@ -125,7 +125,7 @@ fn emits_dependency_entries_with_package_and_features() {
 
     assert!(
         cargo_toml
-            .contains("io = { version = \"1.4\", package = \"termcolor\", features = [\"std\"] }")
+            .contains("color = { version = \"1.4\", package = \"termcolor\", features = [\"std\"] }")
     );
 }
 
@@ -1424,7 +1424,7 @@ fn runtime_type_helpers_cover_boolean_array_and_alias_resolution() {
 }
 
 #[test]
-fn generate_cargo_toml_reports_missing_manifest_binding() {
+fn generate_cargo_toml_allows_internal_builtin_module_imports_without_manifest_binding() {
     let module = HModule {
         name: "Main".to_string(),
         end_name: "Main".to_string(),
@@ -1441,12 +1441,11 @@ fn generate_cargo_toml_reports_missing_manifest_binding() {
         compiler: CompilerConfig::default(),
     };
 
-    let error = generate_cargo_toml(&module, Some(&manifest))
-        .expect_err("missing manifest import should return an error");
+    let cargo_toml = generate_cargo_toml(&module, Some(&manifest))
+        .expect("internal builtin module imports should not need manifest bindings");
     assert!(
-        error
-            .to_string()
-            .contains("Import 'IO' was not found in the manifest")
+        !cargo_toml.contains("io = {"),
+        "internal builtin modules should not generate Cargo dependencies"
     );
 }
 

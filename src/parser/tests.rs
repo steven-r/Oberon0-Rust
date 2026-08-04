@@ -67,26 +67,26 @@ fn repair_parser_invalid_case(name: &str, source: &str) -> String {
         "bad_assign.ob0" => replace_required(source, "x = 1;", "x := 1;"),
         "bad_const_decl.ob0" => replace_required(source, "CONST answer 42;", "CONST answer = 42;"),
         "bad_string_literal.ob0" => {
-            replace_required(source, "WriteString(\"Hello)", "WriteString(\"Hello\")")
+            replace_required(source, "IO.WriteString(\"Hello)", "IO.WriteString(\"Hello\")")
         }
         "bad_string_literal_embedded_quote.ob0" => replace_required(
             source,
-            "WriteString(\"Hello \"Oberon\"\")",
-            "WriteString(\"Hello \"\"Oberon\"\"\")",
+            "IO.WriteString(\"Hello \"Oberon\"\")",
+            "IO.WriteString(\"Hello \"\"Oberon\"\"\")",
         ),
         "bad_string_literal_multiline.ob0" => replace_required(
             source,
-            "WriteString(\"Hello,\nOberon\")",
-            "WriteString(\"Hello, Oberon\")",
+            "IO.WriteString(\"Hello,\nOberon\")",
+            "IO.WriteString(\"Hello, Oberon\")",
         ),
         "import_leading_dot_module.ob0" => {
             replace_required(source, "IMPORT .Module;", "IMPORT ModuleB;")
         }
-        "if_call_condition.ob0" => replace_required(source, "IF WriteInt(1 THEN", "IF 1 THEN"),
+        "if_call_condition.ob0" => replace_required(source, "IF IO.WriteInt(1 THEN", "IF 1 THEN"),
         "if_missing_end.ob0" => replace_required(
             source,
-            "WriteInt(1)\nEND Main.",
-            "WriteInt(1)\n  END\nEND Main.",
+            "IO.WriteInt(1)\nEND Main.",
+            "IO.WriteInt(1)\n  END\nEND Main.",
         ),
         "missing_module_dot.ob0" => format!("{}.", source.trim_end()),
         "operator_div_missing_rhs.ob0" => replace_required(source, "x := 7 DIV", "x := 7 DIV 2"),
