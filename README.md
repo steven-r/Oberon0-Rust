@@ -1,4 +1,10 @@
+
 # Oberon0-Rust
+
+[![CI](https://github.com/steven-r/Oberon0-Rust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/steven-r/Oberon0-Rust/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/tag/steven-r/Oberon0-Rust?sort=semver)](https://github.com/steven-r/Oberon0-Rust/tags)
+[![codecov](https://codecov.io/github/steven-r/oberon0-rust/graph/badge.svg?token=BRDN80O5A0)](https://codecov.io/github/steven-r/oberon0-rust)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A minimal Oberon0 compiler prototype written in Rust.
 
