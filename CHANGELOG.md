@@ -27,6 +27,8 @@ All notable changes to this project will be documented in this file.
 
 - add a dedicated coverage workflow that generates LCOV via `cargo llvm-cov --workspace --all-targets --lcov --output-path coverage/lcov.info`, uploads it as an artifact, and publishes the same report to Codecov
 - enforce coverage gates with local CI line coverage >=90% and Codecov status checks for project >=90% and patch >=95%
+- prevent duplicate CI/Coverage follow-up runs by ignoring release-automation branch pushes (`automation/release-*`) and tag pushes in both workflows
+- skip CI and Coverage jobs for pull requests whose source branch matches `automation/release-*` to avoid extra release-follow-up actions
 
 ## v0.10.0 - 2026-08-03
 
