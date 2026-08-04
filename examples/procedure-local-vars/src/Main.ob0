@@ -1,4 +1,5 @@
 MODULE Main;
+IMPORT IO;
 VAR base: INTEGER;
 
 PROCEDURE Accumulate(limit: INTEGER);
@@ -11,13 +12,13 @@ BEGIN
     total := total + i;
     i := i - 1
   END;
-  WriteInt(total);
-  WriteLn()
+  IO.WriteInt(total);
+  IO.WriteLn()
 END Accumulate;
 
 BEGIN
   base := 5;
   Accumulate(base);
-  WriteInt(base);
-  WriteLn()
+  IO.WriteInt(base);
+  IO.WriteLn()
 END Main.

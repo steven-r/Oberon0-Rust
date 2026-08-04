@@ -1,10 +1,11 @@
 MODULE Main;
+IMPORT IO, MATH;
 VAR r: REAL;
     lr: LONGREAL;
     i: INTEGER;
 BEGIN
-  r := ReadReal();
-  lr := ReadLongReal();
-  i := FLOOR(lr);
-  r := FLT(i)
+  r := IO.ReadReal();
+  lr := IO.ReadLongReal();
+  i := MATH.FLOOR(lr);
+  r := MATH.FLT(i)
 END Main.

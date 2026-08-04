@@ -1,8 +1,9 @@
 (* INVALID: procedure call passes fewer arguments than declared *)
 MODULE Main;
+IMPORT IO;
 PROCEDURE AddAndPrint(a, b: INTEGER);
 BEGIN
-  WriteInt(a + b)
+  IO.WriteInt(a + b)
 END AddAndPrint;
 BEGIN
   AddAndPrint(2)

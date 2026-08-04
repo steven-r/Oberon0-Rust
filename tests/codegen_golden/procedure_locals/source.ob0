@@ -1,13 +1,14 @@
 MODULE Main;
+IMPORT IO;
 
 PROCEDURE ShowLocal;
 VAR z: INTEGER;
 BEGIN
   z := 7;
-  WriteInt(z)
+  IO.WriteInt(z)
 END ShowLocal;
 
 BEGIN
   ShowLocal;
-  WriteLn()
+  IO.WriteLn()
 END Main.

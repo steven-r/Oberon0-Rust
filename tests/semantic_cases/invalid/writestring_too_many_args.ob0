@@ -1,5 +1,6 @@
-(* INVALID: WriteString builtin is called with too many arguments *)
+(* INVALID: IO.WriteString builtin is called with too many arguments *)
 MODULE Main;
+IMPORT IO;
 BEGIN
-  WriteString("Hello", "World")
+  IO.WriteString("Hello", "World")
 END Main.

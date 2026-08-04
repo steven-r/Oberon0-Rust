@@ -1,0 +1,12 @@
+name = "math qualified floor missing import"
+code = """
+MODULE Main;
+VAR i: INTEGER;
+BEGIN
+    i := MATH.FLOOR(1.25)
+END Main.
+"""
+result.code = "E005"
+result.messages = [
+  "Undefined symbol usage: 'MATH'",
+]

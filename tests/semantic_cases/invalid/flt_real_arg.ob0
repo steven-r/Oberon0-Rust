@@ -1,5 +1,6 @@
 MODULE Main;
+IMPORT MATH;
 VAR r: REAL;
 BEGIN
-  r := FLT(1.0)
+  r := MATH.FLT(1.0)
 END Main.

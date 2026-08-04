@@ -1,6 +1,7 @@
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 BEGIN
-  x := ReadInt();
-  WriteInt(x)
+  x := IO.ReadInt();
+  IO.WriteInt(x)
 END Main.

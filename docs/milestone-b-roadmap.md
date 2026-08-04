@@ -212,3 +212,8 @@ Priority 4 (IO and grammar parity refinements):
 2. #24 (`WriteInt(x, n)` width parameter)
 3. #25 (optional module `BEGIN`)
 4. #26 (`ProcedureCall ... "*"` form decision/implementation)
+5. Introduce internal builtin modules (`IO`, `MATH`) for qualified builtin calls.
+
+Concept document:
+
+1. docs/internal-builtin-modules-concept.md

@@ -1,0 +1,13 @@
+name = "io qualified readint and eof"
+code = """
+MODULE Main;
+IMPORT IO;
+VAR x: INTEGER;
+BEGIN
+    x := IO.ReadInt();
+    IF IO.EOF() THEN
+        IO.WriteLn()
+    END
+END Main.
+"""
+is_success = true

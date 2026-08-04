@@ -1,12 +1,13 @@
 code = """
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 BEGIN
-    x := WriteInt(1)
+    x := IO.WriteInt(1)
 END Main.
 """
 name = "non-function builtin in call expression"
 result = { code = "E007", messages = [
-  "Builtin 'WriteInt' received an invalid argument",
-  "currently support only ReadInt(), EOF(), FLT(), and FLOOR()",
+  "Builtin 'IO.WriteInt' received an invalid argument",
+  "must be used as a statement call",
 ] }

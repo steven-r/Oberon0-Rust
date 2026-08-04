@@ -1,9 +1,10 @@
 MODULE Main;
+IMPORT IO;
 CONST BASE = 10;
 VAR x, y: INTEGER;
 BEGIN
   x := BASE + 2;
   y := x * 3;
-  WriteInt(y);
-  WriteLn()
+  IO.WriteInt(y);
+  IO.WriteLn()
 END Main.

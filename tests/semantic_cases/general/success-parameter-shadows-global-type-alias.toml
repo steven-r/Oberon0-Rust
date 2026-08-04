@@ -1,10 +1,11 @@
 name = "parameter shadows global type alias"
 code = """
 MODULE Main;
+IMPORT IO;
 TYPE Count = INTEGER;
 PROCEDURE P(Count: INTEGER);
 BEGIN
-    WriteInt(Count)
+    IO.WriteInt(Count)
 END P;
 BEGIN
 END Main.

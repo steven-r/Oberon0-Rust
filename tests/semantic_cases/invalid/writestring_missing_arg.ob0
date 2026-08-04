@@ -1,5 +1,6 @@
-(* INVALID: WriteString builtin is called without required argument *)
+(* INVALID: IO.WriteString builtin is called without required argument *)
 MODULE Main;
+IMPORT IO;
 BEGIN
-  WriteString
+  IO.WriteString
 END Main.

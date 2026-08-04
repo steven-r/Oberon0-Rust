@@ -1,11 +1,12 @@
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 BEGIN
-  IF EOF() THEN
-    WriteInt(1)
+  IF IO.EOF() THEN
+    IO.WriteInt(1)
   ELSE
-    WriteInt(0)
+    IO.WriteInt(0)
   END;
-  x := ReadInt();
-  WriteInt(x)
+  x := IO.ReadInt();
+  IO.WriteInt(x)
 END Main.

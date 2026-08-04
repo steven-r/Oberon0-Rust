@@ -1,12 +1,13 @@
 name = "procedure-local var shadows user-defined type name"
 code = """
 MODULE Main;
+IMPORT IO;
 TYPE Count = REAL;
 PROCEDURE P;
 VAR Count: INTEGER;
 BEGIN
     Count := 1;
-    WriteInt(Count)
+    IO.WriteInt(Count)
 END P;
 BEGIN
     P

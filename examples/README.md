@@ -26,5 +26,8 @@ scripts/oberon0 <example-directory> --run
 - `procedures-nested-control`: procedure body with nested control flow
 - `shadowing-procedure-scope`: module-variable shadowing from procedure scope using local procedure bindings
 - `shadowing-nested-control`: parameter-based shadowing combined with nested `WHILE` and `IF/ELSE` logic inside the procedure body
-- `readint-basic`: integer input with `ReadInt()` and output echo
-- `eof-check`: input-state branching with `EOF()` (`1` = EOF, `0` = input available)
+- `readint-basic`: integer input with `IO.ReadInt()` and output echo via `IO.WriteInt`
+- `eof-check`: input-state branching with `IO.EOF()` (`1` = EOF, `0` = input available)
+- `io-qualified-basic`: integer input/output via `IO.ReadInt`, `IO.WriteInt`, and `IO.WriteLn`
+- `io-qualified-eof`: input-state branching via `IO.EOF()`
+- `math-qualified-floor-flt`: typed numeric conversion via `MATH.FLT` and `MATH.FLOOR`

@@ -1,9 +1,10 @@
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 BEGIN
   x := 2;
   IF x > 0 THEN
-    WriteInt(x)
+    IO.WriteInt(x)
   ELSE
     WHILE x > 0 DO
       x := x - 1

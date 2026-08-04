@@ -1,5 +1,6 @@
-(* INVALID: string literals are only valid as WriteString arguments *)
+(* INVALID: string literals are only valid as IO.WriteString arguments *)
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 BEGIN
   x := "Hello"

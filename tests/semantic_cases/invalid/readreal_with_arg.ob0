@@ -1,5 +1,6 @@
 MODULE Main;
+IMPORT IO;
 VAR r: REAL;
 BEGIN
-  r := ReadReal(1)
+  r := IO.ReadReal(1)
 END Main.

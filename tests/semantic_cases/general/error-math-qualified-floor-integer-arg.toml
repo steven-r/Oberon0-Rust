@@ -1,0 +1,13 @@
+name = "math qualified floor integer arg"
+code = """
+MODULE Main;
+IMPORT MATH;
+VAR i: INTEGER;
+BEGIN
+    i := MATH.FLOOR(i)
+END Main.
+"""
+result.code = "E012"
+result.messages = [
+  "FLOOR() requires a REAL or LONGREAL argument",
+]

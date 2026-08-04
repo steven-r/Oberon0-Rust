@@ -1,4 +1,5 @@
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 VAR y: INTEGER;
 VAR flagA: BOOLEAN;
@@ -10,7 +11,7 @@ BEGIN
   flagA := ~flagA;
   flagB := flagA OR flagB;
   flagOut := flagA & flagB;
-  WriteInt(x + y);
-  WriteLn();
-  WriteInt(flagOut)
+  IO.WriteInt(x + y);
+  IO.WriteLn();
+  IO.WriteInt(flagOut)
 END Main.

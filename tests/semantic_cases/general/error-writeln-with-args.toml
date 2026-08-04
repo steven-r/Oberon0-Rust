@@ -1,12 +1,13 @@
 code = """
   MODULE Main;
+  IMPORT IO;
   BEGIN
-    WriteLn("Hello, World!")
+    IO.WriteLn("Hello, World!")
   END Main.
 """
 name = "WriteLn with args"
 result.code = "E006"
 result.messages = [
-  "Procedure 'WriteLn' called with wrong arity",
+  "Procedure 'IO.WriteLn' called with wrong arity",
   "expected 0, got 1",
 ]

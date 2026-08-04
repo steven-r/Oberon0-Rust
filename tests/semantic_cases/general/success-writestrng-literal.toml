@@ -1,8 +1,9 @@
 name = "write string literal"
 code = """
 MODULE Main;
+IMPORT IO;
 BEGIN
-    WriteString("Hello")
+    IO.WriteString("Hello")
 END Main.
 """
 is_success = true

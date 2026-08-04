@@ -1,0 +1,12 @@
+name = "io qualified readint missing import"
+code = """
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+    x := IO.ReadInt()
+END Main.
+"""
+result.code = "E005"
+result.messages = [
+  "Undefined symbol usage: 'IO'",
+]

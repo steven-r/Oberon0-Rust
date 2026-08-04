@@ -1,0 +1,13 @@
+name = "io qualified readint statement call"
+code = """
+MODULE Main;
+IMPORT IO;
+BEGIN
+    IO.ReadInt()
+END Main.
+"""
+result.code = "E007"
+result.messages = [
+  "Builtin 'IO.ReadInt' received an invalid argument",
+  "must be used as a call expression",
+]

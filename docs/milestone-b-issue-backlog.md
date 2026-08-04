@@ -31,3 +31,8 @@ This backlog mirrors the current Milestone B implementation order and keeps the 
 4. #24: add `WriteInt(x, n)` width handling.
 5. #25: allow an optional module-level `BEGIN`.
 6. #26: resolve the star-form ProcedureCall decision.
+7. Introduce internal builtin modules (`IO`, `MATH`) and migrate builtin calls to qualified form.
+
+Related concept:
+
+1. docs/internal-builtin-modules-concept.md

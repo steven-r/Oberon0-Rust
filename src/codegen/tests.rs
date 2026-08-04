@@ -584,14 +584,15 @@ fn emits_readint_and_eof_call_expressions() {
 fn emits_real_and_longreal_runtime_builtins() {
     let source = r#"
 MODULE Main;
+IMPORT IO;
 VAR x: REAL;
     y: LONGREAL;
 BEGIN
-  x := ReadReal();
-  y := ReadLongReal();
-  WriteReal(x);
-  WriteLn;
-  WriteLongReal(y)
+    x := IO.ReadReal();
+    y := IO.ReadLongReal();
+    IO.WriteReal(x);
+    IO.WriteLn;
+    IO.WriteLongReal(y)
 END Main.
 "#;
 

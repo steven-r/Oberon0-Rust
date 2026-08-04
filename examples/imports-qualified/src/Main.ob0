@@ -1,9 +1,9 @@
 MODULE Main;
-IMPORT B := ModuleB;
+IMPORT B := ModuleB, IO;
 
 PROCEDURE TestProcedure;
 BEGIN
-  WriteInt(99)
+  IO.WriteInt(99)
 END TestProcedure;
 
 BEGIN

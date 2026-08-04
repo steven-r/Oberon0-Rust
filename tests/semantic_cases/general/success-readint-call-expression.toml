@@ -1,9 +1,10 @@
 name = "readint call expression"
 code = """
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 BEGIN
-    x := ReadInt()
+    x := IO.ReadInt()
 END Main.
 """
 is_success = true

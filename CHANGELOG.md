@@ -6,6 +6,23 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- require internal builtins to be imported and qualified through `IO` or `MATH`, including `Read*`, `Write*`, `EOF`, `FLT`, and `FLOOR`
+
+### Fixes
+
+- reject unqualified internal builtin usage with explicit semantic diagnostics instead of resolving legacy global names
+- validate unknown members on internal builtin modules such as `IO.*` and `MATH.*` with dedicated semantic errors
+
+### Documentation
+
+- document the strict `IO`/`MATH` builtin-module model in the README, examples index, and dedicated concept notes
+
+### Tests
+
+- add semantic regression coverage for qualified builtin imports, missing imports, wrong call contexts, and direct builtin-resolution/inference branches
+
 ## v0.10.0 - 2026-08-03
 
 ### Features
