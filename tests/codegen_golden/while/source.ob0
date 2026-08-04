@@ -1,10 +1,11 @@
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 BEGIN
   x := 100;
   WHILE x > 0 DO
     x := x - 1
   END;
-  WriteInt(x);
-  WriteLn()
+  IO.WriteInt(x);
+  IO.WriteLn()
 END Main.

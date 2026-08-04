@@ -67,26 +67,26 @@ fn repair_parser_invalid_case(name: &str, source: &str) -> String {
         "bad_assign.ob0" => replace_required(source, "x = 1;", "x := 1;"),
         "bad_const_decl.ob0" => replace_required(source, "CONST answer 42;", "CONST answer = 42;"),
         "bad_string_literal.ob0" => {
-            replace_required(source, "WriteString(\"Hello)", "WriteString(\"Hello\")")
+            replace_required(source, "IO.WriteString(\"Hello)", "IO.WriteString(\"Hello\")")
         }
         "bad_string_literal_embedded_quote.ob0" => replace_required(
             source,
-            "WriteString(\"Hello \"Oberon\"\")",
-            "WriteString(\"Hello \"\"Oberon\"\"\")",
+            "IO.WriteString(\"Hello \"Oberon\"\")",
+            "IO.WriteString(\"Hello \"\"Oberon\"\"\")",
         ),
         "bad_string_literal_multiline.ob0" => replace_required(
             source,
-            "WriteString(\"Hello,\nOberon\")",
-            "WriteString(\"Hello, Oberon\")",
+            "IO.WriteString(\"Hello,\nOberon\")",
+            "IO.WriteString(\"Hello, Oberon\")",
         ),
         "import_leading_dot_module.ob0" => {
             replace_required(source, "IMPORT .Module;", "IMPORT ModuleB;")
         }
-        "if_call_condition.ob0" => replace_required(source, "IF WriteInt(1 THEN", "IF 1 THEN"),
+        "if_call_condition.ob0" => replace_required(source, "IF IO.WriteInt(1 THEN", "IF 1 THEN"),
         "if_missing_end.ob0" => replace_required(
             source,
-            "WriteInt(1)\nEND Main.",
-            "WriteInt(1)\n  END\nEND Main.",
+            "IO.WriteInt(1)\nEND Main.",
+            "IO.WriteInt(1)\n  END\nEND Main.",
         ),
         "missing_module_dot.ob0" => format!("{}.", source.trim_end()),
         "operator_div_missing_rhs.ob0" => replace_required(source, "x := 7 DIV", "x := 7 DIV 2"),
@@ -117,7 +117,7 @@ fn repair_semantic_invalid_case(name: &str, source: &str) -> String {
             replace_required(source, "VAR x, x: INTEGER;", "VAR x, y: INTEGER;")
         }
         "end_name_mismatch.ob0" => replace_required(source, "END NotMain.", "END Main."),
-        "eof_with_arg.ob0" => replace_required(source, "EOF(1)", "EOF()"),
+        "eof_with_arg.ob0" => replace_required(source, "IO.EOF(1)", "IO.EOF()"),
         "if_undefined_condition.ob0" => replace_required(source, "IF unknown THEN", "IF TRUE THEN"),
         "boolean_assignment_type_mismatch.ob0" => replace_required(source, "x := flag", "x := 1"),
         "boolean_parameter_type_mismatch.ob0" => {
@@ -152,18 +152,21 @@ fn repair_semantic_invalid_case(name: &str, source: &str) -> String {
         "procedure_local_var_shadows_builtin_type.ob0" => {
             replace_required(source, "VAR INTEGER: INTEGER;", "VAR value: INTEGER;")
         }
-        "qualified_call_member_unresolved.ob0" => replace_required(source, "B.HELLO", "WriteLn()"),
+        "qualified_call_member_unresolved.ob0" => {
+            replace_required(source, "B.HELLO", "B.HELLO")
+        }
         "qualified_call_non_exported.ob0" => {
-            replace_required(source, "B.NonExportedProcedure()", "WriteLn()")
+            replace_required(source, "B.NonExportedProcedure()", "B.HELLO")
         }
         "qualified_type_reference_unsupported.ob0" => {
             replace_required(source, "VAR x: B.IntType;", "VAR x: INTEGER;")
         }
         "readint_statement_call.ob0" | "ReadInt_statement_call.ob0" => r#"
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 BEGIN
-  x := ReadInt()
+    x := IO.ReadInt()
 END Main.
 "#
         .to_string(),
@@ -176,7 +179,7 @@ END Main.
                 "PROCEDURE P(Count: Count);",
                 "PROCEDURE P(value: Count);",
             );
-            replace_required(&repaired, "WriteInt(Count)", "WriteInt(value)")
+            replace_required(&repaired, "IO.WriteInt(Count)", "IO.WriteInt(value)")
         }
         "typed_param_shadows_builtin_type.ob0" => {
             let repaired = replace_required(
@@ -184,7 +187,7 @@ END Main.
                 "PROCEDURE P(INTEGER: INTEGER);",
                 "PROCEDURE P(value: INTEGER);",
             );
-            replace_required(&repaired, "WriteInt(INTEGER)", "WriteInt(value)")
+            replace_required(&repaired, "IO.WriteInt(INTEGER)", "IO.WriteInt(value)")
         }
         "typed_param_type_mismatch.ob0" => replace_required(source, "UseInt(x)", "UseInt(1)"),
         "typed_var_unknown_type.ob0" => {
@@ -214,19 +217,21 @@ END Main.
             replace_required(&repaired, "x := y - 1", "x := x - 1")
         }
         "writeint_string_literal.ob0" | "WriteInt_string_literal.ob0" => {
-            replace_required(source, "WriteInt(\"Hello\")", "WriteInt(1)")
+            replace_required(source, "IO.WriteInt(\"Hello\")", "IO.WriteInt(1)")
         }
-        "writeln_with_arg.ob0" => replace_required(source, "WriteLn(1)", "WriteLn()"),
+        "writeln_with_arg.ob0" => {
+            replace_required(source, "IO.WriteLn(1)", "IO.WriteLn()")
+        }
         "writestring_missing_arg.ob0" | "WriteString_missing_arg.ob0" => {
-            replace_required(source, "WriteString", "WriteString(\"Hello\")")
+            replace_required(source, "IO.WriteString", "IO.WriteString(\"Hello\")")
         }
         "writestring_non_string_arg.ob0" | "WriteString_non_string_arg.ob0" => {
-            replace_required(source, "WriteString(1)", "WriteString(\"1\")")
+            replace_required(source, "IO.WriteString(1)", "IO.WriteString(\"1\")")
         }
         "writestring_too_many_args.ob0" | "WriteString_too_many_args.ob0" => replace_required(
             source,
-            "WriteString(\"Hello\", \"World\")",
-            "WriteString(\"Hello\")",
+            "IO.WriteString(\"Hello\", \"World\")",
+            "IO.WriteString(\"Hello\")",
         ),
         "qualified_call_unknown_alias.ob0" => replace_required(source, "C.HELLO()", "B.HELLO()"),
         "qualified_type_reference_non_exported.ob0" => {
@@ -241,12 +246,16 @@ END Main.
             let repaired = replace_required(source, "VAR n: INTEGER;", "CONST n = 4;");
             replace_required(&repaired, "ARRAY n + 1 OF", "ARRAY n OF")
         }
-        "readreal_with_arg.ob0" => replace_required(source, "ReadReal(1)", "ReadReal()"),
-        "readlongreal_with_arg.ob0" => {
-            replace_required(source, "ReadLongReal(1)", "ReadLongReal()")
+        "readreal_with_arg.ob0" => {
+            replace_required(source, "IO.ReadReal(1)", "IO.ReadReal()")
         }
-        "floor_integer_arg.ob0" => replace_required(source, "FLOOR(1)", "FLOOR(1.0)"),
-        "flt_real_arg.ob0" => replace_required(source, "FLT(1.0)", "FLT(1)"),
+        "readlongreal_with_arg.ob0" => {
+            replace_required(source, "IO.ReadLongReal(1)", "IO.ReadLongReal()")
+        }
+        "floor_integer_arg.ob0" => {
+            replace_required(source, "MATH.FLOOR(1)", "MATH.FLOOR(1.0)")
+        }
+        "flt_real_arg.ob0" => replace_required(source, "MATH.FLT(1.0)", "MATH.FLT(1)"),
         other => panic!("missing semantic invalid repair mapping for {other}"),
     }
 }

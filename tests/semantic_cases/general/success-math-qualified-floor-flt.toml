@@ -1,0 +1,12 @@
+name = "math qualified floor and flt"
+code = """
+MODULE Main;
+IMPORT MATH;
+VAR i: INTEGER;
+    r: REAL;
+BEGIN
+    r := MATH.FLT(i);
+    i := MATH.FLOOR(r)
+END Main.
+"""
+is_success = true

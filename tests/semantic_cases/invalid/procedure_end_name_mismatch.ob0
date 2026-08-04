@@ -1,8 +1,9 @@
 (* INVALID: procedure END name does not match PROCEDURE name *)
 MODULE Main;
+IMPORT IO;
 PROCEDURE Echo(x: INTEGER);
 BEGIN
-  WriteInt(x)
+  IO.WriteInt(x)
 END WrongName;
 BEGIN
 END Main.

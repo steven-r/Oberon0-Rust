@@ -1,8 +1,9 @@
 (* INVALID: PROCEDURE header is missing semicolon before BEGIN *)
 MODULE Main;
+IMPORT IO;
 PROCEDURE P(x: INTEGER)
 BEGIN
-  WriteInt(x)
+  IO.WriteInt(x)
 END P;
 BEGIN
 END Main.

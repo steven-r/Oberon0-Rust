@@ -1,6 +1,7 @@
 (* INVALID: string literal spans multiple lines *)
 MODULE Main;
+IMPORT IO;
 BEGIN
-  WriteString("Hello,
+  IO.WriteString("Hello,
 Oberon")
 END Main.

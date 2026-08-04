@@ -1,19 +1,20 @@
 MODULE Main;
+IMPORT IO;
 VAR x, y: INTEGER;
 PROCEDURE Mix(x: INTEGER);
 BEGIN
   y := x + 1;
-  WriteInt(x);
-  WriteLn();
-  WriteInt(y);
-  WriteLn()
+  IO.WriteInt(x);
+  IO.WriteLn();
+  IO.WriteInt(y);
+  IO.WriteLn()
 END Mix;
 BEGIN
   x := 7;
   y := 0;
   Mix(42);
-  WriteInt(x);
-  WriteLn();
-  WriteInt(y);
-  WriteLn()
+  IO.WriteInt(x);
+  IO.WriteLn();
+  IO.WriteInt(y);
+  IO.WriteLn()
 END Main.

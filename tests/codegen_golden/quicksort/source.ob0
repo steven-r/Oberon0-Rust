@@ -1,4 +1,5 @@
 MODULE Sort;
+IMPORT IO;
 
 CONST
   MAX_SIZE = 100;
@@ -31,30 +32,30 @@ BEGIN
 END DoSort;
 
 BEGIN
-  WriteString("Please enter the number of elements to sort: ");
-  number_count := ReadInt();
+  IO.WriteString("Please enter the number of elements to sort: ");
+  number_count := IO.ReadInt();
   IF (number_count <= 0) OR (number_count > MAX_SIZE) THEN
-    WriteString("The number exceeds ");
-    WriteInt(MAX_SIZE);
+    IO.WriteString("The number exceeds ");
+    IO.WriteInt(MAX_SIZE);
   ELSE
     i := 0;
-    WriteString("Please enter the elements separated by space or newline");
-    WriteLn();
+    IO.WriteString("Please enter the elements separated by space or newline");
+    IO.WriteLn();
     WHILE i < number_count DO
-      sort_array[i] := ReadInt();
+      sort_array[i] := IO.ReadInt();
       i := i + 1;
     END;
     DoSort(sort_array, number_count);
-    WriteString("The sorted output:");
-    WriteLn();
+    IO.WriteString("The sorted output:");
+    IO.WriteLn();
     i := 0;
     WHILE i < number_count DO
-      WriteInt(sort_array[i]);
+      IO.WriteInt(sort_array[i]);
       IF i < number_count THEN
-        WriteString(" ");
+        IO.WriteString(" ");
       END;
       i := i + 1
     END;
-    WriteLn();
+    IO.WriteLn();
   END;
 END Sort.

@@ -1,6 +1,7 @@
 (* INVALID: IF block is missing its closing END *)
 MODULE Main;
+IMPORT IO;
 BEGIN
   IF 1 THEN
-    WriteInt(1)
+    IO.WriteInt(1)
 END Main.

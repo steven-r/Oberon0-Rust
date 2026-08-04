@@ -1,4 +1,5 @@
 MODULE Main;
+IMPORT IO;
 TYPE Count = INTEGER;
 TYPE Ratio = REAL;
 VAR x: INTEGER;
@@ -9,6 +10,6 @@ VAR precise: LONGREAL;
 BEGIN
   x := 12;
   y := x * 3;
-  WriteInt(y);
-  WriteLn()
+  IO.WriteInt(y);
+  IO.WriteLn()
 END Main.

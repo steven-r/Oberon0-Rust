@@ -1,8 +1,9 @@
 MODULE Main;
+IMPORT IO;
 CONST answer = 42;
 VAR x, y: INTEGER;
 BEGIN
   x := answer;
   y := x + 1;
-  WriteInt(y);
+  IO.WriteInt(y);
 END Main.

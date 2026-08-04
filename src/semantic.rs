@@ -64,6 +64,151 @@ impl ExternalModuleInfo {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuiltinModule {
+    Io,
+    Math,
+}
+
+impl BuiltinModule {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "IO" => Some(Self::Io),
+            "MATH" => Some(Self::Math),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuiltinId {
+    WriteInt,
+    WriteString,
+    WriteLn,
+    WriteReal,
+    WriteLongReal,
+    ReadInt,
+    ReadReal,
+    ReadLongReal,
+    Eof,
+    Flt,
+    Floor,
+}
+
+fn builtin_display_name(module: Option<&str>, name: &str) -> String {
+    match module {
+        Some(module_name) => format!("{}.{}", module_name, name),
+        None => name.to_string(),
+    }
+}
+
+fn resolve_builtin(module: Option<&str>, name: &str) -> Option<BuiltinId> {
+    match module {
+        Some("IO") => match name {
+            "WriteInt" => Some(BuiltinId::WriteInt),
+            "WriteString" => Some(BuiltinId::WriteString),
+            "WriteLn" => Some(BuiltinId::WriteLn),
+            "WriteReal" => Some(BuiltinId::WriteReal),
+            "WriteLongReal" => Some(BuiltinId::WriteLongReal),
+            "ReadInt" => Some(BuiltinId::ReadInt),
+            "ReadReal" => Some(BuiltinId::ReadReal),
+            "ReadLongReal" => Some(BuiltinId::ReadLongReal),
+            "EOF" => Some(BuiltinId::Eof),
+            _ => None,
+        },
+        Some("MATH") => match name {
+            "FLT" => Some(BuiltinId::Flt),
+            "FLOOR" => Some(BuiltinId::Floor),
+            _ => None,
+        },
+        Some(_) => None,
+        None => None,
+    }
+}
+
+fn resolve_builtin_with_module_validation(module: Option<&str>, name: &str) -> Result<Option<BuiltinId>> {
+    if let Some(module_name) = module
+        && BuiltinModule::from_name(module_name).is_some()
+    {
+        return match resolve_builtin(module, name) {
+            Some(id) => Ok(Some(id)),
+            None => Err(SemanticError::InvalidBuiltinArgument {
+                name: builtin_display_name(module, name),
+                detail: "unknown builtin member".to_string(),
+            }
+            .into()),
+        };
+    }
+
+    Ok(resolve_builtin(module, name))
+}
+
+fn is_internal_builtin_module_name(name: &str) -> bool {
+    BuiltinModule::from_name(name).is_some()
+}
+
+fn required_builtin_module_for_name(name: &str) -> Option<&'static str> {
+    match name {
+        "WriteInt" | "WriteString" | "WriteLn" | "WriteReal" | "WriteLongReal" | "ReadInt"
+        | "ReadReal" | "ReadLongReal" | "EOF" => Some("IO"),
+        "FLT" | "FLOOR" => Some("MATH"),
+        _ => None,
+    }
+}
+
+fn ensure_internal_builtin_module_imported(module: Option<&str>, symbols: &SymbolTable) -> Result<()> {
+    if let Some(module_name) = module
+        && is_internal_builtin_module_name(module_name)
+        && symbols.resolve(module_name).is_none()
+    {
+        return Err(SemanticError::UndefinedSymbol {
+            name: module_name.to_string(),
+        }
+        .into());
+    }
+
+    Ok(())
+}
+
+fn builtin_fixed_arity(id: BuiltinId) -> Option<usize> {
+    match id {
+        BuiltinId::WriteInt => None,
+        BuiltinId::WriteString => Some(1),
+        BuiltinId::WriteLn => Some(0),
+        BuiltinId::WriteReal => Some(1),
+        BuiltinId::WriteLongReal => Some(1),
+        BuiltinId::ReadInt => Some(0),
+        BuiltinId::ReadReal => Some(0),
+        BuiltinId::ReadLongReal => Some(0),
+        BuiltinId::Eof => Some(0),
+        BuiltinId::Flt => Some(1),
+        BuiltinId::Floor => Some(1),
+    }
+}
+
+fn builtin_allows_statement(id: BuiltinId) -> bool {
+    matches!(
+        id,
+        BuiltinId::WriteInt
+            | BuiltinId::WriteString
+            | BuiltinId::WriteLn
+            | BuiltinId::WriteReal
+            | BuiltinId::WriteLongReal
+    )
+}
+
+fn builtin_allows_expression(id: BuiltinId) -> bool {
+    matches!(
+        id,
+        BuiltinId::ReadInt
+            | BuiltinId::ReadReal
+            | BuiltinId::ReadLongReal
+            | BuiltinId::Eof
+            | BuiltinId::Flt
+            | BuiltinId::Floor
+    )
+}
+
 #[derive(Debug, Clone)]
 /// User-facing semantic failures reported after parsing succeeds.
 pub enum SemanticError {
@@ -671,8 +816,15 @@ fn validate_boolean_condition(
     match infer_expr_type(expr, symbols, types)? {
         Some(TypeRef::Boolean) => Ok(()),
         Some(TypeRef::Integer) => {
-            if matches!(expr, Expr::Call { module: None, name, args } if name == "EOF" && args.is_empty())
-            {
+            if matches!(
+                expr,
+                Expr::Call { module, name, args }
+                    if args.is_empty()
+                        && matches!(
+                            resolve_builtin(module.as_deref(), name),
+                            Some(BuiltinId::Eof)
+                        )
+            ) {
                 Ok(())
             } else {
                 Err(SemanticError::TypeMismatch {
@@ -719,81 +871,73 @@ fn infer_expr_type(
             }
             .into())
         }
-        Expr::Call {
-            module: _,
-            name,
-            args,
-        } => {
-            if name == "ReadInt" || name == "EOF" {
-                if !args.is_empty() {
-                    return Err(SemanticError::ArityMismatch {
-                        name: name.clone(),
-                        expected: 0,
-                        got: args.len(),
-                    }
-                    .into());
-                }
-                return Ok(Some(TypeRef::Integer));
-            }
+        Expr::Call { module, name, args } => {
+            ensure_internal_builtin_module_imported(module.as_deref(), symbols)?;
 
-            if name == "ReadReal" {
-                if !args.is_empty() {
-                    return Err(SemanticError::ArityMismatch {
-                        name: name.clone(),
-                        expected: 0,
-                        got: args.len(),
-                    }
-                    .into());
-                }
-                return Ok(Some(TypeRef::Real));
-            }
-
-            if name == "ReadLongReal" {
-                if !args.is_empty() {
-                    return Err(SemanticError::ArityMismatch {
-                        name: name.clone(),
-                        expected: 0,
-                        got: args.len(),
-                    }
-                    .into());
-                }
-                return Ok(Some(TypeRef::LongReal));
-            }
-
-            if name == "FLT" {
-                if args.len() != 1 {
-                    return Err(SemanticError::ArityMismatch {
-                        name: name.clone(),
-                        expected: 1,
-                        got: args.len(),
-                    }
-                    .into());
-                }
-                let inner_type = infer_expr_type(&args[0], symbols, types)?;
-                if matches!(inner_type, Some(TypeRef::Integer)) {
-                    return Ok(Some(TypeRef::Real));
-                }
-                return Err(SemanticError::TypeMismatch {
-                    detail: "FLT() requires an INTEGER argument".to_string(),
+            if module.is_none()
+                && let Some(required_module) = required_builtin_module_for_name(name)
+            {
+                return Err(SemanticError::InvalidBuiltinArgument {
+                    name: name.clone(),
+                    detail: format!("must be qualified as {}.{}(...)", required_module, name),
                 }
                 .into());
             }
 
-            if name == "FLOOR" {
-                if args.len() != 1 {
+            if let Some(builtin_id) = resolve_builtin_with_module_validation(module.as_deref(), name)? {
+                if let Some(expected_arity) = builtin_fixed_arity(builtin_id)
+                    && args.len() != expected_arity
+                {
                     return Err(SemanticError::ArityMismatch {
-                        name: name.clone(),
-                        expected: 1,
+                        name: builtin_display_name(module.as_deref(), name),
+                        expected: expected_arity,
                         got: args.len(),
                     }
                     .into());
                 }
-                let inner_type = infer_expr_type(&args[0], symbols, types)?;
-                if matches!(inner_type, Some(TypeRef::Real | TypeRef::LongReal)) {
-                    return Ok(Some(TypeRef::Integer));
-                }
-                return Err(SemanticError::TypeMismatch {
-                    detail: "FLOOR() requires a REAL or LONGREAL argument".to_string(),
+
+                return match builtin_id {
+                    BuiltinId::WriteInt
+                    | BuiltinId::WriteString
+                    | BuiltinId::WriteLn
+                    | BuiltinId::WriteReal
+                    | BuiltinId::WriteLongReal => Err(SemanticError::InvalidBuiltinArgument {
+                        name: builtin_display_name(module.as_deref(), name),
+                        detail: "must be used as a statement call".to_string(),
+                    }
+                    .into()),
+                    BuiltinId::ReadInt | BuiltinId::Eof => Ok(Some(TypeRef::Integer)),
+                    BuiltinId::ReadReal => Ok(Some(TypeRef::Real)),
+                    BuiltinId::ReadLongReal => Ok(Some(TypeRef::LongReal)),
+                    BuiltinId::Flt => {
+                        let inner_type = infer_expr_type(&args[0], symbols, types)?;
+                        if matches!(inner_type, Some(TypeRef::Integer)) {
+                            Ok(Some(TypeRef::Real))
+                        } else {
+                            Err(SemanticError::TypeMismatch {
+                                detail: "FLT() requires an INTEGER argument".to_string(),
+                            }
+                            .into())
+                        }
+                    }
+                    BuiltinId::Floor => {
+                        let inner_type = infer_expr_type(&args[0], symbols, types)?;
+                        if matches!(inner_type, Some(TypeRef::Real | TypeRef::LongReal)) {
+                            Ok(Some(TypeRef::Integer))
+                        } else {
+                            Err(SemanticError::TypeMismatch {
+                                detail: "FLOOR() requires a REAL or LONGREAL argument"
+                                    .to_string(),
+                            }
+                            .into())
+                        }
+                    }
+                };
+            }
+
+            if let Some(module_name) = module {
+                return Err(SemanticError::UndefinedSymbol {
+                    name: format!("{}.{}", module_name, name),
                 }
                 .into());
             }
@@ -805,7 +949,7 @@ fn infer_expr_type(
             Err(SemanticError::InvalidBuiltinArgument {
                 name: name.clone(),
                 detail:
-                    "call expressions currently support only ReadInt(), EOF(), FLT(), and FLOOR()"
+                    "call expressions currently support only ReadInt(), ReadReal(), ReadLongReal(), EOF(), FLT(), and FLOOR()"
                         .to_string(),
             }
             .into())
@@ -862,14 +1006,11 @@ fn infer_expr_type(
                     }
                     BinaryOp::IntDiv | BinaryOp::Mod => {
                         if left_type != TypeRef::Integer || right_type != TypeRef::Integer {
+                            let op_name = if op == &BinaryOp::IntDiv { "DIV" } else { "MOD" };
                             return Err(SemanticError::TypeMismatch {
                                 detail: format!(
                                     "operator '{}' requires INTEGER operands, got {} and {}",
-                                    match op {
-                                        BinaryOp::IntDiv => "DIV",
-                                        BinaryOp::Mod => "MOD",
-                                        _ => unreachable!(),
-                                    },
+                                    op_name,
                                     format_type_name(&left_type),
                                     format_type_name(&right_type)
                                 ),
@@ -955,6 +1096,8 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     symbols.declare("ReadReal", SymbolKind::Procedure)?;
     symbols.declare("ReadLongReal", SymbolKind::Procedure)?;
     symbols.declare("EOF", SymbolKind::Procedure)?;
+    symbols.declare("FLT", SymbolKind::Procedure)?;
+    symbols.declare("FLOOR", SymbolKind::Procedure)?;
     let mut proc_arity: HashMap<String, Option<usize>> = HashMap::new();
     let mut proc_params: HashMap<String, Vec<ParamDecl>> = HashMap::new();
     let mut const_values: HashMap<String, Expr> = HashMap::new();
@@ -992,6 +1135,7 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
         import_aliases.insert(import.local_name.clone(), import.external_name.clone());
 
         if let Some(m) = manifest
+            && !is_internal_builtin_module_name(&import.external_name)
             && m.resolve(&import.external_name).is_none()
         {
             return Err(SemanticError::UnmappedImport {
@@ -1297,6 +1441,61 @@ fn analyze_statement(
             Ok(())
         }
         Statement::Call { module, name, args } => {
+            ensure_internal_builtin_module_imported(module.as_deref(), symbols)?;
+
+            if module.is_none()
+                && let Some(required_module) = required_builtin_module_for_name(name)
+            {
+                return Err(SemanticError::InvalidBuiltinArgument {
+                    name: name.clone(),
+                    detail: format!("must be qualified as {}.{}(...)", required_module, name),
+                }
+                .into());
+            }
+
+            if let Some(builtin_id) =
+                resolve_builtin_with_module_validation(module.as_deref(), name)?
+            {
+                if !builtin_allows_statement(builtin_id) {
+                    return Err(SemanticError::InvalidBuiltinArgument {
+                        name: builtin_display_name(module.as_deref(), name),
+                        detail: "must be used as a call expression".to_string(),
+                    }
+                    .into());
+                }
+
+                if let Some(expected_arity) = builtin_fixed_arity(builtin_id)
+                    && args.len() != expected_arity
+                {
+                    return Err(SemanticError::ArityMismatch {
+                        name: builtin_display_name(module.as_deref(), name),
+                        expected: expected_arity,
+                        got: args.len(),
+                    }
+                    .into());
+                }
+
+                if matches!(builtin_id, BuiltinId::WriteString) {
+                    match args.first() {
+                        Some(Expr::String(_)) => return Ok(()),
+                        Some(_) => {
+                            return Err(SemanticError::InvalidBuiltinArgument {
+                                name: builtin_display_name(module.as_deref(), name),
+                                detail: "expected a string literal".to_string(),
+                            }
+                            .into())
+                        }
+                        None => unreachable!("arity checked above"),
+                    }
+                }
+
+                for arg in args {
+                    analyze_expr(arg, symbols)?;
+                }
+
+                return Ok(());
+            }
+
             // Handle qualified calls (e.g., B.HELLO).
             if let Some(module_alias) = module {
                 // Resolve alias to external module name.
@@ -1327,38 +1526,6 @@ fn analyze_statement(
                     analyze_expr(arg, symbols)?;
                 }
                 return Ok(());
-            }
-
-            // Original logic for unqualified calls.
-            if name == "ReadInt" || name == "EOF" || name == "ReadReal" || name == "ReadLongReal" {
-                return Err(SemanticError::InvalidBuiltinArgument {
-                    name: name.clone(),
-                    detail:
-                        "must be used as a call expression (e.g. x := ReadInt(), x := ReadReal(), x := ReadLongReal(), IF EOF() THEN ...)"
-                            .to_string(),
-                }
-                .into());
-            }
-
-            if name == "WriteString" {
-                if args.len() != 1 {
-                    return Err(SemanticError::ArityMismatch {
-                        name: name.clone(),
-                        expected: 1,
-                        got: args.len(),
-                    }
-                    .into());
-                }
-
-                return match args.first() {
-                    Some(Expr::String(_)) => Ok(()),
-                    Some(_) => Err(SemanticError::InvalidBuiltinArgument {
-                        name: name.clone(),
-                        detail: "expected a string literal".to_string(),
-                    }
-                    .into()),
-                    None => unreachable!("arity checked above"),
-                };
             }
 
             let symbol = symbols
@@ -1506,33 +1673,51 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             }
             .into())
         }
-        Expr::Call {
-            module: _,
-            name,
-            args,
-        } => {
-            if name == "ReadInt" || name == "EOF" || name == "ReadReal" || name == "ReadLongReal" {
-                if !args.is_empty() {
+        Expr::Call { module, name, args } => {
+            ensure_internal_builtin_module_imported(module.as_deref(), symbols)?;
+
+            if module.is_none()
+                && let Some(required_module) = required_builtin_module_for_name(name)
+            {
+                return Err(SemanticError::InvalidBuiltinArgument {
+                    name: name.clone(),
+                    detail: format!("must be qualified as {}.{}(...)", required_module, name),
+                }
+                .into());
+            }
+
+            if let Some(builtin_id) = resolve_builtin_with_module_validation(module.as_deref(), name)? {
+                if !builtin_allows_expression(builtin_id) {
+                    return Err(SemanticError::InvalidBuiltinArgument {
+                        name: builtin_display_name(module.as_deref(), name),
+                        detail: "must be used as a statement call".to_string(),
+                    }
+                    .into());
+                }
+
+                if let Some(expected_arity) = builtin_fixed_arity(builtin_id)
+                    && args.len() != expected_arity
+                {
                     return Err(SemanticError::ArityMismatch {
-                        name: name.clone(),
-                        expected: 0,
+                        name: builtin_display_name(module.as_deref(), name),
+                        expected: expected_arity,
                         got: args.len(),
                     }
                     .into());
                 }
+
+                for arg in args {
+                    analyze_expr(arg, symbols)?;
+                }
+
                 return Ok(());
             }
 
-            if name == "FLT" || name == "FLOOR" {
-                if args.len() != 1 {
-                    return Err(SemanticError::ArityMismatch {
-                        name: name.clone(),
-                        expected: 1,
-                        got: args.len(),
-                    }
-                    .into());
+            if let Some(module_name) = module {
+                return Err(SemanticError::UndefinedSymbol {
+                    name: format!("{}.{}", module_name, name),
                 }
-                return Ok(());
+                .into());
             }
 
             if symbols.resolve(name).is_none() {
@@ -1542,7 +1727,7 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             Err(SemanticError::InvalidBuiltinArgument {
                 name: name.clone(),
                 detail:
-                    "call expressions currently support only ReadInt(), EOF(), FLT(), and FLOOR()"
+                    "call expressions currently support only ReadInt(), ReadReal(), ReadLongReal(), EOF(), FLT(), and FLOOR()"
                         .to_string(),
             }
             .into())

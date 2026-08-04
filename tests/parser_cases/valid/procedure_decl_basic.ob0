@@ -1,8 +1,9 @@
 MODULE Main;
+IMPORT IO;
 PROCEDURE PrintTwice(x: INTEGER);
 BEGIN
-  WriteInt(x);
-  WriteInt(x)
+  IO.WriteInt(x);
+  IO.WriteInt(x)
 END PrintTwice;
 BEGIN
   PrintTwice(7)

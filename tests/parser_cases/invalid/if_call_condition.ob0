@@ -1,7 +1,8 @@
 (* INVALID: IF condition contains malformed call syntax with missing ')' *)
 MODULE Main;
+IMPORT IO;
 BEGIN
-  IF WriteInt(1 THEN
-    WriteInt(2)
+  IF IO.WriteInt(1 THEN
+    IO.WriteInt(2)
   END
 END Main.

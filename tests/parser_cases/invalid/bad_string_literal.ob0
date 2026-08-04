@@ -1,5 +1,6 @@
 (* INVALID: string literal is not terminated *)
 MODULE Main;
+IMPORT IO;
 BEGIN
-  WriteString("Hello)
+  IO.WriteString("Hello)
 END Main.

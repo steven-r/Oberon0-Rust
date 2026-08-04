@@ -1,5 +1,6 @@
-(* INVALID: ReadInt must be used as expression call, not as statement call *)
+(* INVALID: IO.ReadInt must be used as expression call, not as statement call *)
 MODULE Main;
+IMPORT IO;
 BEGIN
-  ReadInt()
+  IO.ReadInt()
 END Main.

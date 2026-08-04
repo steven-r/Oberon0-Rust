@@ -1,8 +1,9 @@
 name = "write line without args"
 code = """
 MODULE Main;
+IMPORT IO;
 BEGIN
-    WriteLn()
+    IO.WriteLn()
 END Main.
 """
 is_success = true

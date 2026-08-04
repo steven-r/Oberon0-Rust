@@ -1,4 +1,10 @@
+
 # Oberon0-Rust
+
+[![CI](https://github.com/steven-r/Oberon0-Rust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/steven-r/Oberon0-Rust/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/tag/steven-r/Oberon0-Rust?sort=semver)](https://github.com/steven-r/Oberon0-Rust/tags)
+[![codecov](https://codecov.io/github/steven-r/oberon0-rust/graph/badge.svg?token=BRDN80O5A0)](https://codecov.io/github/steven-r/oberon0-rust)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A minimal Oberon0 compiler prototype written in Rust.
 
@@ -74,6 +80,10 @@ Run code generation tests:
 Run CLI argument parsing tests:
 
     cargo test tests::cli_
+
+Generate coverage locally (same LCOV format as CI/Codecov):
+
+    cargo llvm-cov --workspace --all-targets --lcov --output-path coverage/lcov.info
 
 ## Git workflow and commit policy
 
@@ -207,10 +217,11 @@ This creates a generated Rust project at:
 Minimal valid structure:
 
     MODULE Main;
+                IMPORT IO;
         VAR x: INTEGER;
     BEGIN
       x := 1 + 2;
-      WriteInt(x);
+            IO.WriteInt(x);
     END Main.
 
 ## External libraries via manifest
@@ -231,7 +242,7 @@ Then your Oberon source can import those names:
     MODULE Main;
     IMPORT Math, IO;
     BEGIN
-      WriteInt(42);
+            IO.WriteInt(42);
     END Main.
 
 Notes:
@@ -256,7 +267,7 @@ The current compiler supports the Milestone A subset:
 - Numeric literals now include decimal forms with optional `E`/`D` scale factors, so values such as `12.3`, `4.567E8`, and `0.57712566D-6` parse as `REAL` or `LONGREAL` depending on the scale-letter used.
 - `TYPE` declarations support built-in scalar targets `INTEGER`, `BOOLEAN`, `REAL`, `LONGREAL`, named aliases, and array targets such as `ARRAY 10 OF INTEGER`.
 - Array lengths may use constant expressions (for example `ARRAY MAX + 2 OF INTEGER`) when they fold during semantic analysis.
-- Built-in conversion functions `FLT()` and `FLOOR()` are recognized for integer/real conversions, with `FLT()` accepting `INTEGER` input and `FLOOR()` accepting `REAL` or `LONGREAL` input.
+- Internal builtins must be imported and qualified through `IO` or `MATH`; for example `IO.WriteInt(x)`, `x := IO.ReadInt()`, `IF IO.EOF() THEN`, `r := MATH.FLT(i)`, and `i := MATH.FLOOR(r)`.
 - `VAR` declarations may optionally carry declared types such as `VAR x: INTEGER;`, `VAR flag: BOOLEAN;`, or `VAR x: Count;`.
 - User-defined type names remain reserved at module scope but may be shadowed by procedure parameters; built-in scalar names stay reserved, and a parameter cannot reuse the same user-defined type name in its own declaration as in `Count: Count`.
 - Procedure declarations support optional local `VAR` sections before `BEGIN` (for example `PROCEDURE P; VAR x: INTEGER; BEGIN ... END P;`).

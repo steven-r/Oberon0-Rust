@@ -6,9 +6,9 @@ use rstest::rstest;
 use super::{
     ExternalModuleInfo, SemanticError, analyze, analyze_expr, analyze_statement,
     assignment_compatible_extended, format_expr_for_error, infer_expr_type,
-    resolve_array_length_expr, substitute_const_expr, type_ref_name_for_error,
-    validate_boolean_condition, validate_const_expression_literal, validate_declared_type,
-    validate_declared_type_with_imports,
+    resolve_array_length_expr, resolve_builtin_with_module_validation, substitute_const_expr,
+    type_ref_name_for_error, validate_boolean_condition, validate_const_expression_literal,
+    validate_declared_type, validate_declared_type_with_imports,
 };
 use crate::ast::{
     AssignTarget, BinaryOp, Declaration, Expr, ParamDecl, Statement, TypeRef, UnaryOp,
@@ -352,14 +352,15 @@ fn semantic_accepts_flt_floor_and_eof_conditions() {
     let module = parse_module(
         r#"
 MODULE Main;
+IMPORT IO, MATH;
 VAR x: REAL;
     y: INTEGER;
 BEGIN
-    x := FLT(y);
-    y := FLOOR(x);
-    IF EOF() THEN
+    x := MATH.FLT(y);
+    y := MATH.FLOOR(x);
+    IF IO.EOF() THEN
     END;
-    WHILE EOF() DO
+    WHILE IO.EOF() DO
     END
 END Main.
 "#,
@@ -367,6 +368,81 @@ END Main.
     .expect("source should parse");
 
     analyze(&module, None).expect("FLT/FLOOR and EOF conditions should be accepted");
+}
+
+#[test]
+fn semantic_accepts_qualified_io_and_math_builtins() {
+    let module = parse_module(
+        r#"
+MODULE Main;
+IMPORT IO, MATH;
+VAR x: INTEGER;
+    r: REAL;
+BEGIN
+    x := IO.ReadInt();
+    IF IO.EOF() THEN
+      IO.WriteLn()
+    END;
+    r := MATH.FLT(x);
+    x := MATH.FLOOR(r);
+    IO.WriteInt(x)
+END Main.
+"#,
+    )
+    .expect("source should parse");
+
+    analyze(&module, None).expect("qualified IO/MATH builtins should be accepted");
+}
+
+#[test]
+fn semantic_resolve_builtin_with_module_validation_covers_all_branches() {
+    let io_readint = resolve_builtin_with_module_validation(Some("IO"), "ReadInt")
+        .expect("IO.ReadInt should resolve as internal builtin");
+    assert!(io_readint.is_some(), "IO.ReadInt should map to a builtin id");
+
+    let math_floor = resolve_builtin_with_module_validation(Some("MATH"), "FLOOR")
+        .expect("MATH.FLOOR should resolve as internal builtin");
+    assert!(
+        math_floor.is_some(),
+        "MATH.FLOOR should map to a builtin id"
+    );
+
+    let err = resolve_builtin_with_module_validation(Some("IO"), "NoSuchBuiltin")
+        .expect_err("unknown IO builtin member should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+    assert!(
+        err.to_string().contains("unknown builtin member"),
+        "expected unknown-member diagnostic, got '{err}'"
+    );
+
+    let err = resolve_builtin_with_module_validation(Some("MATH"), "ReadInt")
+        .expect_err("unknown MATH builtin member should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+    assert!(
+        err.to_string().contains("unknown builtin member"),
+        "expected unknown-member diagnostic, got '{err}'"
+    );
+
+    let external_member =
+        resolve_builtin_with_module_validation(Some("ModuleB"), "HELLO")
+            .expect("non-internal modules should bypass builtin member validation");
+    assert!(
+        external_member.is_none(),
+        "non-internal modules should not resolve as builtins"
+    );
+
+    let unqualified_builtin = resolve_builtin_with_module_validation(None, "ReadInt")
+        .expect("unqualified call should bypass internal-module validation");
+    assert!(
+        unqualified_builtin.is_none(),
+        "unqualified builtin names must not resolve in strict qualified mode"
+    );
 }
 
 #[test]
@@ -381,6 +457,12 @@ fn semantic_directly_covers_inference_and_boolean_validation_paths() {
     symbols
         .declare_with_type("b", SymbolKind::Variable, Some(TypeRef::Boolean))
         .expect("boolean variable should be declared");
+    symbols
+        .declare("IO", SymbolKind::Procedure)
+        .expect("IO import alias should be declared");
+    symbols
+        .declare("MATH", SymbolKind::Procedure)
+        .expect("MATH import alias should be declared");
 
     let mut types = HashMap::new();
     types.insert("INTEGER".to_string(), TypeRef::Integer);
@@ -418,7 +500,7 @@ fn semantic_directly_covers_inference_and_boolean_validation_paths() {
 
     let err = infer_expr_type(
         &Expr::Call {
-            module: None,
+            module: Some("IO".to_string()),
             name: "ReadInt".to_string(),
             args: vec![Expr::Integer(1)],
         },
@@ -433,7 +515,7 @@ fn semantic_directly_covers_inference_and_boolean_validation_paths() {
 
     let err = infer_expr_type(
         &Expr::Call {
-            module: None,
+            module: Some("MATH".to_string()),
             name: "FLT".to_string(),
             args: vec![Expr::Boolean(true)],
         },
@@ -448,7 +530,7 @@ fn semantic_directly_covers_inference_and_boolean_validation_paths() {
 
     let err = infer_expr_type(
         &Expr::Call {
-            module: None,
+            module: Some("MATH".to_string()),
             name: "FLOOR".to_string(),
             args: vec![Expr::Integer(1)],
         },
@@ -486,7 +568,7 @@ fn semantic_directly_covers_inference_and_boolean_validation_paths() {
     assert!(
         validate_boolean_condition(
             &Expr::Call {
-                module: None,
+                module: Some("IO".to_string()),
                 name: "EOF".to_string(),
                 args: vec![],
             },
@@ -495,6 +577,149 @@ fn semantic_directly_covers_inference_and_boolean_validation_paths() {
         )
         .is_ok()
     );
+}
+
+#[test]
+fn semantic_infer_expr_type_covers_remaining_call_and_operator_branches() {
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare("IO", SymbolKind::Procedure)
+        .expect("IO import alias should be declared");
+    symbols
+        .declare("MATH", SymbolKind::Procedure)
+        .expect("MATH import alias should be declared");
+    symbols
+        .declare("custom", SymbolKind::Procedure)
+        .expect("custom procedure should be declared");
+    symbols
+        .declare_with_type("maybe", SymbolKind::Variable, Some(TypeRef::Named("MissingType".to_string())))
+        .expect("variable with unresolved named type should be declared");
+
+    let mut types = HashMap::new();
+    types.insert("INTEGER".to_string(), TypeRef::Integer);
+    types.insert("BOOLEAN".to_string(), TypeRef::Boolean);
+    types.insert("REAL".to_string(), TypeRef::Real);
+    types.insert("LONGREAL".to_string(), TypeRef::LongReal);
+
+    let err = infer_expr_type(
+        &Expr::Call {
+            module: None,
+            name: "ReadInt".to_string(),
+            args: vec![],
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("unqualified internal builtin should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+    assert!(
+        err.to_string().contains("must be qualified as IO.ReadInt(...)")
+    );
+
+    let err = infer_expr_type(
+        &Expr::Call {
+            module: Some("IO".to_string()),
+            name: "WriteLn".to_string(),
+            args: vec![],
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("statement-only builtin should be rejected in expression context");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+    assert!(err.to_string().contains("must be used as a statement call"));
+
+    let err = infer_expr_type(
+        &Expr::Call {
+            module: Some("ModuleB".to_string()),
+            name: "HELLO".to_string(),
+            args: vec![],
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("non-internal qualified call should fail with undefined symbol");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+    assert!(err.to_string().contains("Undefined symbol usage: 'ModuleB.HELLO'"));
+
+    let err = infer_expr_type(
+        &Expr::Call {
+            module: None,
+            name: "custom".to_string(),
+            args: vec![],
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("non-builtin procedures should not infer expression types");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+
+    let div_err = infer_expr_type(
+        &Expr::Binary {
+            op: BinaryOp::IntDiv,
+            left: Box::new(Expr::Boolean(true)),
+            right: Box::new(Expr::Integer(1)),
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("DIV with non-integer operands should fail");
+    let div_err = div_err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(div_err.code(), "E012");
+    assert!(div_err.to_string().contains("operator 'DIV' requires INTEGER operands"));
+
+    let mod_err = infer_expr_type(
+        &Expr::Binary {
+            op: BinaryOp::Mod,
+            left: Box::new(Expr::Boolean(true)),
+            right: Box::new(Expr::Integer(1)),
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("MOD with non-integer operands should fail");
+    let mod_err = mod_err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(mod_err.code(), "E012");
+    assert!(mod_err.to_string().contains("operator 'MOD' requires INTEGER operands"));
+
+    let unary_none = infer_expr_type(
+        &Expr::Unary {
+            op: UnaryOp::Plus,
+            value: Box::new(Expr::Variable("maybe".to_string())),
+        },
+        &symbols,
+        &types,
+    )
+    .expect("unknown named type should propagate as None in unary inference");
+    assert_eq!(unary_none, None);
+
+    let binary_none = infer_expr_type(
+        &Expr::Binary {
+            op: BinaryOp::Add,
+            left: Box::new(Expr::Variable("maybe".to_string())),
+            right: Box::new(Expr::Integer(1)),
+        },
+        &symbols,
+        &types,
+    )
+    .expect("unknown named type should propagate as None in binary inference");
+    assert_eq!(binary_none, None);
 }
 
 #[test]
@@ -512,6 +737,12 @@ fn semantic_covers_remaining_branch_paths() {
     symbols
         .declare_with_type("flag", SymbolKind::Variable, Some(TypeRef::Boolean))
         .expect("boolean variable should be declared");
+    symbols
+        .declare("IO", SymbolKind::Procedure)
+        .expect("IO import alias should be declared");
+    symbols
+        .declare("MATH", SymbolKind::Procedure)
+        .expect("MATH import alias should be declared");
 
     let mut types = HashMap::new();
     types.insert("INTEGER".to_string(), TypeRef::Integer);
@@ -667,7 +898,7 @@ fn semantic_covers_remaining_branch_paths() {
 
     let err = infer_expr_type(
         &Expr::Call {
-            module: None,
+            module: Some("MATH".to_string()),
             name: "FLT".to_string(),
             args: vec![],
         },
@@ -682,7 +913,7 @@ fn semantic_covers_remaining_branch_paths() {
 
     let err = infer_expr_type(
         &Expr::Call {
-            module: None,
+            module: Some("MATH".to_string()),
             name: "FLOOR".to_string(),
             args: vec![],
         },
@@ -930,10 +1161,11 @@ fn semantic_rejects_invalid_flt_and_floor_argument_types() {
     let module = parse_module(
         r#"
 MODULE Main;
+IMPORT MATH;
 VAR x: INTEGER;
 BEGIN
-    x := FLT(TRUE);
-    x := FLOOR(1)
+    x := MATH.FLT(TRUE);
+    x := MATH.FLOOR(1)
 END Main.
 "#,
     )
@@ -1430,7 +1662,10 @@ fn semantic_assignment_compatible_extended_covers_qualified_fallback_paths() {
 
 #[test]
 fn semantic_infer_expr_type_covers_readreal_and_readlongreal_arity_paths() {
-    let symbols = SymbolTable::new();
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare("IO", SymbolKind::Procedure)
+        .expect("IO import alias should be declared");
     let types = HashMap::from([
         ("INTEGER".to_string(), TypeRef::Integer),
         ("BOOLEAN".to_string(), TypeRef::Boolean),
@@ -1440,7 +1675,7 @@ fn semantic_infer_expr_type_covers_readreal_and_readlongreal_arity_paths() {
 
     let err = infer_expr_type(
         &Expr::Call {
-            module: None,
+            module: Some("IO".to_string()),
             name: "ReadReal".to_string(),
             args: vec![Expr::Integer(1)],
         },
@@ -1455,7 +1690,7 @@ fn semantic_infer_expr_type_covers_readreal_and_readlongreal_arity_paths() {
 
     let err = infer_expr_type(
         &Expr::Call {
-            module: None,
+            module: Some("IO".to_string()),
             name: "ReadLongReal".to_string(),
             args: vec![Expr::Integer(1)],
         },

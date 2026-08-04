@@ -1,5 +1,6 @@
-(* INVALID: WriteInt builtin receives string literal instead of integer expression *)
+(* INVALID: IO.WriteInt builtin receives string literal instead of integer expression *)
 MODULE Main;
+IMPORT IO;
 BEGIN
-  WriteInt("Hello")
+  IO.WriteInt("Hello")
 END Main.

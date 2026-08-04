@@ -1,4 +1,5 @@
 /target
 .vscode/settings.json
 coverage/lcov.info
+coverage.xml
 node_modules/

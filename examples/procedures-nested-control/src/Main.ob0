@@ -1,15 +1,16 @@
 MODULE Main;
+IMPORT IO;
 VAR current: INTEGER;
 PROCEDURE Countdown(start: INTEGER);
 BEGIN
   current := start;
   WHILE current > 0 DO
     IF current > 1 THEN
-      WriteInt(current);
-      WriteLn()
+      IO.WriteInt(current);
+      IO.WriteLn()
     ELSE
-      WriteInt(100);
-      WriteLn()
+      IO.WriteInt(100);
+      IO.WriteLn()
     END;
     current := current - 1
   END

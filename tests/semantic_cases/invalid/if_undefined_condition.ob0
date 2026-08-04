@@ -1,7 +1,8 @@
 (* INVALID: IF condition references undefined symbol *)
 MODULE Main;
+IMPORT IO;
 BEGIN
   IF unknown THEN
-    WriteInt(1)
+    IO.WriteInt(1)
   END
 END Main.

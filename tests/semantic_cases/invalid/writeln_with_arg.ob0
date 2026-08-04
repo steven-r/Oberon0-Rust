@@ -1,5 +1,6 @@
-(* INVALID: WriteLn builtin is called with arguments but expects arity 0 *)
+(* INVALID: IO.WriteLn builtin is called with arguments but expects arity 0 *)
 MODULE Main;
+IMPORT IO;
 BEGIN
-  WriteLn(1)
+  IO.WriteLn(1)
 END Main.

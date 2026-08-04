@@ -121,6 +121,9 @@ fn generate_cargo_toml(module: &HModule, manifest: Option<&ExternalManifest>) ->
 
     if let Some(manifest) = manifest {
         for import in &module.imports {
+            if matches!(import.external_name.as_str(), "IO" | "MATH") {
+                continue;
+            }
             let binding = manifest.resolve(&import.external_name).ok_or_else(|| {
                 anyhow::anyhow!(
                     "Import '{}' was not found in the manifest",

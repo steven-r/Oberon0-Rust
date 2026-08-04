@@ -1,5 +1,6 @@
 MODULE Main;
+IMPORT IO;
 VAR lr: LONGREAL;
 BEGIN
-  lr := ReadLongReal(1)
+  lr := IO.ReadLongReal(1)
 END Main.

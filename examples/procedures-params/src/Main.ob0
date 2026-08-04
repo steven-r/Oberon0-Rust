@@ -1,13 +1,14 @@
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 PROCEDURE Show(x: INTEGER);
 BEGIN
-  WriteInt(x);
-  WriteLn()
+  IO.WriteInt(x);
+  IO.WriteLn()
 END Show;
 BEGIN
   x := 7;
   Show(42);
-  WriteInt(x);
-  WriteLn()
+  IO.WriteInt(x);
+  IO.WriteLn()
 END Main.

@@ -1,0 +1,13 @@
+name = "io qualified readint with argument"
+code = """
+MODULE Main;
+IMPORT IO;
+VAR x: INTEGER;
+BEGIN
+    x := IO.ReadInt(1)
+END Main.
+"""
+result.code = "E006"
+result.messages = [
+  "Procedure 'IO.ReadInt' called with wrong arity",
+]

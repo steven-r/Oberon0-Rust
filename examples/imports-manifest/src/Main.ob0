@@ -1,8 +1,8 @@
 MODULE Main;
-IMPORT Math;
+IMPORT Math, IO;
 VAR x: INTEGER;
 BEGIN
   x := 42;
-  WriteInt(x);
-  WriteLn()
+  IO.WriteInt(x);
+  IO.WriteLn()
 END Main.

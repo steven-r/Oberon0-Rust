@@ -1,5 +1,6 @@
 MODULE Main;
+IMPORT MATH;
 VAR i: INTEGER;
 BEGIN
-  i := FLOOR(1)
+  i := MATH.FLOOR(1)
 END Main.

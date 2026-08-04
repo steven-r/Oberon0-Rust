@@ -1,5 +1,6 @@
 (* INVALID: embedded quotes are not escaped using doubled quotes *)
 MODULE Main;
+IMPORT IO;
 BEGIN
-  WriteString("Hello "Oberon"")
+  IO.WriteString("Hello "Oberon"")
 END Main.

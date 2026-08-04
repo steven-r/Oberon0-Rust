@@ -1,9 +1,10 @@
 name = "eof call expression in if"
 code = """
 MODULE Main;
+IMPORT IO;
 BEGIN
-    IF EOF() THEN
-        WriteLn()
+    IF IO.EOF() THEN
+        IO.WriteLn()
     END
 END Main.
 """

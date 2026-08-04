@@ -1,6 +1,7 @@
-(* INVALID: EOF builtin is called with arguments but expects arity 0 *)
+(* INVALID: IO.EOF builtin is called with arguments but expects arity 0 *)
 MODULE Main;
+IMPORT IO;
 VAR x: INTEGER;
 BEGIN
-  x := EOF(1)
+  x := IO.EOF(1)
 END Main.
