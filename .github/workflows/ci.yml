@@ -25,6 +25,9 @@ jobs:
           toolchain: nightly
           components: llvm-tools-preview
 
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
 
@@ -41,16 +44,14 @@ jobs:
 
       - name: Run full test suite with JUnit output
         run: |
-          mkdir -p target/test-results
-          cargo test -- --nocapture > target/test-results/cargo-test.log 2>&1 || true
-          python3 scripts/generate_junit_from_cargo.py target/test-results/cargo-test.log target/test-results/junit.xml
+          cargo nextest run --profile ci
 
       - name: Upload test report artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: junit-test-results
-          path: target/test-results/junit.xml
+          path: target/nextest/ci/junit.xml
           if-no-files-found: error
 
       - name: Publish test results to PR checks
@@ -58,7 +59,7 @@ jobs:
         uses: dorny/test-reporter@v3
         with:
           name: Rust test results
-          path: target/test-results/junit.xml
+          path: target/nextest/ci/junit.xml
           reporter: java-junit
           fail-on-error: false
 
