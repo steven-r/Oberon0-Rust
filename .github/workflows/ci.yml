@@ -63,6 +63,14 @@ jobs:
           reporter: java-junit
           fail-on-error: false
 
+      - name: Upload test results to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: target/nextest/ci/junit.xml
+          fail_ci_if_error: true
+          report_type: test_results
+          token: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Smoke test minimal example
         run: scripts/oberon0 examples/hello-app --run
 
