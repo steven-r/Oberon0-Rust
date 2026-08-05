@@ -137,6 +137,24 @@ fn emits_dependency_entries_with_package_and_features() {
 }
 
 #[test]
+fn runtime_type_from_type_ref_treats_record_like_named_and_qualified_as_dynamic() {
+    let record_type = TypeRef::Record {
+        fields: vec![crate::ast::RecordField {
+            name: "age".to_string(),
+            type_ref: TypeRef::Integer,
+        }],
+    };
+
+    assert!(super::runtime_type_from_type_ref(Some(&record_type)).is_none());
+    assert!(super::runtime_type_from_type_ref(Some(&TypeRef::Named("Alias".to_string()))).is_none());
+    assert!(super::runtime_type_from_type_ref(Some(&TypeRef::Qualified {
+        module: "B".to_string(),
+        name: "T".to_string(),
+    }))
+    .is_none());
+}
+
+#[test]
 fn emits_runtime_call_for_indexed_assignment_target() {
     let module = HModule {
         name: "Main".to_string(),

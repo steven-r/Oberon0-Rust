@@ -394,6 +394,24 @@ END Main.
 }
 
 #[test]
+fn parser_rejects_qualified_field_selector_stacks_and_parses_record_type_helper() {
+    let err = parse_primary_factor(parse_pair(Rule::primary_factor, "p.x.y"))
+        .expect_err("qualified field selector stacks should be rejected in the current subset");
+    assert!(
+        err.to_string()
+            .contains("Qualified designators with selectors are not yet supported")
+    );
+
+    let record = super::parse_type_ref(parse_pair(Rule::type_ref, "RECORD x, y: INTEGER; END"))
+        .expect("record type helper should parse inline record fields");
+    assert!(matches!(
+        record,
+        crate::ast::TypeRef::Record { fields }
+            if fields.len() == 2 && fields[0].name == "x" && fields[1].name == "y"
+    ));
+}
+
+#[test]
 fn parser_helper_paths_cover_unsigned_exponents_and_malformed_inputs() {
     assert_eq!(
         parse_real_literal("1.25D3").expect("unsigned D exponent should parse"),

@@ -1538,6 +1538,49 @@ fn semantic_record_field_helper_paths_are_exercised_directly() {
         }],
     });
     assert!(rendered_record.contains("RECORD age: INTEGER END"));
+
+    let substituted_field = substitute_const_expr(
+        &Expr::Field {
+            name: "p".to_string(),
+            field: "age".to_string(),
+        },
+        &HashMap::new(),
+    );
+    assert!(matches!(
+        substituted_field,
+        Expr::Field { name, field } if name == "p" && field == "age"
+    ));
+
+    let qualified_field = Expr::QualifiedVariable {
+        module: "p".to_string(),
+        name: "age".to_string(),
+    };
+    assert_eq!(
+        infer_expr_type(&qualified_field, &symbols, &types)
+            .expect("qualified variable backed by record base should infer")
+            .expect("qualified record field should have a type"),
+        TypeRef::Integer
+    );
+
+    let no_type_symbols = {
+        let mut table = SymbolTable::new();
+        table.declare("bare", SymbolKind::Variable)
+            .expect("bare variable should be declared");
+        table
+    };
+    let err = infer_expr_type(
+        &Expr::Field {
+            name: "bare".to_string(),
+            field: "age".to_string(),
+        },
+        &no_type_symbols,
+        &types,
+    )
+    .expect_err("field access on typeless binding should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E012");
 }
 
 #[test]

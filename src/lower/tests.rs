@@ -331,6 +331,29 @@ fn fixture_qualified_variable_expression_is_rejected_by_lowerer() {
 }
 
 #[test]
+fn fixture_qualified_variable_expression_lowers_to_hir_field_when_base_resolves() {
+    let mut resolver = Resolver::new();
+    let declared = resolver
+        .declare("p", SymbolKind::Variable)
+        .expect("qualified base should be declared");
+
+    let lowered = lower_expr(
+        &Expr::QualifiedVariable {
+            module: "p".to_string(),
+            name: "age".to_string(),
+        },
+        &resolver,
+    )
+    .expect("qualified variable with resolved base should lower to field access");
+
+    assert!(matches!(
+        lowered,
+        HExpr::Field { name, field }
+            if name.id == declared.id && field == "age"
+    ));
+}
+
+#[test]
 fn fixture_field_expression_lowers_to_hir_field() {
     let mut resolver = Resolver::new();
     let declared = resolver
