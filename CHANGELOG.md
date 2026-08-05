@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.12.0 - 2026-08-05
+
 ### Features
 
 - add `RECORD` type declarations with named fields across AST, parser grammar, semantic model, lowering, and runtime type mapping (#9)
