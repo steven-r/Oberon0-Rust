@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.11.0 - 2026-08-04
+
 ### Features
 
 - require internal builtins to be imported and qualified through `IO` or `MATH`, including `Read*`, `Write*`, `EOF`, `FLT`, and `FLOOR`
