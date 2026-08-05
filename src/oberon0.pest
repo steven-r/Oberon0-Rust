@@ -9,6 +9,7 @@ keyword = {
     "VAR" |
     "PROCEDURE" |
     "ARRAY" |
+    "RECORD" |
     "OF" |
     "BEGIN" |
     "END" |
@@ -40,11 +41,15 @@ const_section = { "CONST" ~ const_item+ }
 const_item = { ident ~ "=" ~ expr ~ ";" }
 type_section = { "TYPE" ~ type_item+ }
 type_item = { ident ~ export_marker? ~ "=" ~ type_ref ~ ";" }
-type_ref = { array_type | qualified_ident }
+type_ref = { array_type | record_type | qualified_ident }
 array_type = { "ARRAY" ~ expr ~ "OF" ~ type_ref }
+record_type = { "RECORD" ~ record_field_item* ~ "END" }
+record_field_item = { ident_list ~ ":" ~ type_ref ~ ";" }
 qualified_ident = { ident ~ ("." ~ ident)? }
-designator = { qualified_ident ~ index_selector* }
+designator = { qualified_ident ~ selector* }
+selector = _{ index_selector | field_selector }
 index_selector = { "[" ~ expr ~ "]" }
+field_selector = { "." ~ ident }
 var_section = { "VAR" ~ var_item+ }
 
 var_item = { ident_list ~ ":" ~ type_ref ~ ";" }

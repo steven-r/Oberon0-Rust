@@ -1,0 +1,10 @@
+name = "dotted expression with undefined base is treated as unsupported qualified variable"
+code = """
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+  x := missing.age
+END Main.
+"""
+result.code = "E015"
+result.messages = ["Qualified variable reference 'missing.age'"]

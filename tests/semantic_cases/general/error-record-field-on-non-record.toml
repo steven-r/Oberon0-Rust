@@ -1,0 +1,10 @@
+name = "field access on non-record variable"
+code = """
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+  x.value := 1
+END Main.
+"""
+result.code = "E012"
+result.messages = ["'x' is not a record variable"]

@@ -306,7 +306,10 @@ END Main.
 fn parser_rejects_indexed_designators_as_calls() {
     let err = parse_primary_factor(parse_pair(Rule::primary_factor, "arr[0]()"))
         .expect_err("indexed designators cannot be called");
-    assert!(err.to_string().contains("Indexed designators cannot be called"));
+    assert!(
+        err.to_string()
+            .contains("Designators with selectors cannot be called")
+    );
 }
 
 #[test]
@@ -315,29 +318,97 @@ fn parser_rejects_unsupported_designator_shapes() {
         .expect_err("indexed qualified designators should be rejected");
     assert!(
         err.to_string()
-            .contains("Indexed qualified designators are not yet supported")
+            .contains("Qualified designators with selectors are not yet supported")
     );
 
     let err = parse_primary_factor(parse_pair(Rule::primary_factor, "arr[0][1]"))
         .expect_err("multiple indexes should be rejected");
     assert!(
         err.to_string()
-            .contains("Multiple index selectors are not yet supported")
+            .contains("Multiple selectors are not yet supported")
     );
 
-    let err = parse_assignment_target(parse_pair(Rule::designator, "B.arr"))
-        .expect_err("qualified assignment targets should be rejected");
-    assert!(
-        err.to_string()
-            .contains("Qualified assignment targets are not yet supported")
-    );
+    let target = parse_assignment_target(parse_pair(Rule::designator, "B.arr"))
+        .expect("dotted assignment targets should parse as field designators");
+    assert!(matches!(
+        target,
+        AssignTarget::Field { name, field } if name == "B" && field == "arr"
+    ));
 
     let err = parse_assignment_target(parse_pair(Rule::designator, "arr[0][1]"))
         .expect_err("multiple index selectors should be rejected in assignment targets");
     assert!(
         err.to_string()
-            .contains("Multiple index selectors are not yet supported")
+            .contains("Multiple selectors are not yet supported")
     );
+
+    let err = parse_assignment_target(parse_pair(Rule::designator, "B.arr[0]"))
+        .expect_err("qualified assignment targets with selectors should be rejected");
+    assert!(
+        err.to_string()
+            .contains("Qualified designators with selectors are not yet supported")
+    );
+}
+
+#[test]
+fn parses_record_fields_and_field_designators_with_multiple_names() {
+    let module = parse_module(
+        r#"
+MODULE Main;
+TYPE
+  Pair = RECORD
+    x, y: INTEGER;
+  END;
+VAR
+  p: Pair;
+  a: INTEGER;
+BEGIN
+  a := p.x
+END Main.
+"#,
+    )
+    .expect("record declarations with multi-name fields should parse");
+
+    match &module.declarations[0] {
+        crate::ast::Declaration::Type { target, .. } => match target {
+            crate::ast::TypeRef::Record { fields } => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "x");
+                assert_eq!(fields[1].name, "y");
+            }
+            other => panic!("expected record type, got {other:?}"),
+        },
+        other => panic!("expected type declaration, got {other:?}"),
+    }
+
+    match &module.statements[0] {
+        Statement::Assign { value, .. } => match value {
+            Expr::QualifiedVariable { module, name } => {
+                assert_eq!(module, "p");
+                assert_eq!(name, "x");
+            }
+            other => panic!("expected dotted variable expression, got {other:?}"),
+        },
+        other => panic!("expected assignment statement, got {other:?}"),
+    }
+}
+
+#[test]
+fn parser_rejects_qualified_field_selector_stacks_and_parses_record_type_helper() {
+    let err = parse_primary_factor(parse_pair(Rule::primary_factor, "p.x.y"))
+        .expect_err("qualified field selector stacks should be rejected in the current subset");
+    assert!(
+        err.to_string()
+            .contains("Qualified designators with selectors are not yet supported")
+    );
+
+    let record = super::parse_type_ref(parse_pair(Rule::type_ref, "RECORD x, y: INTEGER; END"))
+        .expect("record type helper should parse inline record fields");
+    assert!(matches!(
+        record,
+        crate::ast::TypeRef::Record { fields }
+            if fields.len() == 2 && fields[0].name == "x" && fields[1].name == "y"
+    ));
 }
 
 #[test]
@@ -660,6 +731,66 @@ END Main.
 }
 
 #[test]
+fn parses_record_type_declarations_and_field_designators() {
+    let parsed = parse_module(
+        r#"
+MODULE Main;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+        active: BOOLEAN;
+  END;
+VAR p: Person;
+    ageCopy: INTEGER;
+BEGIN
+  p.age := 1;
+  ageCopy := p.age
+END Main.
+"#,
+    )
+    .expect("module with record type and field designators should parse");
+
+    let record_type = parsed
+        .declarations
+        .iter()
+        .find_map(|decl| match decl {
+            crate::ast::Declaration::Type { name, target, .. } if name == "Person" => {
+                Some(target)
+            }
+            _ => None,
+        })
+        .expect("record type declaration should exist");
+
+    assert!(matches!(
+        record_type,
+        crate::ast::TypeRef::Record { fields }
+            if fields.len() == 2
+                && fields[0].name == "age"
+                && matches!(fields[0].type_ref, crate::ast::TypeRef::Integer)
+                && fields[1].name == "active"
+                && matches!(fields[1].type_ref, crate::ast::TypeRef::Boolean)
+    ));
+
+    let Statement::Assign { target, value } = &parsed.statements[0] else {
+        panic!("expected first statement to be an assignment");
+    };
+    assert!(matches!(
+        target,
+        AssignTarget::Field { name, field } if name == "p" && field == "age"
+    ));
+    assert!(matches!(value, Expr::Integer(1)));
+
+    let Statement::Assign { target, value } = &parsed.statements[1] else {
+        panic!("expected second statement to be an assignment");
+    };
+    assert_eq!(target, &AssignTarget::Name("ageCopy".to_string()));
+    assert!(matches!(
+        value,
+        Expr::QualifiedVariable { module, name } if module == "p" && name == "age"
+    ));
+}
+
+#[test]
 fn rejects_multiple_index_selectors_for_current_subset() {
     let err = parse_module(
         r#"
@@ -675,7 +806,7 @@ END Main.
 
     assert!(
         err.to_string()
-            .contains("Multiple index selectors are not yet supported")
+            .contains("Multiple selectors are not yet supported")
     );
 }
 

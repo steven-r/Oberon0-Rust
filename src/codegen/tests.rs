@@ -31,6 +31,13 @@ fn indexed_target(id: usize, name: &str, kind: SymbolKind, index: HExpr) -> HTar
     }
 }
 
+fn field_target(id: usize, name: &str, kind: SymbolKind, field: &str) -> HTarget {
+    HTarget::Field {
+        name: ident(id, name, kind),
+        field: field.to_string(),
+    }
+}
+
 #[test]
 fn emits_procedure_function_and_call_from_main() {
     let module = HModule {
@@ -130,6 +137,24 @@ fn emits_dependency_entries_with_package_and_features() {
 }
 
 #[test]
+fn runtime_type_from_type_ref_treats_record_like_named_and_qualified_as_dynamic() {
+    let record_type = TypeRef::Record {
+        fields: vec![crate::ast::RecordField {
+            name: "age".to_string(),
+            type_ref: TypeRef::Integer,
+        }],
+    };
+
+    assert!(super::runtime_type_from_type_ref(Some(&record_type)).is_none());
+    assert!(super::runtime_type_from_type_ref(Some(&TypeRef::Named("Alias".to_string()))).is_none());
+    assert!(super::runtime_type_from_type_ref(Some(&TypeRef::Qualified {
+        module: "B".to_string(),
+        name: "T".to_string(),
+    }))
+    .is_none());
+}
+
+#[test]
 fn emits_runtime_call_for_indexed_assignment_target() {
     let module = HModule {
         name: "Main".to_string(),
@@ -168,6 +193,44 @@ fn emits_runtime_call_for_indexed_expression_read() {
 
     let generated = generate_main_rs(&module, false);
     assert!(generated.contains("value_index(&get_var(&vars, \"arr\"), &value_integer(0))"));
+}
+
+#[test]
+fn emits_runtime_call_for_field_assignment_target() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![HStatement::Assign {
+            target: field_target(13, "p", SymbolKind::Variable, "age"),
+            value: HExpr::Integer(42),
+        }],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains("let field_value_13_age = (value_integer(42)).clone();"));
+    assert!(generated.contains("set_var_field(&mut vars, \"p\", \"age\", field_value_13_age);"));
+}
+
+#[test]
+fn emits_runtime_call_for_field_expression_read() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![HStatement::Assign {
+            target: assign_target(14, "x", SymbolKind::Variable),
+            value: HExpr::Field {
+                name: ident(15, "p", SymbolKind::Variable),
+                field: "age".to_string(),
+            },
+        }],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains("value_field(&get_var(&vars, \"p\"), \"age\")"));
 }
 
 #[test]
@@ -1549,6 +1612,25 @@ fn format_statement_covers_by_ref_locals_and_var_argument_temporaries() {
     assert!(
         rendered_call.contains("let mut call_arg_1 = value_add(&value_integer(2), &value_integer(3));")
     );
+
+    let assign_field = HStatement::Assign {
+        target: field_target(32, "arr", SymbolKind::Parameter, "age"),
+        value: HExpr::Integer(11),
+    };
+    let rendered_field = super::format_statement(&assign_field, "    ", &ctx);
+    assert!(rendered_field.contains("value_set_field(&mut *param_32, \"age\", field_value_32_age);"));
+    assert!(rendered_field.contains("set_procedure_var(vars, \"P\", \"arr\", &*param_32);"));
+
+    assert_eq!(
+        super::format_expr(
+            &HExpr::Field {
+                name: ident(32, "arr", SymbolKind::Parameter),
+                field: "age".to_string(),
+            },
+            &ctx,
+        ),
+        "value_field(&*param_32, \"age\")"
+    );
 }
 
 #[test]
@@ -1647,6 +1729,67 @@ fn format_statement_defaults_and_format_expr_extended_paths() {
         super::format_binary_expr(BinaryOp::Add, "lhs", "rhs", true),
         "(value_add(&lhs, &rhs))"
     );
+
+    let local_procedures = std::collections::HashSet::new();
+    let local_param_modes = std::collections::HashMap::new();
+    let mut local_ctx = super::FormatContext {
+        locals: std::collections::HashMap::from([(61usize, "local_61".to_string())]),
+        by_ref_locals: std::collections::HashSet::new(),
+        constants: std::collections::HashMap::new(),
+        procedures: &local_procedures,
+        procedure_param_modes: &local_param_modes,
+        vars_arg: "vars",
+        procedure_name: Some("Worker"),
+        track_procedure_locals: true,
+        types: std::collections::HashMap::new(),
+    };
+
+    let local_field_assign = HStatement::Assign {
+        target: field_target(61, "record_local", SymbolKind::Variable, "age"),
+        value: HExpr::Integer(12),
+    };
+    let rendered_local_field = super::format_statement(&local_field_assign, "    ", &local_ctx);
+    assert!(rendered_local_field.contains("value_set_field(&mut local_61, \"age\", field_value_61_age);"));
+    assert!(rendered_local_field.contains("set_procedure_var(vars, \"Worker\", \"record_local\", &local_61);"));
+
+    assert_eq!(
+        super::format_expr(
+            &HExpr::Field {
+                name: ident(61, "record_local", SymbolKind::Variable),
+                field: "age".to_string(),
+            },
+            &local_ctx,
+        ),
+        "value_field(&local_61, \"age\")"
+    );
+
+    local_ctx.by_ref_locals.insert(61);
+    assert_eq!(
+        super::format_expr(
+            &HExpr::Field {
+                name: ident(61, "record_local", SymbolKind::Variable),
+                field: "age".to_string(),
+            },
+            &local_ctx,
+        ),
+        "value_field(&*local_61, \"age\")"
+    );
+
+    let field_usage = super::expr_io_usage(&HExpr::Field {
+        name: ident(61, "record_local", SymbolKind::Variable),
+        field: "age".to_string(),
+    });
+    assert!(!field_usage.uses_read_int);
+    assert!(!field_usage.uses_read_real);
+    assert!(!field_usage.uses_read_longreal);
+    assert!(!field_usage.uses_eof);
+    assert!(!field_usage.uses_write_real);
+    assert!(!field_usage.uses_write_longreal);
+
+    assert!(super::expr_needs_state_map(&HExpr::Field {
+        name: ident(61, "record_local", SymbolKind::Variable),
+        field: "age".to_string(),
+    }));
 }
 
 fn temp_codegen_dir(name: &str) -> std::path::PathBuf {

@@ -302,8 +302,24 @@ fn lower_expr(expr: &Expr, resolver: &Resolver) -> Result<HExpr> {
                 index: Box::new(lower_expr(index, resolver)?),
             })
         }
-        Expr::QualifiedVariable { module: _, name: _ } => {
-            bail!("Qualified variables are not yet supported in code generation")
+        Expr::Field { name, field } => {
+            let resolved = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!("Lowering failed: unknown identifier '{}'.", name)
+            })?;
+            Ok(HExpr::Field {
+                name: resolved,
+                field: field.clone(),
+            })
+        }
+        Expr::QualifiedVariable { module, name } => {
+            if let Some(resolved) = resolver.resolve(module) {
+                Ok(HExpr::Field {
+                    name: resolved,
+                    field: name.clone(),
+                })
+            } else {
+                bail!("Qualified variables are not yet supported in code generation")
+            }
         }
         Expr::Variable(name) => {
             let resolved = resolver.resolve(name).ok_or_else(|| {
@@ -363,6 +379,19 @@ fn lower_assign_target(target: &AssignTarget, resolver: &Resolver) -> Result<HTa
             Ok(HTarget::Indexed {
                 name: resolved_target,
                 index: lower_expr(index, resolver)?,
+            })
+        }
+        AssignTarget::Field { name, field } => {
+            let resolved_target = resolver.resolve(name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Lowering invariant violated: unresolved assignment target '{}'.",
+                    name
+                )
+            })?;
+
+            Ok(HTarget::Field {
+                name: resolved_target,
+                field: field.clone(),
             })
         }
     }

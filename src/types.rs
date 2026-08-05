@@ -49,6 +49,12 @@ impl Type {
                     _ => None,
                 },
             },
+            TypeRef::Record { fields } => Self::Record {
+                fields: fields
+                    .iter()
+                    .map(|field| (field.name.clone(), Self::from_ast_type_ref(&field.type_ref)))
+                    .collect(),
+            },
             TypeRef::Named(name) => Self::Alias(name.clone()),
             TypeRef::Qualified { .. } => Self::Alias("<qualified>".to_string()),
         }

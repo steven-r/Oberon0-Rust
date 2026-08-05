@@ -1,0 +1,12 @@
+MODULE Main;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+  END;
+VAR
+  p: Person;
+  x: INTEGER;
+BEGIN
+  p.age := 7;
+  x := p.age
+END Main.

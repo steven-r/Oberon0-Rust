@@ -1,0 +1,14 @@
+name = "record field assignment type mismatch"
+code = """
+MODULE Main;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+  END;
+VAR p: Person;
+BEGIN
+  p.age := TRUE
+END Main.
+"""
+result.code = "E012"
+result.messages = ["cannot assign BOOLEAN to record field 'p.age' of type INTEGER"]

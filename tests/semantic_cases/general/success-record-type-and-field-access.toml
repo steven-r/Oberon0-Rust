@@ -1,0 +1,19 @@
+name = "record type declaration with typed field access"
+code = """
+MODULE Main;
+IMPORT IO;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+    active: BOOLEAN;
+  END;
+VAR p: Person;
+BEGIN
+  p.age := 5;
+  p.active := TRUE;
+  IF p.active THEN
+    IO.WriteInt(p.age)
+  END
+END Main.
+"""
+is_success = true

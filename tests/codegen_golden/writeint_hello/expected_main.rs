@@ -13,6 +13,7 @@ enum Value {
     Real(f32),
     LongReal(f64),
     Array(Vec<Value>),
+    Record(BTreeMap<String, Value>),
 }
 
 fn value_integer(value: i64) -> Value {
@@ -29,6 +30,10 @@ fn value_longreal(value: f64) -> Value {
 
 fn value_array(length: usize) -> Value {
     Value::Array(vec![Value::Integer(0); length])
+}
+
+fn value_record() -> Value {
+    Value::Record(BTreeMap::new())
 }
 
 fn value_index_from_value(value: &Value) -> usize {
@@ -59,12 +64,29 @@ fn value_set_index(array: &mut Value, index: &Value, new_value: Value) {
     }
 }
 
+fn value_field(record: &Value, field: &str) -> Value {
+    match record {
+        Value::Record(fields) => fields.get(field).cloned().unwrap_or(Value::Integer(0)),
+        _ => panic!("Runtime error: field access on non-record value"),
+    }
+}
+
+fn value_set_field(record: &mut Value, field: &str, new_value: Value) {
+    match record {
+        Value::Record(fields) => {
+            fields.insert(field.to_string(), new_value);
+        }
+        _ => panic!("Runtime error: field assignment on non-record value"),
+    }
+}
+
 fn value_as_real(value: &Value) -> Value {
     match value {
         Value::Integer(v) => Value::Real(*v as f32),
         Value::Real(v) => Value::Real(*v),
         Value::LongReal(v) => Value::Real(*v as f32),
         Value::Array(_) => panic!("Runtime error: cannot cast ARRAY to REAL"),
+        Value::Record(_) => panic!("Runtime error: cannot cast RECORD to REAL"),
     }
 }
 
@@ -74,6 +96,7 @@ fn value_as_integer(value: &Value) -> Value {
         Value::Real(v) => Value::Integer(*v as i64),
         Value::LongReal(v) => Value::Integer(*v as i64),
         Value::Array(_) => panic!("Runtime error: cannot cast ARRAY to INTEGER"),
+        Value::Record(_) => panic!("Runtime error: cannot cast RECORD to INTEGER"),
     }
 }
 
@@ -83,6 +106,7 @@ fn value_truthy(value: &Value) -> bool {
         Value::Real(v) => *v != 0.0,
         Value::LongReal(v) => *v != 0.0,
         Value::Array(v) => !v.is_empty(),
+        Value::Record(v) => !v.is_empty(),
     }
 }
 
@@ -92,6 +116,7 @@ fn print_value(value: &Value) {
         Value::Real(v) => print!("{}", v),
         Value::LongReal(v) => print!("{}", v),
         Value::Array(v) => print!("[{}]", v.iter().map(value_to_string).collect::<Vec<_>>().join(", ")),
+        Value::Record(v) => print!("{{{}}}", v.iter().map(|(k, val)| format!("{}: {}", k, value_to_string(val))).collect::<Vec<_>>().join(", ")),
     }
 }
 
@@ -101,6 +126,7 @@ fn print_value_ln(value: &Value) {
         Value::Real(v) => println!("{}", v),
         Value::LongReal(v) => println!("{}", v),
         Value::Array(v) => println!("[{}]", v.iter().map(value_to_string).collect::<Vec<_>>().join(", ")),
+        Value::Record(v) => println!("{{{}}}", v.iter().map(|(k, val)| format!("{}: {}", k, value_to_string(val))).collect::<Vec<_>>().join(", ")),
     }
 }
 
@@ -170,6 +196,7 @@ fn value_neg(value: &Value) -> Value {
         Value::Real(v) => Value::Real(-*v),
         Value::LongReal(v) => Value::LongReal(-*v),
         Value::Array(_) => panic!("Runtime error: unary minus on ARRAY"),
+        Value::Record(_) => panic!("Runtime error: unary minus on RECORD"),
     }
 }
 
@@ -179,6 +206,7 @@ fn value_not(value: &Value) -> Value {
         Value::Real(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),
         Value::LongReal(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),
         Value::Array(v) => Value::Integer(if v.is_empty() { 1 } else { 0 }),
+        Value::Record(v) => Value::Integer(if v.is_empty() { 1 } else { 0 }),
     }
 }
 
@@ -240,6 +268,12 @@ fn set_var_index(vars: &mut BTreeMap<String, Value>, name: &str, index: &Value, 
 }
 
 #[allow(dead_code)]
+fn set_var_field(vars: &mut BTreeMap<String, Value>, name: &str, field: &str, value: Value) {
+    let entry = vars.entry(name.to_string()).or_insert_with(value_record);
+    value_set_field(entry, field, value);
+}
+
+#[allow(dead_code)]
 fn set_var(vars: &mut BTreeMap<String, Value>, name: &str, value: Value) {
     vars.insert(name.to_string(), value);
 }
@@ -259,6 +293,7 @@ fn value_to_string(value: &Value) -> String {
         Value::Real(v) => v.to_string(),
         Value::LongReal(v) => v.to_string(),
         Value::Array(values) => format!("[{}]", values.iter().map(value_to_string).collect::<Vec<_>>().join(", ")),
+        Value::Record(fields) => format!("{{{}}}", fields.iter().map(|(name, value)| format!("{}: {}", name, value_to_string(value))).collect::<Vec<_>>().join(", ")),
     }
 }
 

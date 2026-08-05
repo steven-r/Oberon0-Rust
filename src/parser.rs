@@ -7,8 +7,13 @@ use pest_derive::Parser;
 
 use crate::ast::{
     AssignTarget, BinaryOp, Declaration, Expr, ImportDecl, LocalVarDecl, Module, ParamDecl,
-    Statement, TypeRef, UnaryOp,
+    RecordField, Statement, TypeRef, UnaryOp,
 };
+
+enum ParsedSelector {
+    Index(Expr),
+    Field(String),
+}
 
 #[derive(Parser)]
 #[grammar = "oberon0.pest"]
@@ -516,7 +521,7 @@ fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
                     .context("Missing designator")?;
                 let (module, name, indexes) = parse_designator(designator_pair)?;
                 if !indexes.is_empty() {
-                    bail!("Indexed designators cannot be called")
+                    bail!("Designators with selectors cannot be called")
                 }
 
                 let args = parse_call_args(args_text)?;
@@ -536,16 +541,22 @@ fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
                         }),
                         None => Ok(Expr::Variable(name)),
                     }
-                } else if indexes.len() == 1 {
-                    if module.is_some() {
-                        bail!("Indexed qualified designators are not yet supported")
-                    }
-                    Ok(Expr::Indexed {
-                        name,
-                        index: Box::new(indexes.into_iter().next().unwrap()),
-                    })
                 } else {
-                    bail!("Multiple index selectors are not yet supported")
+                    if module.is_some() {
+                        bail!("Qualified designators with selectors are not yet supported")
+                    }
+
+                    if indexes.len() != 1 {
+                        bail!("Multiple selectors are not yet supported")
+                    }
+
+                    match indexes.into_iter().next().expect("selector count checked") {
+                        ParsedSelector::Index(index) => Ok(Expr::Indexed {
+                            name,
+                            index: Box::new(index),
+                        }),
+                        ParsedSelector::Field(field) => Ok(Expr::Field { name, field }),
+                    }
                 }
             }
         }
@@ -554,7 +565,7 @@ fn parse_primary_factor(primary: Pair<Rule>) -> Result<Expr> {
     }
 }
 
-fn parse_designator(pair: Pair<Rule>) -> Result<(Option<String>, String, Vec<Expr>)> {
+fn parse_designator(pair: Pair<Rule>) -> Result<(Option<String>, String, Vec<ParsedSelector>)> {
     let mut inner = pair.into_inner();
     let mut base_pair = inner.next().context("Missing qualified identifier")?;
     while base_pair.as_rule() != Rule::qualified_ident && base_pair.as_rule() != Rule::ident {
@@ -565,35 +576,51 @@ fn parse_designator(pair: Pair<Rule>) -> Result<(Option<String>, String, Vec<Exp
     }
     let (module, name) = parse_qualified_ident(base_pair)?;
 
-    let mut indexes = Vec::new();
+    let mut selectors = Vec::new();
     for selector in inner {
-        if selector.as_rule() != Rule::index_selector {
-            continue;
+        match selector.as_rule() {
+            Rule::index_selector => {
+                let index_expr = selector
+                    .into_inner()
+                    .next()
+                    .context("Missing array index expression")?;
+                selectors.push(ParsedSelector::Index(parse_expr(index_expr)?));
+            }
+            Rule::field_selector => {
+                let field = take_ident(
+                    selector.into_inner().next(),
+                    "record field name in selector",
+                )?;
+                selectors.push(ParsedSelector::Field(field));
+            }
+            _ => continue,
         }
-        let index_expr = selector
-            .into_inner()
-            .next()
-            .context("Missing array index expression")?;
-        indexes.push(parse_expr(index_expr)?);
     }
 
-    Ok((module, name, indexes))
+    Ok((module, name, selectors))
 }
 
 fn parse_assignment_target(pair: Pair<Rule>) -> Result<AssignTarget> {
-    let (module, name, indexes) = parse_designator(pair)?;
+    let (module, name, selectors) = parse_designator(pair)?;
 
-    if module.is_some() {
-        bail!("Qualified assignment targets are not yet supported")
+    if let Some(base_name) = module {
+        if selectors.is_empty() {
+            return Ok(AssignTarget::Field {
+                name: base_name,
+                field: name,
+            });
+        }
+
+        bail!("Qualified designators with selectors are not yet supported")
     }
 
-    match indexes.len() {
+    match selectors.len() {
         0 => Ok(AssignTarget::Name(name)),
-        1 => Ok(AssignTarget::Indexed {
-            name,
-            index: indexes.into_iter().next().unwrap(),
-        }),
-        _ => bail!("Multiple index selectors are not yet supported"),
+        1 => match selectors.into_iter().next().expect("selector count checked") {
+            ParsedSelector::Index(index) => Ok(AssignTarget::Indexed { name, index }),
+            ParsedSelector::Field(field) => Ok(AssignTarget::Field { name, field }),
+        },
+        _ => bail!("Multiple selectors are not yet supported"),
     }
 }
 
@@ -739,6 +766,7 @@ fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeRef> {
         .context("Missing qualified_ident in type_ref")?;
     match qualified.as_rule() {
         Rule::array_type => parse_array_type(qualified),
+        Rule::record_type => parse_record_type(qualified),
         Rule::qualified_ident => {
             let (module, name) = parse_qualified_ident(qualified)?;
 
@@ -758,6 +786,30 @@ fn parse_type_ref(pair: Pair<Rule>) -> Result<TypeRef> {
         }
         _ => bail!("Unknown type reference: {:?}", qualified.as_rule()),
     }
+}
+
+fn parse_record_type(pair: Pair<Rule>) -> Result<TypeRef> {
+    let mut fields = Vec::new();
+
+    for field_item in pair.into_inner() {
+        let mut parts = field_item.into_inner();
+        let ident_list = parts
+            .next()
+            .context("Missing record field names")?;
+        let type_ref = parse_type_ref(parts.next().context("Missing record field type")?)?;
+
+        for ident in ident_list.into_inner() {
+            if ident.as_rule() != Rule::ident {
+                bail!("Record field name is not an identifier");
+            }
+            fields.push(RecordField {
+                name: ident.as_str().to_string(),
+                type_ref: type_ref.clone(),
+            });
+        }
+    }
+
+    Ok(TypeRef::Record { fields })
 }
 
 fn parse_array_type(pair: Pair<Rule>) -> Result<TypeRef> {

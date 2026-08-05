@@ -1,0 +1,17 @@
+MODULE Main;
+IMPORT IO;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+    score: INTEGER;
+  END;
+VAR
+  p: Person;
+  nextAge: INTEGER;
+BEGIN
+  p.age := 41;
+  p.score := 1;
+  nextAge := p.age + p.score;
+  IO.WriteInt(nextAge);
+  IO.WriteLn
+END Main.

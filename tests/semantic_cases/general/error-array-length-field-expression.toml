@@ -1,0 +1,10 @@
+name = "array length using record field expression is not a constant"
+code = """
+MODULE Main;
+TYPE
+  Broken = ARRAY sample.len OF INTEGER;
+BEGIN
+END Main.
+"""
+result.code = "E013"
+result.messages = ["ARRAY sample.len OF INTEGER"]

@@ -6,6 +6,27 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- add `RECORD` type declarations with named fields across AST, parser grammar, semantic model, lowering, and runtime type mapping (#9)
+- add field-selection designators (`x.f`) for expressions and assignment targets, including HIR lowering and generated Rust emission paths (#10)
+- consolidate shared type-checking/model handling for arrays, records, aliases, and composite compatibility in semantic/type resolution paths (#11)
+
+### Fixes
+
+- reject duplicate record field declarations during semantic validation with stable diagnostics instead of allowing ambiguous record layouts (#11)
+- enforce record field access diagnostics consistently (`non-record`, `unknown field`, and assignment type mismatch) to avoid late lowering/codegen failures (#11)
+
+### Documentation
+
+- add a focused `examples/record-field-access` walkthrough for `RECORD` declarations, field designators, and typed field usage (#9, #10, #11)
+
+### Tests
+
+- add parser and semantic corpus coverage for record declarations and field assignment/read flows (`tests/parser_cases/valid`, `tests/semantic_cases/valid`) (#9, #10)
+- add semantic error-case coverage for duplicate record fields, unknown record fields, field access on non-record variables, and record-field type mismatches (`tests/semantic_cases/general`) (#11)
+- add golden runtime coverage for record field assignment and readback output (`tests/codegen_golden/record_field_access`) (#9, #10, #11)
+
 ## v0.11.0 - 2026-08-04
 
 ### Features
@@ -29,6 +50,8 @@ All notable changes to this project will be documented in this file.
 
 - add a dedicated coverage workflow that generates LCOV via `cargo llvm-cov --workspace --all-targets --lcov --output-path coverage/lcov.info`, uploads it as an artifact, and publishes the same report to Codecov
 - enforce coverage gates with local CI line coverage >=90% and Codecov status checks for project >=90% and patch >=95%
+- prevent duplicate CI/Coverage follow-up runs by ignoring release-automation branch pushes (`automation/release-*`) and tag pushes in both workflows
+- skip CI and Coverage jobs for pull requests whose source branch matches `automation/release-*` to avoid extra release-follow-up actions
 
 ## v0.10.0 - 2026-08-03
 

@@ -47,6 +47,8 @@ pub enum HTarget {
     Name(HResolvedIdent),
     /// Indexed array element.
     Indexed { name: HResolvedIdent, index: HExpr },
+    /// Record field designator.
+    Field { name: HResolvedIdent, field: String },
 }
 
 #[derive(Debug, Clone)]
@@ -135,6 +137,11 @@ pub enum HExpr {
         name: HResolvedIdent,
         index: Box<HExpr>,
     },
+    /// Record field reference.
+    Field {
+        name: HResolvedIdent,
+        field: String,
+    },
     /// Function-like call expression with resolved callee and arguments.
     Call {
         name: HResolvedIdent,
@@ -177,6 +184,9 @@ impl HExpr {
             HExpr::Name(ident) => ident.name.clone(),
             HExpr::Indexed { name, index } => {
                 format!("{}[{}]", name.name, index.to_string())
+            }
+            HExpr::Field { name, field } => {
+                format!("{}.{}", name.name, field)
             }
             HExpr::Call { name, args } => {
                 let args_str = args

@@ -266,18 +266,18 @@ The current compiler supports the Milestone A subset:
 - `CONST` declarations support expression initializers (for example `CONST A = 1 + 2 * 3;`) as long as they fold to a literal value during semantic analysis.
 - Numeric literals now include decimal forms with optional `E`/`D` scale factors, so values such as `12.3`, `4.567E8`, and `0.57712566D-6` parse as `REAL` or `LONGREAL` depending on the scale-letter used.
 - `TYPE` declarations support built-in scalar targets `INTEGER`, `BOOLEAN`, `REAL`, `LONGREAL`, named aliases, and array targets such as `ARRAY 10 OF INTEGER`.
+- `TYPE` declarations also support record targets such as `RECORD age: INTEGER; active: BOOLEAN; END`.
 - Array lengths may use constant expressions (for example `ARRAY MAX + 2 OF INTEGER`) when they fold during semantic analysis.
 - Internal builtins must be imported and qualified through `IO` or `MATH`; for example `IO.WriteInt(x)`, `x := IO.ReadInt()`, `IF IO.EOF() THEN`, `r := MATH.FLT(i)`, and `i := MATH.FLOOR(r)`.
 - `VAR` declarations may optionally carry declared types such as `VAR x: INTEGER;`, `VAR flag: BOOLEAN;`, or `VAR x: Count;`.
 - User-defined type names remain reserved at module scope but may be shadowed by procedure parameters; built-in scalar names stay reserved, and a parameter cannot reuse the same user-defined type name in its own declaration as in `Count: Count`.
 - Procedure declarations support optional local `VAR` sections before `BEGIN` (for example `PROCEDURE P; VAR x: INTEGER; BEGIN ... END P;`).
 - Procedure-local `VAR` names may shadow user-defined module type aliases, but built-in scalar names stay reserved and declarations like `VAR Count: Count;` are rejected in procedure scope.
-- Statements:
-  - assignment: `x := expr` and indexed assignment `a[i] := expr`
-  - call: `Proc(...)` or `Proc`
-  - `IF ... THEN ... [ELSE ...] END`
-  - `WHILE ... DO ... END`
-- Expressions with integer, boolean, real, and long-real literals, identifiers, indexed designators (`a[i]`), and parentheses
+- Statements include assignment (`x := expr`), indexed assignment (`a[i] := expr`), and record-field assignment (`p.age := expr`).
+- Statements include calls as `Proc(...)` or `Proc`.
+- Statements include `IF ... THEN ... [ELSE ...] END`.
+- Statements include `WHILE ... DO ... END`.
+- Expressions with integer, boolean, real, and long-real literals, identifiers, indexed designators (`a[i]`), field designators (`p.age`), and parentheses
 - Operators: `+`, `-`, unary `+`, unary `-`, `*`, `/`, `DIV`, `MOD`, `OR`, `&`, unary `~`, `=`, `#`, `<`, `<=`, `>`, `>=`
 
 Focused typed-declaration example:

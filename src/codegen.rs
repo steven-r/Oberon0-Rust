@@ -45,7 +45,7 @@ fn runtime_type_from_type_ref(type_ref: Option<&TypeRef>) -> Option<RuntimeType>
         Some(TypeRef::Real) => Some(RuntimeType::Real),
         Some(TypeRef::LongReal) => Some(RuntimeType::LongReal),
         Some(TypeRef::Array { .. }) => Some(RuntimeType::Array),
-        Some(TypeRef::Named(_)) | Some(TypeRef::Qualified { .. }) => None,
+        Some(TypeRef::Record { .. }) | Some(TypeRef::Named(_)) | Some(TypeRef::Qualified { .. }) => None,
         None => None,
     }
 }
@@ -198,6 +198,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("    Real(f32),\n");
     out.push_str("    LongReal(f64),\n");
     out.push_str("    Array(Vec<Value>),\n");
+    out.push_str("    Record(BTreeMap<String, Value>),\n");
     out.push_str("}\n\n");
 
     out.push_str("fn value_integer(value: i64) -> Value {\n");
@@ -211,6 +212,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("}\n\n");
     out.push_str("fn value_array(length: usize) -> Value {\n");
     out.push_str("    Value::Array(vec![Value::Integer(0); length])\n");
+    out.push_str("}\n\n");
+    out.push_str("fn value_record() -> Value {\n");
+    out.push_str("    Value::Record(BTreeMap::new())\n");
     out.push_str("}\n\n");
     out.push_str("fn value_index_from_value(value: &Value) -> usize {\n");
     out.push_str("    match value {\n");
@@ -241,6 +245,22 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     );
     out.push_str("    }\n");
     out.push_str("}\n\n");
+    out.push_str("fn value_field(record: &Value, field: &str) -> Value {\n");
+    out.push_str("    match record {\n");
+    out.push_str(
+        "        Value::Record(fields) => fields.get(field).cloned().unwrap_or(Value::Integer(0)),\n",
+    );
+    out.push_str("        _ => panic!(\"Runtime error: field access on non-record value\"),\n");
+    out.push_str("    }\n");
+    out.push_str("}\n\n");
+    out.push_str("fn value_set_field(record: &mut Value, field: &str, new_value: Value) {\n");
+    out.push_str("    match record {\n");
+    out.push_str("        Value::Record(fields) => {\n");
+    out.push_str("            fields.insert(field.to_string(), new_value);\n");
+    out.push_str("        }\n");
+    out.push_str("        _ => panic!(\"Runtime error: field assignment on non-record value\"),\n");
+    out.push_str("    }\n");
+    out.push_str("}\n\n");
     out.push_str("fn value_as_real(value: &Value) -> Value {\n");
     out.push_str("    match value {\n");
     out.push_str("        Value::Integer(v) => Value::Real(*v as f32),\n");
@@ -248,6 +268,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::LongReal(v) => Value::Real(*v as f32),\n");
     out.push_str(
         "        Value::Array(_) => panic!(\"Runtime error: cannot cast ARRAY to REAL\"),\n",
+    );
+    out.push_str(
+        "        Value::Record(_) => panic!(\"Runtime error: cannot cast RECORD to REAL\"),\n",
     );
     out.push_str("    }\n");
     out.push_str("}\n\n");
@@ -259,6 +282,9 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str(
         "        Value::Array(_) => panic!(\"Runtime error: cannot cast ARRAY to INTEGER\"),\n",
     );
+    out.push_str(
+        "        Value::Record(_) => panic!(\"Runtime error: cannot cast RECORD to INTEGER\"),\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_truthy(value: &Value) -> bool {\n");
@@ -267,6 +293,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Real(v) => *v != 0.0,\n");
     out.push_str("        Value::LongReal(v) => *v != 0.0,\n");
     out.push_str("        Value::Array(v) => !v.is_empty(),\n");
+    out.push_str("        Value::Record(v) => !v.is_empty(),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn print_value(value: &Value) {\n");
@@ -275,6 +302,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Real(v) => print!(\"{}\", v),\n");
     out.push_str("        Value::LongReal(v) => print!(\"{}\", v),\n");
     out.push_str("        Value::Array(v) => print!(\"[{}]\", v.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
+    out.push_str("        Value::Record(v) => print!(\"{{{}}}\", v.iter().map(|(k, val)| format!(\"{}: {}\", k, value_to_string(val))).collect::<Vec<_>>().join(\", \")),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn print_value_ln(value: &Value) {\n");
@@ -283,6 +311,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Real(v) => println!(\"{}\", v),\n");
     out.push_str("        Value::LongReal(v) => println!(\"{}\", v),\n");
     out.push_str("        Value::Array(v) => println!(\"[{}]\", v.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
+    out.push_str("        Value::Record(v) => println!(\"{{{}}}\", v.iter().map(|(k, val)| format!(\"{}: {}\", k, value_to_string(val))).collect::<Vec<_>>().join(\", \")),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_add(lhs: &Value, rhs: &Value) -> Value {\n");
@@ -379,6 +408,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Real(v) => Value::Real(-*v),\n");
     out.push_str("        Value::LongReal(v) => Value::LongReal(-*v),\n");
     out.push_str("        Value::Array(_) => panic!(\"Runtime error: unary minus on ARRAY\"),\n");
+    out.push_str("        Value::Record(_) => panic!(\"Runtime error: unary minus on RECORD\"),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_not(value: &Value) -> Value {\n");
@@ -387,6 +417,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Real(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),\n");
     out.push_str("        Value::LongReal(v) => Value::Integer(if *v != 0.0 { 0 } else { 1 }),\n");
     out.push_str("        Value::Array(v) => Value::Integer(if v.is_empty() { 1 } else { 0 }),\n");
+    out.push_str("        Value::Record(v) => Value::Integer(if v.is_empty() { 1 } else { 0 }),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("fn value_and(lhs: &Value, rhs: &Value) -> Value {\n");
@@ -457,6 +488,13 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
         "    let entry = vars.entry(name.to_string()).or_insert_with(|| value_array(0));\n",
     );
     out.push_str("    value_set_index(entry, index, value);\n");
+    out.push_str("}\n\n");
+    out.push_str("#[allow(dead_code)]\n");
+    out.push_str("fn set_var_field(vars: &mut BTreeMap<String, Value>, name: &str, field: &str, value: Value) {\n");
+    out.push_str(
+        "    let entry = vars.entry(name.to_string()).or_insert_with(value_record);\n",
+    );
+    out.push_str("    value_set_field(entry, field, value);\n");
     out.push_str("}\n\n");
     out.push_str("#[allow(dead_code)]\n");
     out.push_str("fn set_var(vars: &mut BTreeMap<String, Value>, name: &str, value: Value) {\n");
@@ -576,6 +614,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
             out.push_str("        Value::Integer(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::LongReal(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::Array(v) => print!(\"[{}]\", v.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
+            out.push_str("        Value::Record(v) => print!(\"{{{}}}\", v.iter().map(|(k, val)| format!(\"{}: {}\", k, value_to_string(val))).collect::<Vec<_>>().join(\", \")),\n");
             out.push_str("    }\n");
             out.push_str("}\n\n");
         }
@@ -587,6 +626,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
             out.push_str("        Value::Integer(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::LongReal(v) => print!(\"{}\", v),\n");
             out.push_str("        Value::Array(v) => print!(\"[{}]\", v.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
+            out.push_str("        Value::Record(v) => print!(\"{{{}}}\", v.iter().map(|(k, val)| format!(\"{}: {}\", k, value_to_string(val))).collect::<Vec<_>>().join(\", \")),\n");
             out.push_str("    }\n");
             out.push_str("}\n\n");
         }
@@ -608,6 +648,7 @@ fn generate_main_rs(module: &HModule, emit_state: bool) -> String {
     out.push_str("        Value::Real(v) => v.to_string(),\n");
     out.push_str("        Value::LongReal(v) => v.to_string(),\n");
     out.push_str("        Value::Array(values) => format!(\"[{}]\", values.iter().map(value_to_string).collect::<Vec<_>>().join(\", \")),\n");
+    out.push_str("        Value::Record(fields) => format!(\"{{{}}}\", fields.iter().map(|(name, value)| format!(\"{}: {}\", name, value_to_string(value))).collect::<Vec<_>>().join(\", \")),\n");
     out.push_str("    }\n");
     out.push_str("}\n\n");
     out.push_str("/// Records the current value of a procedure-scoped Oberon0 variable.\n");
@@ -827,6 +868,7 @@ fn expr_needs_state_map(expr: &HExpr) -> bool {
         | HExpr::Boolean(_) => false,
         HExpr::Name(ident) => ident.kind != crate::symbols::SymbolKind::Constant,
         HExpr::Indexed { index, .. } => expr_needs_state_map(index),
+        HExpr::Field { .. } => true,
         HExpr::Call { args, .. } => args.iter().any(expr_needs_state_map),
         HExpr::Unary { value, .. } => expr_needs_state_map(value),
         HExpr::Binary { left, right, .. } => {
@@ -905,6 +947,7 @@ fn expr_io_usage(expr: &HExpr) -> IoUsage {
         | HExpr::String(_)
         | HExpr::Name(_)
         | HExpr::Indexed { .. }
+        | HExpr::Field { .. }
         | HExpr::LongReal(_)
         | HExpr::Real(_)
         | HExpr::Boolean(_) => IoUsage::default(),
@@ -938,6 +981,7 @@ fn statement_assigns_id(stmt: &HStatement, ident_id: usize) -> bool {
         HStatement::Assign { target, .. } => match target {
             HTarget::Name(ident) => ident.id == ident_id,
             HTarget::Indexed { name, .. } => name.id == ident_id,
+            HTarget::Field { name, .. } => name.id == ident_id,
         },
         HStatement::Call { .. } => false,
         HStatement::If {
@@ -1173,6 +1217,54 @@ fn format_statement(stmt: &HStatement, indent: &str, ctx: &FormatContext<'_>) ->
                         out
                     }
                 }
+                HTarget::Field { name, field } => {
+                    let value_temp = format!("field_value_{}_{}", name.id, field);
+                    if let Some(binding) = ctx.locals.get(&name.id) {
+                        let mut out = String::new();
+                        out.push_str(&format!(
+                            "{}let {} = ({}).clone();\n",
+                            indent, value_temp, rendered_value
+                        ));
+                        if ctx.by_ref_locals.contains(&name.id) {
+                            out.push_str(&format!(
+                                "{}value_set_field(&mut *{}, {:?}, {});\n",
+                                indent, binding, field, value_temp
+                            ));
+                        } else {
+                            out.push_str(&format!(
+                                "{}value_set_field(&mut {}, {:?}, {});\n",
+                                indent, binding, field, value_temp
+                            ));
+                        }
+                        if ctx.track_procedure_locals
+                            && let Some(procedure_name) = ctx.procedure_name
+                        {
+                            if ctx.by_ref_locals.contains(&name.id) {
+                                out.push_str(&format!(
+                                    "{}set_procedure_var(vars, \"{}\", \"{}\", &*{});\n",
+                                    indent, procedure_name, name.name, binding
+                                ));
+                            } else {
+                                out.push_str(&format!(
+                                    "{}set_procedure_var(vars, \"{}\", \"{}\", &{});\n",
+                                    indent, procedure_name, name.name, binding
+                                ));
+                            }
+                        }
+                        out
+                    } else {
+                        let mut out = String::new();
+                        out.push_str(&format!(
+                            "{}let {} = ({}).clone();\n",
+                            indent, value_temp, rendered_value
+                        ));
+                        out.push_str(&format!(
+                            "{}set_var_field({}, \"{}\", {:?}, {});\n",
+                            indent, ctx.vars_arg, name.name, field, value_temp
+                        ));
+                        out
+                    }
+                }
             }
         }
         HStatement::Call {
@@ -1391,6 +1483,20 @@ fn format_expr(expr: &HExpr, ctx: &FormatContext<'_>) -> String {
                 format!(
                     "value_index(&get_var(&vars, \"{}\"), &{})",
                     name.name, rendered_index
+                )
+            }
+        }
+        HExpr::Field { name, field } => {
+            if let Some(binding) = ctx.locals.get(&name.id) {
+                if ctx.by_ref_locals.contains(&name.id) {
+                    format!("value_field(&*{}, {:?})", binding, field)
+                } else {
+                    format!("value_field(&{}, {:?})", binding, field)
+                }
+            } else {
+                format!(
+                    "value_field(&get_var(&vars, \"{}\"), {:?})",
+                    name.name, field
                 )
             }
         }

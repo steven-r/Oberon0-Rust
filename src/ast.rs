@@ -46,6 +46,15 @@ pub struct LocalVarDecl {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// One field declaration inside a RECORD type.
+pub struct RecordField {
+    /// Source-level field name.
+    pub name: String,
+    /// Declared field type.
+    pub type_ref: TypeRef,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 /// Type references supported by the current typed-declaration milestone.
 pub enum TypeRef {
     /// Built-in INTEGER scalar type.
@@ -60,6 +69,10 @@ pub enum TypeRef {
     Array {
         length: Expr,
         element_type: Box<TypeRef>,
+    },
+    /// Record type with named fields.
+    Record {
+        fields: Vec<RecordField>,
     },
     /// Named type alias or user-defined type reference.
     Named(String),
@@ -136,6 +149,8 @@ pub enum Expr {
         name: String,
         index: Box<Expr>,
     },
+    /// Record field reference before semantic resolution.
+    Field { name: String, field: String },
     /// Qualified variable reference (e.g., B.T).
     QualifiedVariable {
         module: String,
@@ -194,6 +209,16 @@ impl PartialEq for Expr {
                 },
             ) => n1 == n2 && i1 == i2,
             (
+                Expr::Field {
+                    name: n1,
+                    field: f1,
+                },
+                Expr::Field {
+                    name: n2,
+                    field: f2,
+                },
+            ) => n1 == n2 && f1 == f2,
+            (
                 Expr::QualifiedVariable {
                     module: m1,
                     name: n1,
@@ -242,12 +267,24 @@ pub enum AssignTarget {
     Name(String),
     /// Assign to an indexed array element.
     Indexed { name: String, index: Expr },
+    /// Assign to a record field.
+    Field { name: String, field: String },
 }
 
 impl PartialEq for AssignTarget {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (AssignTarget::Name(a), AssignTarget::Name(b)) => a == b,
+            (
+                AssignTarget::Field {
+                    name: n1,
+                    field: f1,
+                },
+                AssignTarget::Field {
+                    name: n2,
+                    field: f2,
+                },
+            ) => n1 == n2 && f1 == f2,
             (
                 AssignTarget::Indexed {
                     name: n1,

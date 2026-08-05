@@ -18,23 +18,23 @@ Status legend:
 | Reference item (page 63) | Current subset status | Alignment | Existing issue mapping | Evaluation |
 | --- | --- | --- | --- | --- |
 | `ident`, `integer` | Implemented | Aligned | n/a | No action needed |
-| `selector` (`.` and `[ ]`) | Not implemented | Missing | #8, #10 | Covered by planned issues |
-| `factor` with `~` | Only `ident`, `integer`, `string`, `(...)` | Partial | #18 | Covered by dedicated issue |
-| `term` with `DIV`, `MOD`, `&` | Only `*` and `/` | Partial | #18 | Covered by dedicated issue |
-| `SimpleExpression` with unary sign and `OR` | Unary sign and `OR` not implemented | Partial | #18 | Covered by dedicated issue |
-| Relational operators in `expression` | Not implemented | Missing | #19, #11 | Covered by dedicated issue |
-| `assignment = ident selector := expression` | Assignment exists; selector part missing | Partial | #8, #10 | Covered by designator issues |
+| `selector` (`.` and `[ ]`) | Indexed and field selectors are implemented for the current subset | Partial | #8, #10 | Implemented for arrays and records; full selector parity remains broader |
+| `factor` with `~` | Unary `~` is implemented for BOOLEAN expressions | Partial | #18 | Implemented for the current subset |
+| `term` with `DIV`, `MOD`, `&` | `DIV`, `MOD`, and `&` are implemented with typed validation | Aligned | #18 | Implemented in current subset |
+| `SimpleExpression` with unary sign and `OR` | Unary sign and `OR` are implemented | Aligned | #18 | Implemented in current subset |
+| Relational operators in `expression` | Equality and ordering operators are implemented with numeric/boolean rules | Aligned | #19, #11 | Implemented in current subset |
+| `assignment = ident selector := expression` | Indexed and record-field assignments are implemented | Partial | #8, #10 | Implemented for current subset selectors |
 | `ProcedureCall = ident [ActualParameters \| "*"]` | Basic call forms only; no `*` form | Partial | #26 | Covered by dedicated issue |
 | `IfStatement` with `ELSIF` | `IF/THEN/ELSE/END` implemented; no `ELSIF` | Partial | #20 | Covered by dedicated issue |
 | `WhileStatement` | Implemented | Aligned | n/a | No action needed |
 | `RepeatStatement` | Not implemented | Missing | #21 | Covered by dedicated issue |
 | `StatementSequence` with semicolon-separated statements | Implemented | Aligned | n/a | No action needed |
-| `ArrayType` | Not implemented yet | Missing | #7 | Covered by planned issue |
-| `RecordType` | Not implemented yet | Missing | #9 | Covered by planned issue |
-| `type` non-terminal (`ident \| ArrayType \| RecordType`) | Not implemented yet | Missing | #5, #7, #9 | Covered by planned issues |
-| Scalar types `BOOLEAN`, `REAL`, `LONGREAL` | Not implemented yet | Missing | #17 | Covered by dedicated issue |
-| `FormalParameters` with typed sections and optional `VAR` | Untyped ident list only; no `VAR` mode | Partial | #22, #5 | Covered by dedicated issue |
-| `ProcedureBody = declarations [BEGIN ...] END` | Procedure body supports statements only; no local declarations | Partial | #16 | Covered by explicit issue |
+| `ArrayType` | Implemented with constant-expression length folding | Aligned | #7 | Implemented in current subset |
+| `RecordType` | Implemented with named fields | Aligned | #9 | Implemented in current subset |
+| `type` non-terminal (`ident \| ArrayType \| RecordType`) | Builtin, array, named, qualified, and record type references are implemented in the current subset | Partial | #5, #7, #9 | Subset support is present, broader reference parity still continues |
+| Scalar types `BOOLEAN`, `REAL`, `LONGREAL` | Implemented in declarations, expressions, and semantic/type rules | Aligned | #17 | Implemented in current subset |
+| `FormalParameters` with typed sections and optional `VAR` | Typed parameter sections and `VAR` mode are implemented | Aligned | #22, #5 | Implemented in current subset |
+| `ProcedureBody = declarations [BEGIN ...] END` | Procedure-local `VAR` declarations are implemented before `BEGIN`; broader local declaration forms remain pending | Partial | #16 | Partial subset support is implemented |
 | `module` with optional `BEGIN` | Implemented | Aligned | #25 | Supported for declaration-only modules and normal module bodies |
 
 ## Predefined procedure/function alignment
@@ -57,8 +57,8 @@ Covered by existing issues:
 2. IO baseline and follow-up split: #4, #12, #13.
 3. Typed model and type-carrying pipeline: #5, #6, #61.
 4. Arrays and indexed designators: #7, #8.
-5. Records and field access: #9, #10.
-6. Type-checking consolidation: #11.
+5. Records and field access: #9, #10 completed for the current subset.
+6. Type-checking consolidation: #11 established the shared compatibility path used by arrays and records in the current subset.
 7. Procedure-local declarations (`VAR` in procedure scope): #16.
 8. Scalar builtin type coverage (`BOOLEAN`, `REAL`, `LONGREAL`): #17.
 

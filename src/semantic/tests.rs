@@ -8,7 +8,7 @@ use super::{
     assignment_compatible_extended, format_expr_for_error, infer_expr_type,
     resolve_array_length_expr, resolve_builtin_with_module_validation, substitute_const_expr,
     type_ref_name_for_error, validate_boolean_condition, validate_const_expression_literal,
-    validate_declared_type, validate_declared_type_with_imports,
+    validate_declared_type, validate_declared_type_with_imports, validate_var_argument,
 };
 use crate::ast::{
     AssignTarget, BinaryOp, Declaration, Expr, ParamDecl, Statement, TypeRef, UnaryOp,
@@ -345,6 +345,103 @@ END Main.
 
     assert_eq!(err.code(), "E012");
     assert!(err.to_string().contains("is not an array variable"));
+}
+
+#[test]
+fn semantic_accepts_record_field_assignment_and_readback() {
+    let module = parse_module(
+        r#"
+MODULE Main;
+TYPE
+    Person = RECORD
+        age: INTEGER;
+        active: BOOLEAN;
+    END;
+VAR p: Person;
+    ageCopy: INTEGER;
+BEGIN
+    p.age := 7;
+    ageCopy := p.age
+END Main.
+"#,
+    )
+    .expect("source should parse");
+
+    analyze(&module, None).expect("record field assignment/read should pass semantic analysis");
+}
+
+#[test]
+fn semantic_rejects_unknown_record_field_and_non_record_field_access() {
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+TYPE
+    Person = RECORD
+        age: INTEGER;
+    END;
+VAR p: Person;
+BEGIN
+    p.missing := 1
+END Main.
+"#,
+    )
+    .expect_err("unknown record field should fail semantic analysis");
+
+    assert_eq!(err.code(), "E012");
+    assert!(err.to_string().contains("has no field 'missing'"));
+
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+    x.value := 1
+END Main.
+"#,
+    )
+    .expect_err("field access on scalar should fail semantic analysis");
+
+    assert_eq!(err.code(), "E012");
+    assert!(err.to_string().contains("is not a record variable"));
+}
+
+#[test]
+fn semantic_rejects_duplicate_record_field_names() {
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+TYPE
+    Person = RECORD
+        age: INTEGER;
+        age: INTEGER;
+    END;
+BEGIN
+END Main.
+"#,
+    )
+    .expect_err("duplicate record fields should fail semantic analysis");
+
+    assert_eq!(err.code(), "E004");
+    assert!(err.to_string().contains("age"));
+}
+
+#[test]
+fn semantic_rejects_unknown_record_field_type_references() {
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+TYPE
+    Person = RECORD
+        age: MissingType;
+    END;
+BEGIN
+END Main.
+"#,
+    )
+    .expect_err("unknown record field type should fail semantic analysis");
+
+    assert_eq!(err.code(), "E013");
+    assert!(err.to_string().contains("MissingType"));
 }
 
 #[test]
@@ -1130,6 +1227,397 @@ fn semantic_covers_const_validation_and_error_display_paths() {
 }
 
 #[test]
+fn semantic_analyze_expr_covers_remaining_branches() {
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare("IO", SymbolKind::Procedure)
+        .expect("IO import alias should be declared");
+    symbols
+        .declare("MATH", SymbolKind::Procedure)
+        .expect("MATH import alias should be declared");
+    symbols
+        .declare("custom", SymbolKind::Procedure)
+        .expect("custom procedure should be declared");
+    symbols
+        .declare_with_type("arr", SymbolKind::Variable, Some(TypeRef::Integer))
+        .expect("array-like symbol should be declared for index path validation");
+
+    assert!(analyze_expr(&Expr::Integer(1), &symbols).is_ok());
+    assert!(analyze_expr(&Expr::Real(1.5), &symbols).is_ok());
+    assert!(analyze_expr(&Expr::LongReal(2.5), &symbols).is_ok());
+    assert!(analyze_expr(&Expr::Boolean(true), &symbols).is_ok());
+
+    let err = analyze_expr(&Expr::String("s".to_string()), &symbols)
+        .expect_err("string literal expressions should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E008");
+
+    let err = analyze_expr(
+        &Expr::Indexed {
+            name: "arr".to_string(),
+            index: Box::new(Expr::Variable("missing_index".to_string())),
+        },
+        &symbols,
+    )
+    .expect_err("indexed expressions should validate index expressions recursively");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Indexed {
+            name: "missing_arr".to_string(),
+            index: Box::new(Expr::Integer(0)),
+        },
+        &symbols,
+    )
+    .expect_err("indexed expressions should validate the base symbol");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::QualifiedVariable {
+            module: "B".to_string(),
+            name: "v".to_string(),
+        },
+        &symbols,
+    )
+    .expect_err("qualified variable expressions are not supported");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E015");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("UnknownInternal".to_string()),
+            name: "ReadInt".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("internal builtins should require imported internal modules");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: None,
+            name: "ReadInt".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("unqualified internal builtins should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("IO".to_string()),
+            name: "WriteLn".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("statement-only builtins should be rejected in expression context");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("IO".to_string()),
+            name: "ReadInt".to_string(),
+            args: vec![Expr::Integer(1)],
+        },
+        &symbols,
+    )
+    .expect_err("builtin arity mismatches should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E006");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("MATH".to_string()),
+            name: "FLT".to_string(),
+            args: vec![Expr::Variable("missing_arg".to_string())],
+        },
+        &symbols,
+    )
+    .expect_err("builtin arguments should be validated recursively");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("ModuleB".to_string()),
+            name: "HELLO".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("non-internal qualified call expressions should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: None,
+            name: "missing_proc".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("unknown unqualified calls should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: None,
+            name: "custom".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("non-builtin procedures are not valid expression calls");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+
+    assert!(
+        analyze_expr(
+            &Expr::Unary {
+                op: UnaryOp::Minus,
+                value: Box::new(Expr::Integer(1)),
+            },
+            &symbols,
+        )
+        .is_ok()
+    );
+
+    assert!(
+        analyze_expr(
+            &Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Integer(1)),
+                right: Box::new(Expr::Integer(2)),
+            },
+            &symbols,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn semantic_validate_boolean_condition_accepts_qualified_eof() {
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare("IO", SymbolKind::Procedure)
+        .expect("IO import alias should be declared");
+
+    let mut types = HashMap::new();
+    types.insert("INTEGER".to_string(), TypeRef::Integer);
+    types.insert("BOOLEAN".to_string(), TypeRef::Boolean);
+    types.insert("REAL".to_string(), TypeRef::Real);
+    types.insert("LONGREAL".to_string(), TypeRef::LongReal);
+
+    validate_boolean_condition(
+        &Expr::Call {
+            module: Some("IO".to_string()),
+            name: "EOF".to_string(),
+            args: vec![],
+        },
+        &symbols,
+        &types,
+    )
+    .expect("IO.EOF() should be accepted as a condition");
+}
+
+#[test]
+fn semantic_record_field_helper_paths_are_exercised_directly() {
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare_with_type(
+            "p",
+            SymbolKind::Variable,
+            Some(TypeRef::Record {
+                fields: vec![crate::ast::RecordField {
+                    name: "age".to_string(),
+                    type_ref: TypeRef::Integer,
+                }],
+            }),
+        )
+        .expect("record variable should be declared");
+    symbols
+        .declare_with_type(
+            "param_record",
+            SymbolKind::Parameter,
+            Some(TypeRef::Record {
+                fields: vec![crate::ast::RecordField {
+                    name: "age".to_string(),
+                    type_ref: TypeRef::Integer,
+                }],
+            }),
+        )
+        .expect("record parameter should be declared");
+    symbols
+        .declare("proc_like", SymbolKind::Procedure)
+        .expect("procedure should be declared");
+
+    let types = HashMap::from([
+        ("INTEGER".to_string(), TypeRef::Integer),
+        ("BOOLEAN".to_string(), TypeRef::Boolean),
+        ("REAL".to_string(), TypeRef::Real),
+        ("LONGREAL".to_string(), TypeRef::LongReal),
+    ]);
+
+    let expr = Expr::Field {
+        name: "p".to_string(),
+        field: "age".to_string(),
+    };
+    assert_eq!(format_expr_for_error(&expr), "p.age");
+    assert_eq!(
+        infer_expr_type(&expr, &symbols, &types)
+            .expect("field type should infer")
+            .expect("field should have a type"),
+        TypeRef::Integer
+    );
+    analyze_expr(&expr, &symbols).expect("field expression with declared base should analyze");
+    validate_var_argument("Bump", 1, &expr, &symbols, &types)
+        .expect("record field on variable should be accepted by helper");
+
+    let param_expr = Expr::Field {
+        name: "param_record".to_string(),
+        field: "age".to_string(),
+    };
+    validate_var_argument("Bump", 1, &param_expr, &symbols, &types)
+        .expect("record field on parameter should be accepted by helper");
+
+    let err = validate_var_argument(
+        "Bump",
+        2,
+        &Expr::Field {
+            name: "proc_like".to_string(),
+            field: "age".to_string(),
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("non-assignable field base should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E011");
+    assert!(err.to_string().contains("proc_like.age"));
+
+    let rendered_record = type_ref_name_for_error(&TypeRef::Record {
+        fields: vec![crate::ast::RecordField {
+            name: "age".to_string(),
+            type_ref: TypeRef::Integer,
+        }],
+    });
+    assert!(rendered_record.contains("RECORD age: INTEGER END"));
+
+    let substituted_field = substitute_const_expr(
+        &Expr::Field {
+            name: "p".to_string(),
+            field: "age".to_string(),
+        },
+        &HashMap::new(),
+    );
+    assert!(matches!(
+        substituted_field,
+        Expr::Field { name, field } if name == "p" && field == "age"
+    ));
+
+    let qualified_field = Expr::QualifiedVariable {
+        module: "p".to_string(),
+        name: "age".to_string(),
+    };
+    assert_eq!(
+        infer_expr_type(&qualified_field, &symbols, &types)
+            .expect("qualified variable backed by record base should infer")
+            .expect("qualified record field should have a type"),
+        TypeRef::Integer
+    );
+
+    let no_type_symbols = {
+        let mut table = SymbolTable::new();
+        table.declare("bare", SymbolKind::Variable)
+            .expect("bare variable should be declared");
+        table
+    };
+    let err = infer_expr_type(
+        &Expr::Field {
+            name: "bare".to_string(),
+            field: "age".to_string(),
+        },
+        &no_type_symbols,
+        &types,
+    )
+    .expect_err("field access on typeless binding should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E012");
+}
+
+#[test]
+fn semantic_analyze_covers_procedure_control_flow_and_param_success_paths() {
+    semantic_compile_test(
+        r#"
+MODULE Main;
+IMPORT IO := IO;
+
+PROCEDURE P(flag: BOOLEAN; VAR n: INTEGER);
+VAR local: INTEGER;
+BEGIN
+    IF flag THEN
+        n := n + 1
+    ELSE
+        n := n + 2
+    END;
+
+    WHILE IO.EOF() DO
+        n := n + local
+    END;
+
+    IO.WriteInt(n)
+END P;
+
+VAR value: INTEGER;
+
+BEGIN
+    value := 0;
+    P(FALSE, value)
+END Main.
+"#,
+    )
+    .expect("procedure flow with typed params and locals should analyze successfully");
+}
+
+#[test]
 fn semantic_rejects_non_boolean_if_and_while_conditions() {
     let module = parse_module(
         r#"
@@ -1781,7 +2269,7 @@ END Main.
     assert_eq!(err.code(), "E012");
     assert!(
         err.to_string()
-            .contains("cannot assign INTEGER to array element 'flags' of type BOOLEAN")
+            .contains("cannot assign INTEGER to array element 'flags[0]' of type BOOLEAN")
     );
 }
 
