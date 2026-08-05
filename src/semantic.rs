@@ -1,6 +1,6 @@
 //! Semantic checks for name resolution, declaration validity, and call arity.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 
@@ -460,6 +460,14 @@ fn type_ref_name_for_error(type_ref: &TypeRef) -> String {
             format_expr_for_error(length),
             type_ref_name_for_error(element_type)
         ),
+        TypeRef::Record { fields } => {
+            let rendered_fields = fields
+                .iter()
+                .map(|field| format!("{}: {}", field.name, type_ref_name_for_error(&field.type_ref)))
+                .collect::<Vec<_>>()
+                .join("; ");
+            format!("RECORD {} END", rendered_fields)
+        }
         TypeRef::Named(name) => name.clone(),
         TypeRef::Qualified { module, name } => format!("{}.{}", module, name),
     }
@@ -483,6 +491,7 @@ fn format_expr_for_error(expr: &Expr) -> String {
         Expr::Indexed { name, index } => {
             format!("{}[{}]", name, format_expr_for_error(index))
         }
+        Expr::Field { name, field } => format!("{}.{}", name, field),
         Expr::QualifiedVariable { module, name } => format!("{}.{}", module, name),
         Expr::Call { module, name, args } => {
             let rendered_args = args
@@ -549,6 +558,10 @@ fn substitute_const_expr(expr: &Expr, const_values: &HashMap<String, Expr>) -> E
             name: name.clone(),
             index: Box::new(substitute_const_expr(index, const_values)),
         },
+        Expr::Field { name, field } => Expr::Field {
+            name: name.clone(),
+            field: field.clone(),
+        },
         Expr::Call { module, name, args } => Expr::Call {
             module: module.clone(),
             name: name.clone(),
@@ -579,6 +592,8 @@ fn validate_declared_type_with_consts(
     types: &HashMap<String, TypeRef>,
     const_values: &HashMap<String, Expr>,
 ) -> Result<()> {
+    validate_record_field_names(type_ref)?;
+
     if resolve_type_ref_with_consts(type_ref, types, const_values).is_none() {
         return Err(SemanticError::UnknownType {
             name: type_ref_name_for_error(type_ref),
@@ -587,6 +602,26 @@ fn validate_declared_type_with_consts(
     }
 
     Ok(())
+}
+
+fn validate_record_field_names(type_ref: &TypeRef) -> Result<()> {
+    match type_ref {
+        TypeRef::Array { element_type, .. } => validate_record_field_names(element_type),
+        TypeRef::Record { fields } => {
+            let mut seen = HashSet::new();
+            for field in fields {
+                if !seen.insert(field.name.clone()) {
+                    return Err(SemanticError::DuplicateSymbol {
+                        name: field.name.clone(),
+                    }
+                    .into());
+                }
+                validate_record_field_names(&field.type_ref)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -708,6 +743,20 @@ fn resolve_type_ref_with_consts(
                 }
             })
         }
+        TypeRef::Record { fields } => {
+            let mut resolved_fields = Vec::with_capacity(fields.len());
+            for field in fields {
+                let resolved_field_type =
+                    resolve_type_ref_with_consts(&field.type_ref, types, const_values)?;
+                resolved_fields.push(crate::ast::RecordField {
+                    name: field.name.clone(),
+                    type_ref: resolved_field_type,
+                });
+            }
+            Some(TypeRef::Record {
+                fields: resolved_fields,
+            })
+        }
         TypeRef::Named(name) => match types.get(name) {
             Some(target) => resolve_type_ref_with_consts(target, types, const_values),
             None => None,
@@ -796,6 +845,7 @@ fn format_type_name(type_ref: &TypeRef) -> &'static str {
         TypeRef::Real => "REAL",
         TypeRef::LongReal => "LONGREAL",
         TypeRef::Array { .. } => "ARRAY",
+        TypeRef::Record { .. } => "RECORD",
         TypeRef::Named(_) => "<named>",
         TypeRef::Qualified { .. } => "<qualified>",
     }
@@ -865,12 +915,17 @@ fn infer_expr_type(
                 .and_then(|type_ref| resolve_type_ref(&type_ref, types)))
         }
         Expr::Indexed { name, index } => infer_indexed_expr_type(name, index, symbols, types),
+        Expr::Field { name, field } => infer_field_expr_type(name, field, symbols, types),
         Expr::QualifiedVariable { module, name } => {
-            Err(SemanticError::UnsupportedQualifiedVariable {
-                module: module.clone(),
-                name: name.clone(),
+            if symbols.resolve(module).is_some() {
+                infer_field_expr_type(module, name, symbols, types)
+            } else {
+                Err(SemanticError::UnsupportedQualifiedVariable {
+                    module: module.clone(),
+                    name: name.clone(),
+                }
+                .into())
             }
-            .into())
         }
         Expr::Call { module, name, args } => {
             ensure_internal_builtin_module_imported(module.as_deref(), symbols)?;
@@ -1313,6 +1368,7 @@ fn validate_var_argument(
     position: usize,
     arg: &Expr,
     symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
 ) -> Result<()> {
     match arg {
         Expr::Variable(name) => {
@@ -1330,6 +1386,24 @@ fn validate_var_argument(
                 .into()),
             }
         }
+        Expr::Field { name, field } => {
+            let symbol = symbols
+                .resolve(name)
+                .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.clone() })?;
+
+            match symbol.kind {
+                SymbolKind::Variable | SymbolKind::Parameter => {
+                    let _ = infer_field_expr_type(name, field, symbols, types)?;
+                    Ok(())
+                }
+                _ => Err(SemanticError::InvalidVarArgument {
+                    name: proc_name.to_string(),
+                    position,
+                    detail: format!("'{}.{}' is not an assignable variable binding", name, field),
+                }
+                .into()),
+            }
+        }
         _ => Err(SemanticError::InvalidVarArgument {
             name: proc_name.to_string(),
             position,
@@ -1337,6 +1411,119 @@ fn validate_var_argument(
         }
         .into()),
     }
+}
+
+fn infer_assignment_target_type(
+    target: &AssignTarget,
+    symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
+) -> Result<TypeRef> {
+    match target {
+        AssignTarget::Name(name) => {
+            let symbol = symbols
+                .resolve(name)
+                .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.clone() })?;
+
+            symbol
+                .declared_type
+                .as_ref()
+                .and_then(|declared_type| resolve_type_ref(declared_type, types))
+                .ok_or_else(|| SemanticError::TypeMismatch {
+                    detail: format!("'{}' has an unresolved type", name),
+                })
+                .map_err(Into::into)
+        }
+        AssignTarget::Indexed { name, index } => {
+            let index_type = infer_expr_type(index, symbols, types)?;
+            if index_type != Some(TypeRef::Integer) {
+                return Err(SemanticError::TypeMismatch {
+                    detail: format!(
+                        "array index for '{}' must be INTEGER, got {}",
+                        name,
+                        index_type
+                            .as_ref()
+                            .map(format_type_name)
+                            .unwrap_or("<unknown>")
+                    ),
+                }
+                .into());
+            }
+
+            let symbol = symbols
+                .resolve(name)
+                .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.clone() })?;
+
+            let expected_type = symbol
+                .declared_type
+                .as_ref()
+                .and_then(|declared_type| resolve_type_ref(declared_type, types))
+                .ok_or_else(|| SemanticError::TypeMismatch {
+                    detail: format!("'{}' is not an array variable", name),
+                })?;
+
+            let TypeRef::Array { element_type, .. } = expected_type else {
+                return Err(SemanticError::TypeMismatch {
+                    detail: format!("'{}' is not an array variable", name),
+                }
+                .into());
+            };
+
+            Ok(*element_type)
+        }
+        AssignTarget::Field { name, field } => infer_field_expr_type(name, field, symbols, types)?
+            .ok_or_else(|| SemanticError::TypeMismatch {
+                detail: format!("'{}.{}' has an unresolved type", name, field),
+            })
+            .map_err(Into::into),
+    }
+}
+
+fn assignment_target_label(target: &AssignTarget, expected_type: &TypeRef) -> String {
+    match target {
+        AssignTarget::Name(name) => format!("{} '{}'", format_type_name(expected_type), name),
+        AssignTarget::Indexed { name, index } => format!(
+            "array element '{}[{}]' of type {}",
+            name,
+            format_expr_for_error(index),
+            format_type_name(expected_type)
+        ),
+        AssignTarget::Field { name, field } => format!(
+            "record field '{}.{}' of type {}",
+            name,
+            field,
+            format_type_name(expected_type)
+        ),
+    }
+}
+
+fn validate_assignment_value_type(
+    target: &AssignTarget,
+    expected_type: &TypeRef,
+    value: &Expr,
+    symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
+    import_aliases: &HashMap<String, String>,
+    external_modules: &HashMap<String, ExternalModuleInfo>,
+) -> Result<()> {
+    if let Some(actual_type) = infer_expr_type(value, symbols, types)?
+        && !assignment_compatible_extended(
+            expected_type,
+            &actual_type,
+            import_aliases,
+            external_modules,
+        )
+    {
+        return Err(SemanticError::TypeMismatch {
+            detail: format!(
+                "cannot assign {} to {}",
+                format_type_name(&actual_type),
+                assignment_target_label(target, expected_type)
+            ),
+        }
+        .into());
+    }
+
+    Ok(())
 }
 
 /// Validates one statement within the current symbol-table scope.
@@ -1352,92 +1539,20 @@ fn analyze_statement(
     match stmt {
         Statement::Assign { target, value } => {
             analyze_expr(value, symbols)?;
-            match target {
-                AssignTarget::Name(name) => {
-                    let symbol = symbols
-                        .resolve(name)
-                        .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.clone() })?;
-
-                    if let Some(expected_type) = &symbol.declared_type
-                        && let Some(actual_type) = infer_expr_type(value, symbols, types)?
-                    {
-                        let expected_type = resolve_type_ref(expected_type, types).expect(
-                            "declared target type should resolve after semantic validation",
-                        );
-                        if !assignment_compatible_extended(
-                            &expected_type,
-                            &actual_type,
-                            import_aliases,
-                            external_modules,
-                        ) {
-                            return Err(SemanticError::TypeMismatch {
-                                detail: format!(
-                                    "cannot assign {} to {} '{}'",
-                                    format_type_name(&actual_type),
-                                    format_type_name(&expected_type),
-                                    name
-                                ),
-                            }
-                            .into());
-                        }
-                    }
-                }
-                AssignTarget::Indexed { name, index } => {
-                    analyze_expr(index, symbols)?;
-                    let index_type = infer_expr_type(index, symbols, types)?;
-                    if index_type != Some(TypeRef::Integer) {
-                        return Err(SemanticError::TypeMismatch {
-                            detail: format!(
-                                "array index for '{}' must be INTEGER, got {}",
-                                name,
-                                index_type
-                                    .as_ref()
-                                    .map(format_type_name)
-                                    .unwrap_or("<unknown>")
-                            ),
-                        }
-                        .into());
-                    }
-
-                    let symbol = symbols
-                        .resolve(name)
-                        .ok_or_else(|| SemanticError::UndefinedSymbol { name: name.clone() })?;
-
-                    let expected_type = symbol
-                        .declared_type
-                        .as_ref()
-                        .and_then(|declared_type| resolve_type_ref(declared_type, types))
-                        .ok_or_else(|| SemanticError::TypeMismatch {
-                            detail: format!("'{}' is not an array variable", name),
-                        })?;
-
-                    let TypeRef::Array { element_type, .. } = expected_type else {
-                        return Err(SemanticError::TypeMismatch {
-                            detail: format!("'{}' is not an array variable", name),
-                        }
-                        .into());
-                    };
-
-                    if let Some(actual_type) = infer_expr_type(value, symbols, types)?
-                        && !assignment_compatible_extended(
-                            &element_type,
-                            &actual_type,
-                            import_aliases,
-                            external_modules,
-                        )
-                    {
-                        return Err(SemanticError::TypeMismatch {
-                            detail: format!(
-                                "cannot assign {} to array element '{}' of type {}",
-                                format_type_name(&actual_type),
-                                name,
-                                format_type_name(&element_type)
-                            ),
-                        }
-                        .into());
-                    }
-                }
+            if let AssignTarget::Indexed { index, .. } = target {
+                analyze_expr(index, symbols)?;
             }
+
+            let expected_type = infer_assignment_target_type(target, symbols, types)?;
+            validate_assignment_value_type(
+                target,
+                &expected_type,
+                value,
+                symbols,
+                types,
+                import_aliases,
+                external_modules,
+            )?;
 
             Ok(())
         }
@@ -1497,16 +1612,13 @@ fn analyze_statement(
                 return Ok(());
             }
 
-            // Handle qualified calls (e.g., B.HELLO).
             if let Some(module_alias) = module {
-                // Resolve alias to external module name.
                 let module_name = import_aliases.get(module_alias).ok_or_else(|| {
                     SemanticError::UndefinedSymbol {
                         name: module_alias.clone(),
                     }
                 })?;
 
-                // Check if the external module exists and has this procedure exported.
                 let ext_module = external_modules.get(module_name).ok_or_else(|| {
                     SemanticError::UndefinedSymbol {
                         name: format!("{}.{}", module_alias, name),
@@ -1521,8 +1633,6 @@ fn analyze_statement(
                     .into());
                 }
 
-                // For now, we don't validate arity of external procedures.
-                // This would require loading the external module definition.
                 for arg in args {
                     analyze_expr(arg, symbols)?;
                 }
@@ -1551,7 +1661,7 @@ fn analyze_statement(
             if let Some(params) = proc_params.get(name) {
                 for (index, (param, arg)) in params.iter().zip(args.iter()).enumerate() {
                     if param.is_var {
-                        validate_var_argument(name, index + 1, arg, symbols)?;
+                        validate_var_argument(name, index + 1, arg, symbols, types)?;
                         if let Some(expected_type) = &param.declared_type
                             && let Some(actual_type) = infer_expr_type(arg, symbols, types)?
                         {
@@ -1667,12 +1777,23 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             }
             Ok(())
         }
-        Expr::QualifiedVariable { module, name } => {
-            Err(SemanticError::UnsupportedQualifiedVariable {
-                module: module.clone(),
-                name: name.clone(),
+        Expr::Field { name, .. } => {
+            if symbols.resolve(name).is_none() {
+                return Err(SemanticError::UndefinedSymbol { name: name.clone() }.into());
             }
-            .into())
+            Ok(())
+        }
+        Expr::QualifiedVariable { module, name } => {
+            if symbols.resolve(module).is_some() {
+                let _ = name;
+                Ok(())
+            } else {
+                Err(SemanticError::UnsupportedQualifiedVariable {
+                    module: module.clone(),
+                    name: name.clone(),
+                }
+                .into())
+            }
         }
         Expr::Call { module, name, args } => {
             ensure_internal_builtin_module_imported(module.as_deref(), symbols)?;
@@ -1787,6 +1908,48 @@ fn infer_indexed_expr_type(
         }
         .into()),
     }
+}
+
+fn infer_field_expr_type(
+    name: &str,
+    field: &str,
+    symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
+) -> Result<Option<TypeRef>> {
+    let symbol = symbols
+        .resolve(name)
+        .ok_or_else(|| SemanticError::UndefinedSymbol {
+            name: name.to_string(),
+        })?;
+
+    let Some(declared_type) = symbol.declared_type.as_ref() else {
+        return Err(SemanticError::TypeMismatch {
+            detail: format!("'{}' is not a record variable", name),
+        }
+        .into());
+    };
+
+    let resolved_type =
+        resolve_type_ref(declared_type, types).ok_or_else(|| SemanticError::TypeMismatch {
+            detail: format!("'{}' is not a record variable", name),
+        })?;
+
+    let TypeRef::Record { fields } = resolved_type else {
+        return Err(SemanticError::TypeMismatch {
+            detail: format!("'{}' is not a record variable", name),
+        }
+        .into());
+    };
+
+    let field_type = fields
+        .into_iter()
+        .find(|record_field| record_field.name == field)
+        .map(|record_field| record_field.type_ref)
+        .ok_or_else(|| SemanticError::TypeMismatch {
+            detail: format!("record '{}' has no field '{}'", name, field),
+        })?;
+
+    Ok(Some(field_type))
 }
 
 #[cfg(test)]

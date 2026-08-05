@@ -1,0 +1,9 @@
+MODULE Main;
+IMPORT IO;
+TYPE Person = RECORD age: INTEGER; END;
+VAR p: Person;
+BEGIN
+  p.age := 5;
+  IO.WriteInt(p.age);
+  IO.WriteLn
+END Main.

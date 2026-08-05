@@ -31,6 +31,13 @@ fn indexed_target(id: usize, name: &str, kind: SymbolKind, index: HExpr) -> HTar
     }
 }
 
+fn field_target(id: usize, name: &str, kind: SymbolKind, field: &str) -> HTarget {
+    HTarget::Field {
+        name: ident(id, name, kind),
+        field: field.to_string(),
+    }
+}
+
 #[test]
 fn emits_procedure_function_and_call_from_main() {
     let module = HModule {
@@ -168,6 +175,44 @@ fn emits_runtime_call_for_indexed_expression_read() {
 
     let generated = generate_main_rs(&module, false);
     assert!(generated.contains("value_index(&get_var(&vars, \"arr\"), &value_integer(0))"));
+}
+
+#[test]
+fn emits_runtime_call_for_field_assignment_target() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![HStatement::Assign {
+            target: field_target(13, "p", SymbolKind::Variable, "age"),
+            value: HExpr::Integer(42),
+        }],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains("let field_value_13_age = (value_integer(42)).clone();"));
+    assert!(generated.contains("set_var_field(&mut vars, \"p\", \"age\", field_value_13_age);"));
+}
+
+#[test]
+fn emits_runtime_call_for_field_expression_read() {
+    let module = HModule {
+        name: "Main".to_string(),
+        end_name: "Main".to_string(),
+        imports: vec![],
+        declarations: vec![],
+        statements: vec![HStatement::Assign {
+            target: assign_target(14, "x", SymbolKind::Variable),
+            value: HExpr::Field {
+                name: ident(15, "p", SymbolKind::Variable),
+                field: "age".to_string(),
+            },
+        }],
+    };
+
+    let generated = generate_main_rs(&module, false);
+    assert!(generated.contains("value_field(&get_var(&vars, \"p\"), \"age\")"));
 }
 
 #[test]

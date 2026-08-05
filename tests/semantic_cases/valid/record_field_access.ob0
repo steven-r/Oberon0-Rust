@@ -1,0 +1,16 @@
+MODULE Main;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+    active: BOOLEAN;
+  END;
+VAR
+  p: Person;
+  copy: INTEGER;
+BEGIN
+  p.age := 7;
+  p.active := TRUE;
+  IF p.active THEN
+    copy := p.age
+  END
+END Main.

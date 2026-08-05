@@ -19,6 +19,7 @@ scripts/oberon0 <example-directory> --run
 - `operators-extended`: `DIV`, `MOD`, `OR`, `&`, unary `~`, and unary sign operators
 - `declarations-const-var`: `CONST` and `VAR` declarations
 - `typed-declarations`: `TYPE` aliases and typed `VAR` declarations with `INTEGER`
+- `record-field-access`: `RECORD` declaration, field assignment/read (`p.age`), and typed field arithmetic
 - `control-if-else`: branching with `IF/ELSE`
 - `control-while`: looping with `WHILE`
 - `procedures-params`: parameter shadowing with distinct module and procedure state values

@@ -1,0 +1,14 @@
+name = "record field access with unknown field"
+code = """
+MODULE Main;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+  END;
+VAR p: Person;
+BEGIN
+  p.height := 180
+END Main.
+"""
+result.code = "E012"
+result.messages = ["record 'p' has no field 'height'"]

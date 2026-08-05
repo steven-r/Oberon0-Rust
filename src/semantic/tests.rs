@@ -348,6 +348,103 @@ END Main.
 }
 
 #[test]
+fn semantic_accepts_record_field_assignment_and_readback() {
+    let module = parse_module(
+        r#"
+MODULE Main;
+TYPE
+    Person = RECORD
+        age: INTEGER;
+        active: BOOLEAN;
+    END;
+VAR p: Person;
+    ageCopy: INTEGER;
+BEGIN
+    p.age := 7;
+    ageCopy := p.age
+END Main.
+"#,
+    )
+    .expect("source should parse");
+
+    analyze(&module, None).expect("record field assignment/read should pass semantic analysis");
+}
+
+#[test]
+fn semantic_rejects_unknown_record_field_and_non_record_field_access() {
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+TYPE
+    Person = RECORD
+        age: INTEGER;
+    END;
+VAR p: Person;
+BEGIN
+    p.missing := 1
+END Main.
+"#,
+    )
+    .expect_err("unknown record field should fail semantic analysis");
+
+    assert_eq!(err.code(), "E012");
+    assert!(err.to_string().contains("has no field 'missing'"));
+
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+VAR x: INTEGER;
+BEGIN
+    x.value := 1
+END Main.
+"#,
+    )
+    .expect_err("field access on scalar should fail semantic analysis");
+
+    assert_eq!(err.code(), "E012");
+    assert!(err.to_string().contains("is not a record variable"));
+}
+
+#[test]
+fn semantic_rejects_duplicate_record_field_names() {
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+TYPE
+    Person = RECORD
+        age: INTEGER;
+        age: INTEGER;
+    END;
+BEGIN
+END Main.
+"#,
+    )
+    .expect_err("duplicate record fields should fail semantic analysis");
+
+    assert_eq!(err.code(), "E004");
+    assert!(err.to_string().contains("age"));
+}
+
+#[test]
+fn semantic_rejects_unknown_record_field_type_references() {
+    let err = semantic_compile_test(
+        r#"
+MODULE Main;
+TYPE
+    Person = RECORD
+        age: MissingType;
+    END;
+BEGIN
+END Main.
+"#,
+    )
+    .expect_err("unknown record field type should fail semantic analysis");
+
+    assert_eq!(err.code(), "E013");
+    assert!(err.to_string().contains("MissingType"));
+}
+
+#[test]
 fn semantic_accepts_flt_floor_and_eof_conditions() {
     let module = parse_module(
         r#"
@@ -2043,7 +2140,7 @@ END Main.
     assert_eq!(err.code(), "E012");
     assert!(
         err.to_string()
-            .contains("cannot assign INTEGER to array element 'flags' of type BOOLEAN")
+            .contains("cannot assign INTEGER to array element 'flags[0]' of type BOOLEAN")
     );
 }
 

@@ -1,0 +1,16 @@
+MODULE Main;
+IMPORT IO;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+    active: BOOLEAN;
+  END;
+VAR p: Person;
+BEGIN
+  p.age := 7;
+  p.active := TRUE;
+  IF p.active THEN
+    IO.WriteInt(p.age)
+  END;
+  IO.WriteLn
+END Main.

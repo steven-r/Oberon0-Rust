@@ -1,0 +1,17 @@
+name = "record field designator is currently rejected for VAR parameters"
+code = """
+MODULE Main;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+  END;
+VAR p: Person;
+PROCEDURE Mark(VAR target: BOOLEAN);
+BEGIN
+END Mark;
+BEGIN
+  Mark(p.age)
+END Main.
+"""
+result.code = "E011"
+result.messages = ["expected a variable designator"]

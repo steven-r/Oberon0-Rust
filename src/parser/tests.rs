@@ -306,7 +306,10 @@ END Main.
 fn parser_rejects_indexed_designators_as_calls() {
     let err = parse_primary_factor(parse_pair(Rule::primary_factor, "arr[0]()"))
         .expect_err("indexed designators cannot be called");
-    assert!(err.to_string().contains("Indexed designators cannot be called"));
+    assert!(
+        err.to_string()
+            .contains("Designators with selectors cannot be called")
+    );
 }
 
 #[test]
@@ -315,28 +318,28 @@ fn parser_rejects_unsupported_designator_shapes() {
         .expect_err("indexed qualified designators should be rejected");
     assert!(
         err.to_string()
-            .contains("Indexed qualified designators are not yet supported")
+            .contains("Qualified designators with selectors are not yet supported")
     );
 
     let err = parse_primary_factor(parse_pair(Rule::primary_factor, "arr[0][1]"))
         .expect_err("multiple indexes should be rejected");
     assert!(
         err.to_string()
-            .contains("Multiple index selectors are not yet supported")
+            .contains("Multiple selectors are not yet supported")
     );
 
-    let err = parse_assignment_target(parse_pair(Rule::designator, "B.arr"))
-        .expect_err("qualified assignment targets should be rejected");
-    assert!(
-        err.to_string()
-            .contains("Qualified assignment targets are not yet supported")
-    );
+    let target = parse_assignment_target(parse_pair(Rule::designator, "B.arr"))
+        .expect("dotted assignment targets should parse as field designators");
+    assert!(matches!(
+        target,
+        AssignTarget::Field { name, field } if name == "B" && field == "arr"
+    ));
 
     let err = parse_assignment_target(parse_pair(Rule::designator, "arr[0][1]"))
         .expect_err("multiple index selectors should be rejected in assignment targets");
     assert!(
         err.to_string()
-            .contains("Multiple index selectors are not yet supported")
+            .contains("Multiple selectors are not yet supported")
     );
 }
 
@@ -660,6 +663,66 @@ END Main.
 }
 
 #[test]
+fn parses_record_type_declarations_and_field_designators() {
+    let parsed = parse_module(
+        r#"
+MODULE Main;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+        active: BOOLEAN;
+  END;
+VAR p: Person;
+    ageCopy: INTEGER;
+BEGIN
+  p.age := 1;
+  ageCopy := p.age
+END Main.
+"#,
+    )
+    .expect("module with record type and field designators should parse");
+
+    let record_type = parsed
+        .declarations
+        .iter()
+        .find_map(|decl| match decl {
+            crate::ast::Declaration::Type { name, target, .. } if name == "Person" => {
+                Some(target)
+            }
+            _ => None,
+        })
+        .expect("record type declaration should exist");
+
+    assert!(matches!(
+        record_type,
+        crate::ast::TypeRef::Record { fields }
+            if fields.len() == 2
+                && fields[0].name == "age"
+                && matches!(fields[0].type_ref, crate::ast::TypeRef::Integer)
+                && fields[1].name == "active"
+                && matches!(fields[1].type_ref, crate::ast::TypeRef::Boolean)
+    ));
+
+    let Statement::Assign { target, value } = &parsed.statements[0] else {
+        panic!("expected first statement to be an assignment");
+    };
+    assert!(matches!(
+        target,
+        AssignTarget::Field { name, field } if name == "p" && field == "age"
+    ));
+    assert!(matches!(value, Expr::Integer(1)));
+
+    let Statement::Assign { target, value } = &parsed.statements[1] else {
+        panic!("expected second statement to be an assignment");
+    };
+    assert_eq!(target, &AssignTarget::Name("ageCopy".to_string()));
+    assert!(matches!(
+        value,
+        Expr::QualifiedVariable { module, name } if module == "p" && name == "age"
+    ));
+}
+
+#[test]
 fn rejects_multiple_index_selectors_for_current_subset() {
     let err = parse_module(
         r#"
@@ -675,7 +738,7 @@ END Main.
 
     assert!(
         err.to_string()
-            .contains("Multiple index selectors are not yet supported")
+            .contains("Multiple selectors are not yet supported")
     );
 }
 

@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use super::{Resolver, lower_expr, lower_module, lower_statement};
-use crate::ast::{Expr, Statement, TypeRef};
+use super::{Resolver, lower_assign_target, lower_expr, lower_module, lower_statement};
+use crate::ast::{AssignTarget, Expr, Statement, TypeRef};
 use crate::hir::{HDeclaration, HExpr, HStatement, HTarget};
 use crate::parser::parse_module;
 use crate::semantic::analyze;
@@ -32,6 +32,7 @@ fn collect_assign_target_ids(stmts: &[HStatement], out: &mut Vec<usize>) {
             HStatement::Assign { target, .. } => match target {
                 crate::hir::HTarget::Name(ident) => out.push(ident.id),
                 crate::hir::HTarget::Indexed { name, .. } => out.push(name.id),
+                crate::hir::HTarget::Field { name, .. } => out.push(name.id),
             },
             HStatement::If {
                 then_branch,
@@ -330,6 +331,52 @@ fn fixture_qualified_variable_expression_is_rejected_by_lowerer() {
 }
 
 #[test]
+fn fixture_field_expression_lowers_to_hir_field() {
+    let mut resolver = Resolver::new();
+    let declared = resolver
+        .declare("p", SymbolKind::Variable)
+        .expect("record symbol should be declared");
+
+    let lowered = lower_expr(
+        &Expr::Field {
+            name: "p".to_string(),
+            field: "age".to_string(),
+        },
+        &resolver,
+    )
+    .expect("field expression should lower");
+
+    assert!(matches!(
+        lowered,
+        HExpr::Field { name, field }
+            if name.id == declared.id && field == "age"
+    ));
+}
+
+#[test]
+fn fixture_field_assignment_target_lowers_to_hir_field_target() {
+    let mut resolver = Resolver::new();
+    let declared = resolver
+        .declare("p", SymbolKind::Variable)
+        .expect("record symbol should be declared");
+
+    let lowered = lower_assign_target(
+        &AssignTarget::Field {
+            name: "p".to_string(),
+            field: "age".to_string(),
+        },
+        &resolver,
+    )
+    .expect("field assignment target should lower");
+
+    assert!(matches!(
+        lowered,
+        HTarget::Field { name, field }
+            if name.id == declared.id && field == "age"
+    ));
+}
+
+#[test]
 fn lower_statement_preserves_if_else_branches() {
     let source = r#"
 MODULE Main;
@@ -607,6 +654,7 @@ END Main.
             HStatement::Assign { target, .. } => match target {
                 crate::hir::HTarget::Name(ident) => Some(ident.id),
                 crate::hir::HTarget::Indexed { name, .. } => Some(name.id),
+                crate::hir::HTarget::Field { name, .. } => Some(name.id),
             },
             _ => None,
         })
@@ -752,6 +800,7 @@ END Main.
                     }
                 }
                 crate::hir::HTarget::Indexed { .. } => None,
+                crate::hir::HTarget::Field { .. } => None,
             },
             _ => None,
         })

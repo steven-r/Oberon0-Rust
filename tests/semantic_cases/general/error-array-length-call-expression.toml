@@ -1,0 +1,11 @@
+name = "array length using call expression is not a constant"
+code = """
+MODULE Main;
+IMPORT IO;
+TYPE
+  Broken = ARRAY IO.ReadInt() OF INTEGER;
+BEGIN
+END Main.
+"""
+result.code = "E013"
+result.messages = ["ARRAY IO.ReadInt() OF INTEGER"]

@@ -130,24 +130,30 @@ Current status:
 
 ## B6. Record types and field access
 
-Status: Planned.
+Status: Implemented for the current subset.
 
 Tasks:
 
 1. Add record type syntax and field declarations.
 2. Add field-selection designators.
 3. Extend semantic analysis for field lookup and duplicate-field validation.
-4. Extend code generation to emit Rust structs and field access.
+4. Extend code generation/runtime support for record field access.
 
 Definition of done:
 
 1. Records can be declared and instantiated through variable storage.
 2. Field access is validated semantically.
-3. Generated Rust preserves field layout and names clearly.
+3. Generated Rust/runtime preserves record field names and supports field reads/writes.
+
+Current status:
+
+1. Record type declarations are implemented in the parser, AST, semantic analysis, HIR lowering, and runtime code generation.
+2. Field-selection designators are implemented for expressions and assignment targets.
+3. Semantic validation rejects duplicate fields, unknown fields, and non-record field access with stable diagnostics.
 
 ## B7. Type checker consolidation
 
-Status: Planned.
+Status: Implemented for the current subset.
 
 Tasks:
 
@@ -164,8 +170,9 @@ Definition of done:
 
 Current status:
 
-1. The shared type-model foundation is established and tracked by the type-model issue slice (#61).
-2. Full consolidation still depends on array and record designators landing on the same compatibility path.
+1. The shared type model now drives compatibility checks for scalar, array, record, and alias-based assignments in the current subset.
+2. Assignment-target inference covers plain names, indexed designators, and record-field designators through the same semantic path.
+3. Remaining type-system growth continues from the consolidated base instead of introducing separate ad-hoc checks.
 
 ## Suggested implementation order
 
@@ -202,9 +209,9 @@ Priority 2 (expression and control-flow completeness):
 
 Priority 3 (structured data model):
 
-1. #9 (record type declarations)
-2. #10 (field-selection designators)
-3. #11 (type-checking consolidation)
+1. #9 (record type declarations) completed for the current subset
+2. #10 (field-selection designators) completed for the current subset
+3. #11 (type-checking consolidation) completed for the current subset
 
 Priority 4 (IO and grammar parity refinements):
 

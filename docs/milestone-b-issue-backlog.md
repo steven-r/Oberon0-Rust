@@ -10,28 +10,27 @@ This backlog mirrors the current Milestone B implementation order and keeps the 
 4. #61: formalize the shared type model foundation for later arrays and records.
 5. #7: add array type declarations.
 6. #8: add indexed designators.
+7. #22: add typed formal parameters with optional `VAR` mode.
+8. #9: add record type declarations.
+9. #10: add field-selection designators.
+10. #11: consolidate type checking around the shared model.
 
 ## Next implementation slice
-
-1. #9: add record type declarations.
-2. #10: add field-selection designators.
-3. #11: consolidate type checking around the shared model.
-
-## Follow-on language-completeness work
-
-1. #22: add typed formal parameters with optional `VAR` mode.
-2. #18: add `DIV`, `MOD`, `&`, `OR`, unary `~`, and unary sign operators.
-3. #19: add relational operators.
-
-## Remaining roadmap items
 
 1. #20: add `ELSIF`.
 2. #21: add `REPEAT ... UNTIL`.
 3. #23: add `WriteChar` and `OpenInput`.
-4. #24: add `WriteInt(x, n)` width handling.
-5. #25: allow an optional module-level `BEGIN`.
-6. #26: resolve the star-form ProcedureCall decision.
-7. Introduce internal builtin modules (`IO`, `MATH`) and migrate builtin calls to qualified form.
+
+## Follow-on language-completeness work
+
+1. #24: add `WriteInt(x, n)` width handling.
+2. #26: resolve the star-form ProcedureCall decision.
+3. Broaden selector/designator parity beyond the current subset where needed.
+
+## Remaining roadmap items
+
+1. Keep extending Wirth page-63 parity beyond the current subset boundaries.
+2. Revisit cross-module qualified-variable/designator semantics when module translation broadens.
 
 Related concept:
 

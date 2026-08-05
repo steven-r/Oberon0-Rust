@@ -1,0 +1,13 @@
+name = "duplicate field names in record declaration"
+code = """
+MODULE Main;
+TYPE
+  Person = RECORD
+    age: INTEGER;
+    age: INTEGER;
+  END;
+BEGIN
+END Main.
+"""
+result.code = "E004"
+result.messages = ["Duplicate symbol declaration: 'age'"]
