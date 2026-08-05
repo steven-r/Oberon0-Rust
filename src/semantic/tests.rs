@@ -1130,6 +1130,268 @@ fn semantic_covers_const_validation_and_error_display_paths() {
 }
 
 #[test]
+fn semantic_analyze_expr_covers_remaining_branches() {
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare("IO", SymbolKind::Procedure)
+        .expect("IO import alias should be declared");
+    symbols
+        .declare("MATH", SymbolKind::Procedure)
+        .expect("MATH import alias should be declared");
+    symbols
+        .declare("custom", SymbolKind::Procedure)
+        .expect("custom procedure should be declared");
+    symbols
+        .declare_with_type("arr", SymbolKind::Variable, Some(TypeRef::Integer))
+        .expect("array-like symbol should be declared for index path validation");
+
+    assert!(analyze_expr(&Expr::Integer(1), &symbols).is_ok());
+    assert!(analyze_expr(&Expr::Real(1.5), &symbols).is_ok());
+    assert!(analyze_expr(&Expr::LongReal(2.5), &symbols).is_ok());
+    assert!(analyze_expr(&Expr::Boolean(true), &symbols).is_ok());
+
+    let err = analyze_expr(&Expr::String("s".to_string()), &symbols)
+        .expect_err("string literal expressions should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E008");
+
+    let err = analyze_expr(
+        &Expr::Indexed {
+            name: "arr".to_string(),
+            index: Box::new(Expr::Variable("missing_index".to_string())),
+        },
+        &symbols,
+    )
+    .expect_err("indexed expressions should validate index expressions recursively");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Indexed {
+            name: "missing_arr".to_string(),
+            index: Box::new(Expr::Integer(0)),
+        },
+        &symbols,
+    )
+    .expect_err("indexed expressions should validate the base symbol");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::QualifiedVariable {
+            module: "B".to_string(),
+            name: "v".to_string(),
+        },
+        &symbols,
+    )
+    .expect_err("qualified variable expressions are not supported");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E015");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("UnknownInternal".to_string()),
+            name: "ReadInt".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("internal builtins should require imported internal modules");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: None,
+            name: "ReadInt".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("unqualified internal builtins should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("IO".to_string()),
+            name: "WriteLn".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("statement-only builtins should be rejected in expression context");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("IO".to_string()),
+            name: "ReadInt".to_string(),
+            args: vec![Expr::Integer(1)],
+        },
+        &symbols,
+    )
+    .expect_err("builtin arity mismatches should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E006");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("MATH".to_string()),
+            name: "FLT".to_string(),
+            args: vec![Expr::Variable("missing_arg".to_string())],
+        },
+        &symbols,
+    )
+    .expect_err("builtin arguments should be validated recursively");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("ModuleB".to_string()),
+            name: "HELLO".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("non-internal qualified call expressions should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: None,
+            name: "missing_proc".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("unknown unqualified calls should fail");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E005");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: None,
+            name: "custom".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("non-builtin procedures are not valid expression calls");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E007");
+
+    assert!(
+        analyze_expr(
+            &Expr::Unary {
+                op: UnaryOp::Minus,
+                value: Box::new(Expr::Integer(1)),
+            },
+            &symbols,
+        )
+        .is_ok()
+    );
+
+    assert!(
+        analyze_expr(
+            &Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::Integer(1)),
+                right: Box::new(Expr::Integer(2)),
+            },
+            &symbols,
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn semantic_validate_boolean_condition_accepts_qualified_eof() {
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare("IO", SymbolKind::Procedure)
+        .expect("IO import alias should be declared");
+
+    let mut types = HashMap::new();
+    types.insert("INTEGER".to_string(), TypeRef::Integer);
+    types.insert("BOOLEAN".to_string(), TypeRef::Boolean);
+    types.insert("REAL".to_string(), TypeRef::Real);
+    types.insert("LONGREAL".to_string(), TypeRef::LongReal);
+
+    validate_boolean_condition(
+        &Expr::Call {
+            module: Some("IO".to_string()),
+            name: "EOF".to_string(),
+            args: vec![],
+        },
+        &symbols,
+        &types,
+    )
+    .expect("IO.EOF() should be accepted as a condition");
+}
+
+#[test]
+fn semantic_analyze_covers_procedure_control_flow_and_param_success_paths() {
+    semantic_compile_test(
+        r#"
+MODULE Main;
+IMPORT IO := IO;
+
+PROCEDURE P(flag: BOOLEAN; VAR n: INTEGER);
+VAR local: INTEGER;
+BEGIN
+    IF flag THEN
+        n := n + 1
+    ELSE
+        n := n + 2
+    END;
+
+    WHILE IO.EOF() DO
+        n := n + local
+    END;
+
+    IO.WriteInt(n)
+END P;
+
+VAR value: INTEGER;
+
+BEGIN
+    value := 0;
+    P(FALSE, value)
+END Main.
+"#,
+    )
+    .expect("procedure flow with typed params and locals should analyze successfully");
+}
+
+#[test]
 fn semantic_rejects_non_boolean_if_and_while_conditions() {
     let module = parse_module(
         r#"

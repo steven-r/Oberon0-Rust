@@ -95,6 +95,7 @@ enum BuiltinId {
     Floor,
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 fn builtin_display_name(module: Option<&str>, name: &str) -> String {
     match module {
         Some(module_name) => format!("{}.{}", module_name, name),
