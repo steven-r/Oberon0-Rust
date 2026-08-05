@@ -1594,6 +1594,25 @@ fn format_statement_covers_by_ref_locals_and_var_argument_temporaries() {
     assert!(
         rendered_call.contains("let mut call_arg_1 = value_add(&value_integer(2), &value_integer(3));")
     );
+
+    let assign_field = HStatement::Assign {
+        target: field_target(32, "arr", SymbolKind::Parameter, "age"),
+        value: HExpr::Integer(11),
+    };
+    let rendered_field = super::format_statement(&assign_field, "    ", &ctx);
+    assert!(rendered_field.contains("value_set_field(&mut *param_32, \"age\", field_value_32_age);"));
+    assert!(rendered_field.contains("set_procedure_var(vars, \"P\", \"arr\", &*param_32);"));
+
+    assert_eq!(
+        super::format_expr(
+            &HExpr::Field {
+                name: ident(32, "arr", SymbolKind::Parameter),
+                field: "age".to_string(),
+            },
+            &ctx,
+        ),
+        "value_field(&*param_32, \"age\")"
+    );
 }
 
 #[test]
@@ -1692,6 +1711,67 @@ fn format_statement_defaults_and_format_expr_extended_paths() {
         super::format_binary_expr(BinaryOp::Add, "lhs", "rhs", true),
         "(value_add(&lhs, &rhs))"
     );
+
+    let local_procedures = std::collections::HashSet::new();
+    let local_param_modes = std::collections::HashMap::new();
+    let mut local_ctx = super::FormatContext {
+        locals: std::collections::HashMap::from([(61usize, "local_61".to_string())]),
+        by_ref_locals: std::collections::HashSet::new(),
+        constants: std::collections::HashMap::new(),
+        procedures: &local_procedures,
+        procedure_param_modes: &local_param_modes,
+        vars_arg: "vars",
+        procedure_name: Some("Worker"),
+        track_procedure_locals: true,
+        types: std::collections::HashMap::new(),
+    };
+
+    let local_field_assign = HStatement::Assign {
+        target: field_target(61, "record_local", SymbolKind::Variable, "age"),
+        value: HExpr::Integer(12),
+    };
+    let rendered_local_field = super::format_statement(&local_field_assign, "    ", &local_ctx);
+    assert!(rendered_local_field.contains("value_set_field(&mut local_61, \"age\", field_value_61_age);"));
+    assert!(rendered_local_field.contains("set_procedure_var(vars, \"Worker\", \"record_local\", &local_61);"));
+
+    assert_eq!(
+        super::format_expr(
+            &HExpr::Field {
+                name: ident(61, "record_local", SymbolKind::Variable),
+                field: "age".to_string(),
+            },
+            &local_ctx,
+        ),
+        "value_field(&local_61, \"age\")"
+    );
+
+    local_ctx.by_ref_locals.insert(61);
+    assert_eq!(
+        super::format_expr(
+            &HExpr::Field {
+                name: ident(61, "record_local", SymbolKind::Variable),
+                field: "age".to_string(),
+            },
+            &local_ctx,
+        ),
+        "value_field(&*local_61, \"age\")"
+    );
+
+    let field_usage = super::expr_io_usage(&HExpr::Field {
+        name: ident(61, "record_local", SymbolKind::Variable),
+        field: "age".to_string(),
+    });
+    assert!(!field_usage.uses_read_int);
+    assert!(!field_usage.uses_read_real);
+    assert!(!field_usage.uses_read_longreal);
+    assert!(!field_usage.uses_eof);
+    assert!(!field_usage.uses_write_real);
+    assert!(!field_usage.uses_write_longreal);
+
+    assert!(super::expr_needs_state_map(&HExpr::Field {
+        name: ident(61, "record_local", SymbolKind::Variable),
+        field: "age".to_string(),
+    }));
 }
 
 fn temp_codegen_dir(name: &str) -> std::path::PathBuf {

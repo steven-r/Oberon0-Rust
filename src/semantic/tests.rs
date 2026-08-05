@@ -8,7 +8,7 @@ use super::{
     assignment_compatible_extended, format_expr_for_error, infer_expr_type,
     resolve_array_length_expr, resolve_builtin_with_module_validation, substitute_const_expr,
     type_ref_name_for_error, validate_boolean_condition, validate_const_expression_literal,
-    validate_declared_type, validate_declared_type_with_imports,
+    validate_declared_type, validate_declared_type_with_imports, validate_var_argument,
 };
 use crate::ast::{
     AssignTarget, BinaryOp, Declaration, Expr, ParamDecl, Statement, TypeRef, UnaryOp,
@@ -1452,6 +1452,92 @@ fn semantic_validate_boolean_condition_accepts_qualified_eof() {
         &types,
     )
     .expect("IO.EOF() should be accepted as a condition");
+}
+
+#[test]
+fn semantic_record_field_helper_paths_are_exercised_directly() {
+    let mut symbols = SymbolTable::new();
+    symbols
+        .declare_with_type(
+            "p",
+            SymbolKind::Variable,
+            Some(TypeRef::Record {
+                fields: vec![crate::ast::RecordField {
+                    name: "age".to_string(),
+                    type_ref: TypeRef::Integer,
+                }],
+            }),
+        )
+        .expect("record variable should be declared");
+    symbols
+        .declare_with_type(
+            "param_record",
+            SymbolKind::Parameter,
+            Some(TypeRef::Record {
+                fields: vec![crate::ast::RecordField {
+                    name: "age".to_string(),
+                    type_ref: TypeRef::Integer,
+                }],
+            }),
+        )
+        .expect("record parameter should be declared");
+    symbols
+        .declare("proc_like", SymbolKind::Procedure)
+        .expect("procedure should be declared");
+
+    let types = HashMap::from([
+        ("INTEGER".to_string(), TypeRef::Integer),
+        ("BOOLEAN".to_string(), TypeRef::Boolean),
+        ("REAL".to_string(), TypeRef::Real),
+        ("LONGREAL".to_string(), TypeRef::LongReal),
+    ]);
+
+    let expr = Expr::Field {
+        name: "p".to_string(),
+        field: "age".to_string(),
+    };
+    assert_eq!(format_expr_for_error(&expr), "p.age");
+    assert_eq!(
+        infer_expr_type(&expr, &symbols, &types)
+            .expect("field type should infer")
+            .expect("field should have a type"),
+        TypeRef::Integer
+    );
+    analyze_expr(&expr, &symbols).expect("field expression with declared base should analyze");
+    validate_var_argument("Bump", 1, &expr, &symbols, &types)
+        .expect("record field on variable should be accepted by helper");
+
+    let param_expr = Expr::Field {
+        name: "param_record".to_string(),
+        field: "age".to_string(),
+    };
+    validate_var_argument("Bump", 1, &param_expr, &symbols, &types)
+        .expect("record field on parameter should be accepted by helper");
+
+    let err = validate_var_argument(
+        "Bump",
+        2,
+        &Expr::Field {
+            name: "proc_like".to_string(),
+            field: "age".to_string(),
+        },
+        &symbols,
+        &types,
+    )
+    .expect_err("non-assignable field base should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E011");
+    assert!(err.to_string().contains("proc_like.age"));
+
+    let rendered_record = type_ref_name_for_error(&TypeRef::Record {
+        fields: vec![crate::ast::RecordField {
+            name: "age".to_string(),
+            type_ref: TypeRef::Integer,
+        }],
+    });
+    assert!(rendered_record.contains("RECORD age: INTEGER END"));
 }
 
 #[test]

@@ -99,6 +99,28 @@ fn from_ast_type_ref_handles_named_qualified_and_invalid_array_lengths() {
     });
     assert_eq!(qualified, Type::Alias("<qualified>".to_string()));
 
+    let record = Type::from_ast_type_ref(&TypeRef::Record {
+        fields: vec![
+            crate::ast::RecordField {
+                name: "x".to_string(),
+                type_ref: TypeRef::Integer,
+            },
+            crate::ast::RecordField {
+                name: "flag".to_string(),
+                type_ref: TypeRef::Boolean,
+            },
+        ],
+    });
+    assert_eq!(
+        record,
+        Type::Record {
+            fields: vec![
+                ("x".to_string(), Type::Scalar(ScalarType::Integer)),
+                ("flag".to_string(), Type::Scalar(ScalarType::Boolean)),
+            ],
+        }
+    );
+
     let array_with_negative_len = Type::from_ast_type_ref(&TypeRef::Array {
         element_type: Box::new(TypeRef::Integer),
         length: Expr::Integer(-1),
@@ -176,6 +198,17 @@ fn resolve_aliases_recurses_through_composite_types() {
         result: Some(Box::new(Type::Scalar(ScalarType::Boolean))),
     };
     assert_eq!(resolved, expected);
+
+    let record_source = Type::Record {
+        fields: vec![("field".to_string(), Type::Alias("Elem".to_string()))],
+    };
+    let record_resolved = record_source.resolve_aliases(&aliases);
+    assert_eq!(
+        record_resolved,
+        Type::Record {
+            fields: vec![("field".to_string(), Type::Scalar(ScalarType::LongReal))],
+        }
+    );
 }
 
 #[test]

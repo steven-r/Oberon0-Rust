@@ -92,6 +92,27 @@ fn expr_equality_matches_all_supported_expression_variants() {
     );
 
     assert_eq!(
+        Expr::Field {
+            name: "point".to_string(),
+            field: "x".to_string(),
+        },
+        Expr::Field {
+            name: "point".to_string(),
+            field: "x".to_string(),
+        }
+    );
+    assert_ne!(
+        Expr::Field {
+            name: "point".to_string(),
+            field: "x".to_string(),
+        },
+        Expr::Field {
+            name: "point".to_string(),
+            field: "y".to_string(),
+        }
+    );
+
+    assert_eq!(
         Expr::QualifiedVariable {
             module: "M".to_string(),
             name: "name".to_string(),
@@ -194,6 +215,26 @@ fn expr_equality_matches_all_supported_expression_variants() {
         AssignTarget::Indexed {
             name: "x".to_string(),
             index: Expr::Integer(0),
+        }
+    );
+    assert_eq!(
+        AssignTarget::Field {
+            name: "point".to_string(),
+            field: "x".to_string(),
+        },
+        AssignTarget::Field {
+            name: "point".to_string(),
+            field: "x".to_string(),
+        }
+    );
+    assert_ne!(
+        AssignTarget::Field {
+            name: "point".to_string(),
+            field: "x".to_string(),
+        },
+        AssignTarget::Field {
+            name: "point".to_string(),
+            field: "y".to_string(),
         }
     );
 

@@ -341,6 +341,56 @@ fn parser_rejects_unsupported_designator_shapes() {
         err.to_string()
             .contains("Multiple selectors are not yet supported")
     );
+
+    let err = parse_assignment_target(parse_pair(Rule::designator, "B.arr[0]"))
+        .expect_err("qualified assignment targets with selectors should be rejected");
+    assert!(
+        err.to_string()
+            .contains("Qualified designators with selectors are not yet supported")
+    );
+}
+
+#[test]
+fn parses_record_fields_and_field_designators_with_multiple_names() {
+    let module = parse_module(
+        r#"
+MODULE Main;
+TYPE
+  Pair = RECORD
+    x, y: INTEGER;
+  END;
+VAR
+  p: Pair;
+  a: INTEGER;
+BEGIN
+  a := p.x
+END Main.
+"#,
+    )
+    .expect("record declarations with multi-name fields should parse");
+
+    match &module.declarations[0] {
+        crate::ast::Declaration::Type { target, .. } => match target {
+            crate::ast::TypeRef::Record { fields } => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "x");
+                assert_eq!(fields[1].name, "y");
+            }
+            other => panic!("expected record type, got {other:?}"),
+        },
+        other => panic!("expected type declaration, got {other:?}"),
+    }
+
+    match &module.statements[0] {
+        Statement::Assign { value, .. } => match value {
+            Expr::QualifiedVariable { module, name } => {
+                assert_eq!(module, "p");
+                assert_eq!(name, "x");
+            }
+            other => panic!("expected dotted variable expression, got {other:?}"),
+        },
+        other => panic!("expected assignment statement, got {other:?}"),
+    }
 }
 
 #[test]
