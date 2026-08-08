@@ -7,7 +7,8 @@ BEGIN
     i := MATH.FLOOR(i)
 END Main.
 """
-result.code = "E012"
+result.code = "E021"
 result.messages = [
-  "FLOOR() requires a REAL or LONGREAL argument",
+  "Internal function 'MATH.FLOOR' argument 1 has an incompatible type",
+  "FLOOR(REAL | LONGREAL) -> INTEGER",
 ]

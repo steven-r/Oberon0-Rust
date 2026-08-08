@@ -11,9 +11,13 @@ use crate::ast::{
     UnaryOp,
 };
 use crate::expression_constant_handler::combine_expression;
+use crate::internal_functions::{
+    self, CallContext, InternalArgument, InternalCallError, InternalCallErrorKind,
+    InternalCallSite, InternalFunctionId, ResolvedInternalCall, ResolvedType,
+};
 use crate::manifest::ExternalManifest;
 use crate::symbols::{SymbolKind, SymbolTable};
-use crate::types::Type;
+use crate::types::{ScalarType, Type};
 
 /// Information about exported symbols from an external module.
 /// Used for resolving qualified references like B.HELLO or B.IntType.
@@ -64,100 +68,21 @@ impl ExternalModuleInfo {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BuiltinModule {
-    Io,
-    Math,
-}
-
-impl BuiltinModule {
-    fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "IO" => Some(Self::Io),
-            "MATH" => Some(Self::Math),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BuiltinId {
-    WriteInt,
-    WriteString,
-    WriteLn,
-    WriteReal,
-    WriteLongReal,
-    ReadInt,
-    ReadReal,
-    ReadLongReal,
-    Eof,
-    Flt,
-    Floor,
-}
-
-#[cfg_attr(coverage_nightly, coverage(off))]
-fn builtin_display_name(module: Option<&str>, name: &str) -> String {
-    match module {
-        Some(module_name) => format!("{}.{}", module_name, name),
-        None => name.to_string(),
-    }
-}
-
-fn resolve_builtin(module: Option<&str>, name: &str) -> Option<BuiltinId> {
-    match module {
-        Some("IO") => match name {
-            "WriteInt" => Some(BuiltinId::WriteInt),
-            "WriteString" => Some(BuiltinId::WriteString),
-            "WriteLn" => Some(BuiltinId::WriteLn),
-            "WriteReal" => Some(BuiltinId::WriteReal),
-            "WriteLongReal" => Some(BuiltinId::WriteLongReal),
-            "ReadInt" => Some(BuiltinId::ReadInt),
-            "ReadReal" => Some(BuiltinId::ReadReal),
-            "ReadLongReal" => Some(BuiltinId::ReadLongReal),
-            "EOF" => Some(BuiltinId::Eof),
-            _ => None,
-        },
-        Some("MATH") => match name {
-            "FLT" => Some(BuiltinId::Flt),
-            "FLOOR" => Some(BuiltinId::Floor),
-            _ => None,
-        },
-        Some(_) => None,
-        None => None,
-    }
-}
-
-fn resolve_builtin_with_module_validation(module: Option<&str>, name: &str) -> Result<Option<BuiltinId>> {
-    if let Some(module_name) = module
-        && BuiltinModule::from_name(module_name).is_some()
-    {
-        return match resolve_builtin(module, name) {
-            Some(id) => Ok(Some(id)),
-            None => Err(SemanticError::InvalidBuiltinArgument {
-                name: builtin_display_name(module, name),
-                detail: "unknown builtin member".to_string(),
-            }
-            .into()),
-        };
-    }
-
-    Ok(resolve_builtin(module, name))
-}
-
 fn is_internal_builtin_module_name(name: &str) -> bool {
-    BuiltinModule::from_name(name).is_some()
+    internal_functions::module_exists(name)
 }
 
 fn required_builtin_module_for_name(name: &str) -> Option<&'static str> {
-    match name {
-        "WriteInt" | "WriteString" | "WriteLn" | "WriteReal" | "WriteLongReal" | "ReadInt"
-        | "ReadReal" | "ReadLongReal" | "EOF" => Some("IO"),
-        "FLT" | "FLOOR" => Some("MATH"),
-        _ => None,
-    }
+    internal_functions::descriptors()
+        .iter()
+        .find(|descriptor| descriptor.member_name == name)
+        .map(|descriptor| descriptor.module_name)
 }
 
-fn ensure_internal_builtin_module_imported(module: Option<&str>, symbols: &SymbolTable) -> Result<()> {
+fn ensure_internal_builtin_module_imported(
+    module: Option<&str>,
+    symbols: &SymbolTable,
+) -> Result<()> {
     if let Some(module_name) = module
         && is_internal_builtin_module_name(module_name)
         && symbols.resolve(module_name).is_none()
@@ -169,45 +94,6 @@ fn ensure_internal_builtin_module_imported(module: Option<&str>, symbols: &Symbo
     }
 
     Ok(())
-}
-
-fn builtin_fixed_arity(id: BuiltinId) -> Option<usize> {
-    match id {
-        BuiltinId::WriteInt => None,
-        BuiltinId::WriteString => Some(1),
-        BuiltinId::WriteLn => Some(0),
-        BuiltinId::WriteReal => Some(1),
-        BuiltinId::WriteLongReal => Some(1),
-        BuiltinId::ReadInt => Some(0),
-        BuiltinId::ReadReal => Some(0),
-        BuiltinId::ReadLongReal => Some(0),
-        BuiltinId::Eof => Some(0),
-        BuiltinId::Flt => Some(1),
-        BuiltinId::Floor => Some(1),
-    }
-}
-
-fn builtin_allows_statement(id: BuiltinId) -> bool {
-    matches!(
-        id,
-        BuiltinId::WriteInt
-            | BuiltinId::WriteString
-            | BuiltinId::WriteLn
-            | BuiltinId::WriteReal
-            | BuiltinId::WriteLongReal
-    )
-}
-
-fn builtin_allows_expression(id: BuiltinId) -> bool {
-    matches!(
-        id,
-        BuiltinId::ReadInt
-            | BuiltinId::ReadReal
-            | BuiltinId::ReadLongReal
-            | BuiltinId::Eof
-            | BuiltinId::Flt
-            | BuiltinId::Floor
-    )
 }
 
 #[derive(Debug, Clone)]
@@ -237,6 +123,37 @@ pub enum SemanticError {
     InvalidBuiltinArgument {
         name: String,
         detail: String,
+    },
+    UnknownInternalMember {
+        name: String,
+    },
+    InvalidInternalCallContext {
+        name: String,
+        expected: String,
+        actual: String,
+        accepted_signatures: Vec<String>,
+    },
+    InternalArityMismatch {
+        name: String,
+        actual_argument_types: Vec<String>,
+        accepted_signatures: Vec<String>,
+    },
+    InternalParameterModeMismatch {
+        name: String,
+        position: usize,
+        expected: String,
+        accepted_signatures: Vec<String>,
+    },
+    InternalArgumentTypeMismatch {
+        name: String,
+        position: usize,
+        expected: String,
+        actual_argument_types: Vec<String>,
+        accepted_signatures: Vec<String>,
+    },
+    AmbiguousInternalSignature {
+        name: String,
+        accepted_signatures: Vec<String>,
     },
     InvalidVarArgument {
         name: String,
@@ -284,6 +201,12 @@ impl SemanticError {
             SemanticError::UndefinedSymbol { .. } => "E005",
             SemanticError::ArityMismatch { .. } => "E006",
             SemanticError::InvalidBuiltinArgument { .. } => "E007",
+            SemanticError::UnknownInternalMember { .. } => "E017",
+            SemanticError::InvalidInternalCallContext { .. } => "E018",
+            SemanticError::InternalArityMismatch { .. } => "E019",
+            SemanticError::InternalParameterModeMismatch { .. } => "E020",
+            SemanticError::InternalArgumentTypeMismatch { .. } => "E021",
+            SemanticError::AmbiguousInternalSignature { .. } => "E022",
             SemanticError::UnsupportedStringLiteral => "E008",
             SemanticError::NotCallable { .. } => "E009",
             SemanticError::ProcedureNameMismatch { .. } => "E010",
@@ -355,6 +278,75 @@ impl fmt::Display for SemanticError {
                     detail
                 )
             }
+            SemanticError::UnknownInternalMember { name } => {
+                write!(f, "[{}] Unknown internal function '{}'", self.code(), name)
+            }
+            SemanticError::InvalidInternalCallContext {
+                name,
+                expected,
+                actual,
+                accepted_signatures,
+            } => write!(
+                f,
+                "[{}] Internal function '{}' cannot be used as a {} call; expected {}. Accepted signatures: {}",
+                self.code(),
+                name,
+                actual,
+                expected,
+                accepted_signatures.join(", ")
+            ),
+            SemanticError::InternalArityMismatch {
+                name,
+                actual_argument_types,
+                accepted_signatures,
+            } => write!(
+                f,
+                "[{}] Internal function '{}' does not accept argument types ({}); expected {}",
+                self.code(),
+                name,
+                actual_argument_types.join(", "),
+                accepted_signatures.join(" or ")
+            ),
+            SemanticError::InternalParameterModeMismatch {
+                name,
+                position,
+                expected,
+                accepted_signatures,
+            } => write!(
+                f,
+                "[{}] Internal function '{}' argument {} must use {} mode; expected {}",
+                self.code(),
+                name,
+                position,
+                expected,
+                accepted_signatures.join(" or ")
+            ),
+            SemanticError::InternalArgumentTypeMismatch {
+                name,
+                position,
+                expected,
+                actual_argument_types,
+                accepted_signatures,
+            } => write!(
+                f,
+                "[{}] Internal function '{}' argument {} has an incompatible type in ({}); expected {}. Accepted signatures: {}",
+                self.code(),
+                name,
+                position,
+                actual_argument_types.join(", "),
+                expected,
+                accepted_signatures.join(" or ")
+            ),
+            SemanticError::AmbiguousInternalSignature {
+                name,
+                accepted_signatures,
+            } => write!(
+                f,
+                "[{}] Internal function '{}' matches multiple signatures: {}",
+                self.code(),
+                name,
+                accepted_signatures.join(", ")
+            ),
             SemanticError::InvalidVarArgument {
                 name,
                 position,
@@ -463,7 +455,13 @@ fn type_ref_name_for_error(type_ref: &TypeRef) -> String {
         TypeRef::Record { fields } => {
             let rendered_fields = fields
                 .iter()
-                .map(|field| format!("{}: {}", field.name, type_ref_name_for_error(&field.type_ref)))
+                .map(|field| {
+                    format!(
+                        "{}: {}",
+                        field.name,
+                        type_ref_name_for_error(&field.type_ref)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join("; ");
             format!("RECORD {} END", rendered_fields)
@@ -851,6 +849,137 @@ fn format_type_name(type_ref: &TypeRef) -> &'static str {
     }
 }
 
+fn internal_argument(
+    expr: &Expr,
+    symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
+) -> Result<InternalArgument> {
+    let ty = match expr {
+        Expr::String(_) => ResolvedType::StringLiteral,
+        _ => infer_expr_type(expr, symbols, types)?
+            .map(|type_ref| ResolvedType::Type(Type::from_ast_type_ref(&type_ref)))
+            .ok_or_else(|| SemanticError::InternalError {
+                error: "internal function argument has no inferred type".to_string(),
+            })?,
+    };
+    let is_assignable = match expr {
+        Expr::Variable(name) | Expr::Indexed { name, .. } | Expr::Field { name, .. } => {
+            symbols.resolve(name).is_some_and(|symbol| {
+                matches!(symbol.kind, SymbolKind::Variable | SymbolKind::Parameter)
+            })
+        }
+        _ => false,
+    };
+
+    Ok(InternalArgument {
+        ty,
+        is_literal: expr.is_literal(),
+        is_assignable,
+    })
+}
+
+fn translate_internal_call_error(error: InternalCallError) -> SemanticError {
+    let actual_argument_types = error
+        .actual_argument_types
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    match error.kind {
+        InternalCallErrorKind::InvalidCallContext { expected } => {
+            SemanticError::InvalidInternalCallContext {
+                name: error.qualified_name,
+                expected: expected.to_string(),
+                actual: error.actual_context.to_string(),
+                accepted_signatures: error.accepted_signatures,
+            }
+        }
+        InternalCallErrorKind::ArityMismatch => SemanticError::InternalArityMismatch {
+            name: error.qualified_name,
+            actual_argument_types,
+            accepted_signatures: error.accepted_signatures,
+        },
+        InternalCallErrorKind::ParameterModeMismatch { position, expected } => {
+            SemanticError::InternalParameterModeMismatch {
+                name: error.qualified_name,
+                position,
+                expected: expected.to_string(),
+                accepted_signatures: error.accepted_signatures,
+            }
+        }
+        InternalCallErrorKind::ArgumentTypeMismatch { position, expected } => {
+            SemanticError::InternalArgumentTypeMismatch {
+                name: error.qualified_name,
+                position,
+                expected: expected.to_string(),
+                actual_argument_types,
+                accepted_signatures: error.accepted_signatures,
+            }
+        }
+        InternalCallErrorKind::AmbiguousSignature => SemanticError::AmbiguousInternalSignature {
+            name: error.qualified_name,
+            accepted_signatures: error.accepted_signatures,
+        },
+        InternalCallErrorKind::InvalidDescriptor { detail } => SemanticError::InternalError {
+            error: format!("invalid internal function descriptor: {detail}"),
+        },
+    }
+}
+
+fn resolve_internal_call(
+    module: Option<&str>,
+    name: &str,
+    args: &[Expr],
+    context: CallContext,
+    symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
+) -> Result<Option<ResolvedInternalCall>> {
+    if module.is_none()
+        && let Some(required_module) = required_builtin_module_for_name(name)
+    {
+        return Err(SemanticError::InvalidBuiltinArgument {
+            name: name.to_string(),
+            detail: format!("must be qualified as {}.{}(...)", required_module, name),
+        }
+        .into());
+    }
+
+    let Some(module_name) = module else {
+        return Ok(None);
+    };
+    if !internal_functions::module_exists(module_name) {
+        return Ok(None);
+    }
+    ensure_internal_builtin_module_imported(module, symbols)?;
+    let descriptor = internal_functions::lookup(module_name, name).ok_or_else(|| {
+        SemanticError::UnknownInternalMember {
+            name: format!("{module_name}.{name}"),
+        }
+    })?;
+    let arguments = args
+        .iter()
+        .map(|argument| internal_argument(argument, symbols, types))
+        .collect::<Result<Vec<_>>>()?;
+    let call_site = InternalCallSite { context, arguments };
+
+    internal_functions::resolve_call(descriptor, &call_site)
+        .map(Some)
+        .map_err(|error| translate_internal_call_error(error).into())
+}
+
+fn internal_result_type(resolved: &ResolvedInternalCall) -> Result<Option<TypeRef>> {
+    match resolved.result.as_ref() {
+        None => Ok(None),
+        Some(ResolvedType::Type(Type::Scalar(ScalarType::Integer))) => Ok(Some(TypeRef::Integer)),
+        Some(ResolvedType::Type(Type::Scalar(ScalarType::Boolean))) => Ok(Some(TypeRef::Boolean)),
+        Some(ResolvedType::Type(Type::Scalar(ScalarType::Real))) => Ok(Some(TypeRef::Real)),
+        Some(ResolvedType::Type(Type::Scalar(ScalarType::LongReal))) => Ok(Some(TypeRef::LongReal)),
+        Some(result) => Err(SemanticError::InternalError {
+            error: format!("unsupported internal function result type {result}"),
+        }
+        .into()),
+    }
+}
+
 fn resolve_symbol_type(symbols: &SymbolTable, name: &str) -> Option<TypeRef> {
     symbols
         .resolve(name)
@@ -862,7 +991,7 @@ fn validate_boolean_condition(
     symbols: &SymbolTable,
     types: &HashMap<String, TypeRef>,
 ) -> Result<()> {
-    analyze_expr(expr, symbols)?;
+    analyze_expr_with_types(expr, symbols, types)?;
 
     match infer_expr_type(expr, symbols, types)? {
         Some(TypeRef::Boolean) => Ok(()),
@@ -871,10 +1000,10 @@ fn validate_boolean_condition(
                 expr,
                 Expr::Call { module, name, args }
                     if args.is_empty()
-                        && matches!(
-                            resolve_builtin(module.as_deref(), name),
-                            Some(BuiltinId::Eof)
-                        )
+                        && module
+                            .as_deref()
+                            .and_then(|module| internal_functions::lookup(module, name))
+                            .is_some_and(|descriptor| descriptor.id == InternalFunctionId::IoEof)
             ) {
                 Ok(())
             } else {
@@ -928,67 +1057,15 @@ fn infer_expr_type(
             }
         }
         Expr::Call { module, name, args } => {
-            ensure_internal_builtin_module_imported(module.as_deref(), symbols)?;
-
-            if module.is_none()
-                && let Some(required_module) = required_builtin_module_for_name(name)
-            {
-                return Err(SemanticError::InvalidBuiltinArgument {
-                    name: name.clone(),
-                    detail: format!("must be qualified as {}.{}(...)", required_module, name),
-                }
-                .into());
-            }
-
-            if let Some(builtin_id) = resolve_builtin_with_module_validation(module.as_deref(), name)? {
-                if let Some(expected_arity) = builtin_fixed_arity(builtin_id)
-                    && args.len() != expected_arity
-                {
-                    return Err(SemanticError::ArityMismatch {
-                        name: builtin_display_name(module.as_deref(), name),
-                        expected: expected_arity,
-                        got: args.len(),
-                    }
-                    .into());
-                }
-
-                return match builtin_id {
-                    BuiltinId::WriteInt
-                    | BuiltinId::WriteString
-                    | BuiltinId::WriteLn
-                    | BuiltinId::WriteReal
-                    | BuiltinId::WriteLongReal => Err(SemanticError::InvalidBuiltinArgument {
-                        name: builtin_display_name(module.as_deref(), name),
-                        detail: "must be used as a statement call".to_string(),
-                    }
-                    .into()),
-                    BuiltinId::ReadInt | BuiltinId::Eof => Ok(Some(TypeRef::Integer)),
-                    BuiltinId::ReadReal => Ok(Some(TypeRef::Real)),
-                    BuiltinId::ReadLongReal => Ok(Some(TypeRef::LongReal)),
-                    BuiltinId::Flt => {
-                        let inner_type = infer_expr_type(&args[0], symbols, types)?;
-                        if matches!(inner_type, Some(TypeRef::Integer)) {
-                            Ok(Some(TypeRef::Real))
-                        } else {
-                            Err(SemanticError::TypeMismatch {
-                                detail: "FLT() requires an INTEGER argument".to_string(),
-                            }
-                            .into())
-                        }
-                    }
-                    BuiltinId::Floor => {
-                        let inner_type = infer_expr_type(&args[0], symbols, types)?;
-                        if matches!(inner_type, Some(TypeRef::Real | TypeRef::LongReal)) {
-                            Ok(Some(TypeRef::Integer))
-                        } else {
-                            Err(SemanticError::TypeMismatch {
-                                detail: "FLOOR() requires a REAL or LONGREAL argument"
-                                    .to_string(),
-                            }
-                            .into())
-                        }
-                    }
-                };
+            if let Some(resolved) = resolve_internal_call(
+                module.as_deref(),
+                name,
+                args,
+                CallContext::ExpressionOnly,
+                symbols,
+                types,
+            )? {
+                return internal_result_type(&resolved);
             }
 
             if let Some(module_name) = module {
@@ -1004,9 +1081,7 @@ fn infer_expr_type(
 
             Err(SemanticError::InvalidBuiltinArgument {
                 name: name.clone(),
-                detail:
-                    "call expressions currently support only ReadInt(), ReadReal(), ReadLongReal(), EOF(), FLT(), and FLOOR()"
-                        .to_string(),
+                detail: "call expressions currently support only internal functions".to_string(),
             }
             .into())
         }
@@ -1062,7 +1137,11 @@ fn infer_expr_type(
                     }
                     BinaryOp::IntDiv | BinaryOp::Mod => {
                         if left_type != TypeRef::Integer || right_type != TypeRef::Integer {
-                            let op_name = if op == &BinaryOp::IntDiv { "DIV" } else { "MOD" };
+                            let op_name = if op == &BinaryOp::IntDiv {
+                                "DIV"
+                            } else {
+                                "MOD"
+                            };
                             return Err(SemanticError::TypeMismatch {
                                 detail: format!(
                                     "operator '{}' requires INTEGER operands, got {} and {}",
@@ -1143,29 +1222,9 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
     }
 
     let mut symbols = SymbolTable::new();
-    symbols.declare("WriteInt", SymbolKind::Procedure)?;
-    symbols.declare("WriteString", SymbolKind::Procedure)?;
-    symbols.declare("WriteLn", SymbolKind::Procedure)?;
-    symbols.declare("WriteReal", SymbolKind::Procedure)?;
-    symbols.declare("WriteLongReal", SymbolKind::Procedure)?;
-    symbols.declare("ReadInt", SymbolKind::Procedure)?;
-    symbols.declare("ReadReal", SymbolKind::Procedure)?;
-    symbols.declare("ReadLongReal", SymbolKind::Procedure)?;
-    symbols.declare("EOF", SymbolKind::Procedure)?;
-    symbols.declare("FLT", SymbolKind::Procedure)?;
-    symbols.declare("FLOOR", SymbolKind::Procedure)?;
     let mut proc_arity: HashMap<String, Option<usize>> = HashMap::new();
     let mut proc_params: HashMap<String, Vec<ParamDecl>> = HashMap::new();
     let mut const_values: HashMap<String, Expr> = HashMap::new();
-    proc_arity.insert("WriteInt".to_string(), None);
-    proc_arity.insert("WriteString".to_string(), Some(1));
-    proc_arity.insert("WriteLn".to_string(), Some(0));
-    proc_arity.insert("WriteReal".to_string(), Some(1));
-    proc_arity.insert("WriteLongReal".to_string(), Some(1));
-    proc_arity.insert("ReadInt".to_string(), Some(0));
-    proc_arity.insert("ReadReal".to_string(), Some(0));
-    proc_arity.insert("ReadLongReal".to_string(), Some(0));
-    proc_arity.insert("EOF".to_string(), Some(0));
     let mut types: HashMap<String, TypeRef> = HashMap::new();
     types.insert("INTEGER".to_string(), TypeRef::Integer);
     types.insert("BOOLEAN".to_string(), TypeRef::Boolean);
@@ -1209,8 +1268,16 @@ pub fn analyze(module: &Module, manifest: Option<&ExternalManifest>) -> Result<(
                 let Declaration::Const { value, .. } = declaration else {
                     unreachable!("const declaration expected");
                 };
-                const_values.insert(name.clone(), combine_expression(value)?);
-                symbols.declare(name, SymbolKind::Constant)?;
+                let value = combine_expression(value)?;
+                let declared_type = match value {
+                    Expr::Integer(_) => Some(TypeRef::Integer),
+                    Expr::Boolean(_) => Some(TypeRef::Boolean),
+                    Expr::Real(_) => Some(TypeRef::Real),
+                    Expr::LongReal(_) => Some(TypeRef::LongReal),
+                    _ => None,
+                };
+                const_values.insert(name.clone(), value);
+                symbols.declare_with_type(name, SymbolKind::Constant, declared_type)?;
             }
             Declaration::Type { name, target, .. } => {
                 validate_declaration_name(name, &types)?;
@@ -1538,9 +1605,9 @@ fn analyze_statement(
 ) -> Result<()> {
     match stmt {
         Statement::Assign { target, value } => {
-            analyze_expr(value, symbols)?;
+            analyze_expr_with_types(value, symbols, types)?;
             if let AssignTarget::Indexed { index, .. } = target {
-                analyze_expr(index, symbols)?;
+                analyze_expr_with_types(index, symbols, types)?;
             }
 
             let expected_type = infer_assignment_target_type(target, symbols, types)?;
@@ -1557,58 +1624,16 @@ fn analyze_statement(
             Ok(())
         }
         Statement::Call { module, name, args } => {
-            ensure_internal_builtin_module_imported(module.as_deref(), symbols)?;
-
-            if module.is_none()
-                && let Some(required_module) = required_builtin_module_for_name(name)
+            if resolve_internal_call(
+                module.as_deref(),
+                name,
+                args,
+                CallContext::StatementOnly,
+                symbols,
+                types,
+            )?
+            .is_some()
             {
-                return Err(SemanticError::InvalidBuiltinArgument {
-                    name: name.clone(),
-                    detail: format!("must be qualified as {}.{}(...)", required_module, name),
-                }
-                .into());
-            }
-
-            if let Some(builtin_id) =
-                resolve_builtin_with_module_validation(module.as_deref(), name)?
-            {
-                if !builtin_allows_statement(builtin_id) {
-                    return Err(SemanticError::InvalidBuiltinArgument {
-                        name: builtin_display_name(module.as_deref(), name),
-                        detail: "must be used as a call expression".to_string(),
-                    }
-                    .into());
-                }
-
-                if let Some(expected_arity) = builtin_fixed_arity(builtin_id)
-                    && args.len() != expected_arity
-                {
-                    return Err(SemanticError::ArityMismatch {
-                        name: builtin_display_name(module.as_deref(), name),
-                        expected: expected_arity,
-                        got: args.len(),
-                    }
-                    .into());
-                }
-
-                if matches!(builtin_id, BuiltinId::WriteString) {
-                    match args.first() {
-                        Some(Expr::String(_)) => return Ok(()),
-                        Some(_) => {
-                            return Err(SemanticError::InvalidBuiltinArgument {
-                                name: builtin_display_name(module.as_deref(), name),
-                                detail: "expected a string literal".to_string(),
-                            }
-                            .into())
-                        }
-                        None => unreachable!("arity checked above"),
-                    }
-                }
-
-                for arg in args {
-                    analyze_expr(arg, symbols)?;
-                }
-
                 return Ok(());
             }
 
@@ -1634,7 +1659,7 @@ fn analyze_statement(
                 }
 
                 for arg in args {
-                    analyze_expr(arg, symbols)?;
+                    analyze_expr_with_types(arg, symbols, types)?;
                 }
                 return Ok(());
             }
@@ -1701,7 +1726,7 @@ fn analyze_statement(
             }
 
             for arg in args {
-                analyze_expr(arg, symbols)?;
+                analyze_expr_with_types(arg, symbols, types)?;
             }
 
             Ok(())
@@ -1757,7 +1782,11 @@ fn analyze_statement(
 }
 
 /// Validates an expression and ensures every referenced symbol is defined.
-fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
+fn analyze_expr_with_types(
+    expr: &Expr,
+    symbols: &SymbolTable,
+    types: &HashMap<String, TypeRef>,
+) -> Result<()> {
     match expr {
         Expr::Integer(_) => Ok(()),
         Expr::Real(_) => Ok(()),
@@ -1771,7 +1800,7 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             Ok(())
         }
         Expr::Indexed { name, index } => {
-            analyze_expr(index, symbols)?;
+            analyze_expr_with_types(index, symbols, types)?;
             if symbols.resolve(name).is_none() {
                 return Err(SemanticError::UndefinedSymbol { name: name.clone() }.into());
             }
@@ -1796,42 +1825,16 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
             }
         }
         Expr::Call { module, name, args } => {
-            ensure_internal_builtin_module_imported(module.as_deref(), symbols)?;
-
-            if module.is_none()
-                && let Some(required_module) = required_builtin_module_for_name(name)
+            if resolve_internal_call(
+                module.as_deref(),
+                name,
+                args,
+                CallContext::ExpressionOnly,
+                symbols,
+                types,
+            )?
+            .is_some()
             {
-                return Err(SemanticError::InvalidBuiltinArgument {
-                    name: name.clone(),
-                    detail: format!("must be qualified as {}.{}(...)", required_module, name),
-                }
-                .into());
-            }
-
-            if let Some(builtin_id) = resolve_builtin_with_module_validation(module.as_deref(), name)? {
-                if !builtin_allows_expression(builtin_id) {
-                    return Err(SemanticError::InvalidBuiltinArgument {
-                        name: builtin_display_name(module.as_deref(), name),
-                        detail: "must be used as a statement call".to_string(),
-                    }
-                    .into());
-                }
-
-                if let Some(expected_arity) = builtin_fixed_arity(builtin_id)
-                    && args.len() != expected_arity
-                {
-                    return Err(SemanticError::ArityMismatch {
-                        name: builtin_display_name(module.as_deref(), name),
-                        expected: expected_arity,
-                        got: args.len(),
-                    }
-                    .into());
-                }
-
-                for arg in args {
-                    analyze_expr(arg, symbols)?;
-                }
-
                 return Ok(());
             }
 
@@ -1848,18 +1851,21 @@ fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
 
             Err(SemanticError::InvalidBuiltinArgument {
                 name: name.clone(),
-                detail:
-                    "call expressions currently support only ReadInt(), ReadReal(), ReadLongReal(), EOF(), FLT(), and FLOOR()"
-                        .to_string(),
+                detail: "call expressions currently support only internal functions".to_string(),
             }
             .into())
         }
-        Expr::Unary { value, .. } => analyze_expr(value, symbols),
+        Expr::Unary { value, .. } => analyze_expr_with_types(value, symbols, types),
         Expr::Binary { left, right, .. } => {
-            analyze_expr(left, symbols)?;
-            analyze_expr(right, symbols)
+            analyze_expr_with_types(left, symbols, types)?;
+            analyze_expr_with_types(right, symbols, types)
         }
     }
+}
+
+#[cfg(test)]
+fn analyze_expr(expr: &Expr, symbols: &SymbolTable) -> Result<()> {
+    analyze_expr_with_types(expr, symbols, &HashMap::new())
 }
 
 fn infer_indexed_expr_type(

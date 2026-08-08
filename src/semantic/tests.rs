@@ -6,9 +6,9 @@ use rstest::rstest;
 use super::{
     ExternalModuleInfo, SemanticError, analyze, analyze_expr, analyze_statement,
     assignment_compatible_extended, format_expr_for_error, infer_expr_type,
-    resolve_array_length_expr, resolve_builtin_with_module_validation, substitute_const_expr,
-    type_ref_name_for_error, validate_boolean_condition, validate_const_expression_literal,
-    validate_declared_type, validate_declared_type_with_imports, validate_var_argument,
+    resolve_array_length_expr, substitute_const_expr, type_ref_name_for_error,
+    validate_boolean_condition, validate_const_expression_literal, validate_declared_type,
+    validate_declared_type_with_imports, validate_var_argument,
 };
 use crate::ast::{
     AssignTarget, BinaryOp, Declaration, Expr, ParamDecl, Statement, TypeRef, UnaryOp,
@@ -148,6 +148,61 @@ fn semantic_error_code_and_display_cover_all_variants() {
             },
             "E007",
             "received an invalid argument",
+        ),
+        (
+            SemanticError::UnknownInternalMember {
+                name: "IO.Missing".to_string(),
+            },
+            "E017",
+            "Unknown internal function",
+        ),
+        (
+            SemanticError::InvalidInternalCallContext {
+                name: "IO.ReadInt".to_string(),
+                expected: "expression".to_string(),
+                actual: "statement".to_string(),
+                accepted_signatures: vec!["ReadInt() -> INTEGER".to_string()],
+            },
+            "E018",
+            "cannot be used as a statement call",
+        ),
+        (
+            SemanticError::InternalArityMismatch {
+                name: "IO.ReadInt".to_string(),
+                actual_argument_types: vec!["INTEGER".to_string()],
+                accepted_signatures: vec!["ReadInt() -> INTEGER".to_string()],
+            },
+            "E019",
+            "does not accept argument types",
+        ),
+        (
+            SemanticError::InternalParameterModeMismatch {
+                name: "IO.WriteString".to_string(),
+                position: 1,
+                expected: "literal".to_string(),
+                accepted_signatures: vec!["WriteString(literal STRING)".to_string()],
+            },
+            "E020",
+            "must use literal mode",
+        ),
+        (
+            SemanticError::InternalArgumentTypeMismatch {
+                name: "MATH.FLT".to_string(),
+                position: 1,
+                expected: "INTEGER".to_string(),
+                actual_argument_types: vec!["REAL".to_string()],
+                accepted_signatures: vec!["FLT(INTEGER) -> REAL".to_string()],
+            },
+            "E021",
+            "incompatible type",
+        ),
+        (
+            SemanticError::AmbiguousInternalSignature {
+                name: "TEST.Identity".to_string(),
+                accepted_signatures: vec!["Identity(any expression type)".to_string()],
+            },
+            "E022",
+            "matches multiple signatures",
         ),
         (
             SemanticError::UnsupportedStringLiteral,
@@ -492,57 +547,6 @@ END Main.
 }
 
 #[test]
-fn semantic_resolve_builtin_with_module_validation_covers_all_branches() {
-    let io_readint = resolve_builtin_with_module_validation(Some("IO"), "ReadInt")
-        .expect("IO.ReadInt should resolve as internal builtin");
-    assert!(io_readint.is_some(), "IO.ReadInt should map to a builtin id");
-
-    let math_floor = resolve_builtin_with_module_validation(Some("MATH"), "FLOOR")
-        .expect("MATH.FLOOR should resolve as internal builtin");
-    assert!(
-        math_floor.is_some(),
-        "MATH.FLOOR should map to a builtin id"
-    );
-
-    let err = resolve_builtin_with_module_validation(Some("IO"), "NoSuchBuiltin")
-        .expect_err("unknown IO builtin member should fail");
-    let err = err
-        .downcast::<SemanticError>()
-        .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E007");
-    assert!(
-        err.to_string().contains("unknown builtin member"),
-        "expected unknown-member diagnostic, got '{err}'"
-    );
-
-    let err = resolve_builtin_with_module_validation(Some("MATH"), "ReadInt")
-        .expect_err("unknown MATH builtin member should fail");
-    let err = err
-        .downcast::<SemanticError>()
-        .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E007");
-    assert!(
-        err.to_string().contains("unknown builtin member"),
-        "expected unknown-member diagnostic, got '{err}'"
-    );
-
-    let external_member =
-        resolve_builtin_with_module_validation(Some("ModuleB"), "HELLO")
-            .expect("non-internal modules should bypass builtin member validation");
-    assert!(
-        external_member.is_none(),
-        "non-internal modules should not resolve as builtins"
-    );
-
-    let unqualified_builtin = resolve_builtin_with_module_validation(None, "ReadInt")
-        .expect("unqualified call should bypass internal-module validation");
-    assert!(
-        unqualified_builtin.is_none(),
-        "unqualified builtin names must not resolve in strict qualified mode"
-    );
-}
-
-#[test]
 fn semantic_directly_covers_inference_and_boolean_validation_paths() {
     let mut symbols = SymbolTable::new();
     symbols
@@ -608,7 +612,7 @@ fn semantic_directly_covers_inference_and_boolean_validation_paths() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E006");
+    assert_eq!(err.code(), "E019");
 
     let err = infer_expr_type(
         &Expr::Call {
@@ -623,7 +627,7 @@ fn semantic_directly_covers_inference_and_boolean_validation_paths() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E012");
+    assert_eq!(err.code(), "E021");
 
     let err = infer_expr_type(
         &Expr::Call {
@@ -638,7 +642,7 @@ fn semantic_directly_covers_inference_and_boolean_validation_paths() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E012");
+    assert_eq!(err.code(), "E021");
 
     let err = infer_expr_type(
         &Expr::Call {
@@ -689,7 +693,11 @@ fn semantic_infer_expr_type_covers_remaining_call_and_operator_branches() {
         .declare("custom", SymbolKind::Procedure)
         .expect("custom procedure should be declared");
     symbols
-        .declare_with_type("maybe", SymbolKind::Variable, Some(TypeRef::Named("MissingType".to_string())))
+        .declare_with_type(
+            "maybe",
+            SymbolKind::Variable,
+            Some(TypeRef::Named("MissingType".to_string())),
+        )
         .expect("variable with unresolved named type should be declared");
 
     let mut types = HashMap::new();
@@ -713,7 +721,8 @@ fn semantic_infer_expr_type_covers_remaining_call_and_operator_branches() {
         .expect("semantic error should be returned");
     assert_eq!(err.code(), "E007");
     assert!(
-        err.to_string().contains("must be qualified as IO.ReadInt(...)")
+        err.to_string()
+            .contains("must be qualified as IO.ReadInt(...)")
     );
 
     let err = infer_expr_type(
@@ -729,8 +738,11 @@ fn semantic_infer_expr_type_covers_remaining_call_and_operator_branches() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E007");
-    assert!(err.to_string().contains("must be used as a statement call"));
+    assert_eq!(err.code(), "E018");
+    assert!(
+        err.to_string()
+            .contains("cannot be used as a expression call")
+    );
 
     let err = infer_expr_type(
         &Expr::Call {
@@ -746,7 +758,10 @@ fn semantic_infer_expr_type_covers_remaining_call_and_operator_branches() {
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
     assert_eq!(err.code(), "E005");
-    assert!(err.to_string().contains("Undefined symbol usage: 'ModuleB.HELLO'"));
+    assert!(
+        err.to_string()
+            .contains("Undefined symbol usage: 'ModuleB.HELLO'")
+    );
 
     let err = infer_expr_type(
         &Expr::Call {
@@ -777,7 +792,11 @@ fn semantic_infer_expr_type_covers_remaining_call_and_operator_branches() {
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
     assert_eq!(div_err.code(), "E012");
-    assert!(div_err.to_string().contains("operator 'DIV' requires INTEGER operands"));
+    assert!(
+        div_err
+            .to_string()
+            .contains("operator 'DIV' requires INTEGER operands")
+    );
 
     let mod_err = infer_expr_type(
         &Expr::Binary {
@@ -793,7 +812,11 @@ fn semantic_infer_expr_type_covers_remaining_call_and_operator_branches() {
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
     assert_eq!(mod_err.code(), "E012");
-    assert!(mod_err.to_string().contains("operator 'MOD' requires INTEGER operands"));
+    assert!(
+        mod_err
+            .to_string()
+            .contains("operator 'MOD' requires INTEGER operands")
+    );
 
     let unary_none = infer_expr_type(
         &Expr::Unary {
@@ -1006,7 +1029,7 @@ fn semantic_covers_remaining_branch_paths() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E006");
+    assert_eq!(err.code(), "E019");
 
     let err = infer_expr_type(
         &Expr::Call {
@@ -1021,7 +1044,7 @@ fn semantic_covers_remaining_branch_paths() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E006");
+    assert_eq!(err.code(), "E019");
 
     let err = infer_expr_type(
         &Expr::Call {
@@ -1333,7 +1356,7 @@ fn semantic_analyze_expr_covers_remaining_branches() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E007");
+    assert_eq!(err.code(), "E018");
 
     let err = analyze_expr(
         &Expr::Call {
@@ -1347,7 +1370,21 @@ fn semantic_analyze_expr_covers_remaining_branches() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E006");
+    assert_eq!(err.code(), "E019");
+
+    let err = analyze_expr(
+        &Expr::Call {
+            module: Some("IO".to_string()),
+            name: "Missing".to_string(),
+            args: vec![],
+        },
+        &symbols,
+    )
+    .expect_err("unknown internal members should be rejected");
+    let err = err
+        .downcast::<SemanticError>()
+        .expect("semantic error should be returned");
+    assert_eq!(err.code(), "E017");
 
     let err = analyze_expr(
         &Expr::Call {
@@ -1564,7 +1601,8 @@ fn semantic_record_field_helper_paths_are_exercised_directly() {
 
     let no_type_symbols = {
         let mut table = SymbolTable::new();
-        table.declare("bare", SymbolKind::Variable)
+        table
+            .declare("bare", SymbolKind::Variable)
             .expect("bare variable should be declared");
         table
     };
@@ -1618,6 +1656,24 @@ END Main.
 }
 
 #[test]
+fn semantic_resolves_internal_call_argument_type_from_constant() {
+    let module = parse_module(
+        r#"
+MODULE Main;
+IMPORT MATH;
+CONST one = 1;
+VAR value: REAL;
+BEGIN
+    value := MATH.FLT(one)
+END Main.
+"#,
+    )
+    .expect("source should parse");
+
+    analyze(&module, None).expect("integer constant should satisfy MATH.FLT signature");
+}
+
+#[test]
 fn semantic_rejects_non_boolean_if_and_while_conditions() {
     let module = parse_module(
         r#"
@@ -1665,13 +1721,10 @@ END Main.
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
 
-    assert_eq!(err.code(), "E012");
+    assert_eq!(err.code(), "E021");
     assert!(
-        err.to_string()
-            .contains("FLT() requires an INTEGER argument")
-            || err
-                .to_string()
-                .contains("FLOOR() requires a REAL or LONGREAL argument"),
+        err.to_string().contains("expected INTEGER")
+            || err.to_string().contains("expected REAL | LONGREAL"),
         "expected FLT/FLOOR type diagnostic, got '{err}'"
     );
 }
@@ -2174,7 +2227,7 @@ fn semantic_infer_expr_type_covers_readreal_and_readlongreal_arity_paths() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E006");
+    assert_eq!(err.code(), "E019");
 
     let err = infer_expr_type(
         &Expr::Call {
@@ -2189,7 +2242,7 @@ fn semantic_infer_expr_type_covers_readreal_and_readlongreal_arity_paths() {
     let err = err
         .downcast::<SemanticError>()
         .expect("semantic error should be returned");
-    assert_eq!(err.code(), "E006");
+    assert_eq!(err.code(), "E019");
 }
 
 #[test]

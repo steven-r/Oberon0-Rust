@@ -8,4 +8,4 @@ BEGIN
     x := MATH.FLT(1, 2);
 END Main.
 """
-result = { code = "E006", messages = ["Procedure 'MATH.FLT' called with wrong arity: expected 1, got 2"] }
+result = { code = "E019", messages = ["Internal function 'MATH.FLT' does not accept argument types (INTEGER, INTEGER)", "FLT(INTEGER) -> REAL"] }

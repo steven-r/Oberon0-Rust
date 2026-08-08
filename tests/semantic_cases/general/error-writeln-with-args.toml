@@ -6,8 +6,8 @@ code = """
   END Main.
 """
 name = "WriteLn with args"
-result.code = "E006"
+result.code = "E019"
 result.messages = [
-  "Procedure 'IO.WriteLn' called with wrong arity",
-  "expected 0, got 1",
+  "Internal function 'IO.WriteLn' does not accept argument types (STRING)",
+  "WriteLn()",
 ]

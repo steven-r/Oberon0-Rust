@@ -1,6 +1,6 @@
 # Internal Function Catalog and Dispatch Design
 
-Status: Proposed for issue #75.
+Status: In progress for issue #75. Catalog/matcher and semantic integration phases are implemented.
 
 This document defines the architecture for centralizing the language-level definition, resolution, validation, lowering, and backend dispatch of internal functions. It supersedes the catalog and dispatch direction in `internal-builtin-modules-concept.md` while preserving that document's qualified `IO` and `MATH` language surface.
 

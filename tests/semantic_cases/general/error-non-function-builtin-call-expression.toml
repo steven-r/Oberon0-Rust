@@ -7,7 +7,7 @@ BEGIN
 END Main.
 """
 name = "non-function builtin in call expression"
-result = { code = "E007", messages = [
-  "Builtin 'IO.WriteInt' received an invalid argument",
-  "must be used as a statement call",
+result = { code = "E018", messages = [
+  "Internal function 'IO.WriteInt' cannot be used as a expression call",
+  "WriteInt(any expression type...)",
 ] }

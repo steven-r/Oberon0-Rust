@@ -204,7 +204,7 @@ impl fmt::Display for TypeConstraint {
 
 fn predicate_matches(predicate: TypePredicate, actual: &ResolvedType) -> bool {
     match predicate {
-        TypePredicate::Any => true,
+        TypePredicate::Any => !matches!(actual, ResolvedType::StringLiteral),
         TypePredicate::Numeric => matches!(
             actual,
             ResolvedType::Type(Type::Scalar(
