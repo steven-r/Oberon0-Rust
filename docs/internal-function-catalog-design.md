@@ -244,6 +244,8 @@ MATH.FLOOR does not accept argument types (INTEGER); expected FLOOR(REAL | LONGR
 
 Exact wording and existing diagnostic codes may be preserved where practical, but tests should assert structured categories and stable high-value text rather than incidental formatting.
 
+The semantic diagnostic model should add dedicated variants and codes for internal-member, call-context, internal-arity, parameter-mode, internal-argument-type, and ambiguous-signature failures. Existing broad diagnostics such as generic arity, type mismatch, or invalid builtin argument do not carry enough structured information for this resolver. Existing codes may be retained where compatibility requires it, but resolver failures must otherwise translate one-to-one from `InternalCallErrorKind` rather than being collapsed into a generic diagnostic.
+
 ## Compiler pipeline integration
 
 ### Semantic analysis
@@ -260,7 +262,11 @@ The existing builtin-specific helpers for identity, arity, context, and return-t
 
 ### Semantic-to-lowering contract
 
-Lowering must consume semantic resolution rather than resolve the source spelling again. The implementation may introduce a typed semantic result map keyed by AST node identity or an analyzed AST call node. The chosen mechanism must satisfy these invariants:
+Lowering must consume semantic resolution rather than resolve the source spelling again. Semantic analysis produces an analyzed AST in which each call carries its resolved target. The parser AST remains independent of semantic types; semantic analysis transforms or wraps its call nodes rather than mutating parser-owned nodes in place. Internal call targets contain the owned `ResolvedInternalCall`, while non-internal call targets preserve the information required by ordinary lowering.
+
+This analyzed-AST attachment is preferred over a side table because the current AST has no stable node identity and lowering should receive one self-contained, typed input. It also makes a missing resolution structurally difficult to represent instead of relying on synchronized AST and map lifetimes.
+
+The contract must satisfy these invariants:
 
 1. Every semantically valid internal call has exactly one `ResolvedInternalCall` available to lowering.
 2. Lowering treats a missing result as an internal compiler invariant violation.
@@ -275,9 +281,16 @@ enum HCallTarget {
     Procedure(HResolvedIdent),
     Internal(ResolvedInternalCall),
 }
+
+struct HCall {
+    target: HCallTarget,
+    args: Vec<HExpr>,
+}
 ```
 
-Statement and expression calls should share this target representation where practical. At minimum, both must preserve `InternalFunctionId` and the concrete resolved signature.
+Statement and expression calls share `HCall` and `HCallTarget`, while remaining distinct placements in `HStatement` and `HExpr`. This avoids duplicating call representation without conflating statement context with value-producing expression context. Both preserve `InternalFunctionId` and the concrete resolved signature.
+
+Shared representation must not imply purity. Later optimization passes must classify effects independently of whether a call appears in statement or expression position. In particular, IO reads, writes, and EOF checks are effectful and must not be removed, duplicated, or reordered unless an effect analysis proves the transformation valid. Effect classification should be derived from the resolved call target or other explicit HIR metadata, never from source spelling or expression placement.
 
 The earlier proposal to retain only `module: Option<String>` in expression HIR is superseded. Keeping the source qualifier may be useful for debug output, but it is insufficient for dispatch and must not be used to repeat lookup.
 
@@ -441,9 +454,7 @@ Enumerating all optional, variadic, and type-related combinations scales poorly 
 5. Code generation uses exhaustive identity dispatch initially.
 6. Predefined-module import requirements and current IO/MATH behavior remain unchanged.
 7. Named constraint and result-transform enums are preferred over callbacks.
-
-## Open implementation questions
-
-1. Whether semantic resolution is attached to an analyzed AST or stored in a side table keyed by stable AST node identity.
-2. Whether statement and expression calls can share one HIR call node without causing unrelated refactoring.
-3. Whether existing semantic diagnostic codes can represent all structured matcher failures or require additive codes.
+8. Semantic resolution is attached to a dedicated analyzed AST rather than stored in a side table or added directly to the parser AST.
+9. Statement and expression calls share one HIR call payload and target representation but remain distinct statement and expression placements.
+10. Optimizers treat call effects independently from call placement and preserve effectful internal calls unless a transformation is proven valid.
+11. Internal-call resolver failures use additive structured semantic diagnostic variants and codes, with existing codes retained only where compatibility requires it.
