@@ -1,5 +1,10 @@
 # Internal Builtin Modules Concept (IO and MATH)
 
+> **Superseded architecture:** Issue #75 replaces the catalog, resolution, HIR, and
+> dispatch design in this document with
+> `internal-function-catalog-design.md`. The qualified `IO` and `MATH` language
+> surface below remains the compatibility contract during that migration.
+
 This document proposes a module-based model for internal builtins, starting with two predefined modules:
 
 1. `IO` for input/output builtins (`Write*`, `Read*`, `EOF`).
