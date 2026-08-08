@@ -56,18 +56,9 @@ jobs:
           if-no-files-found: error
 
       - name: Upload coverage to Codecov (token)
-        if: "${{ !cancelled() && env.CODECOV_TOKEN != '' }}"
         uses: codecov/codecov-action@v7
         with:
           files: coverage/lcov.info
           fail_ci_if_error: true
           disable_search: true
-          token: ${{ env.CODECOV_TOKEN }}
-
-      - name: Upload coverage to Codecov (tokenless fallback)
-        if: "${{ !cancelled() && env.CODECOV_TOKEN == '' }}"
-        uses: codecov/codecov-action@v7
-        with:
-          files: coverage/lcov.info
-          fail_ci_if_error: false
-          disable_search: true
+          token: ${{ secrets.CODECOV_TOKEN }}

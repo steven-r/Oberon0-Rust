@@ -6,8 +6,8 @@ BEGIN
 END Main.
 """
 name = "non-string WriteString argument"
-result.code = "E007"
+result.code = "E021"
 result.messages = [
-  "Builtin 'IO.WriteString' received an invalid argument",
-  "expected a string literal",
+  "Internal function 'IO.WriteString' argument 1 has an incompatible type",
+  "WriteString(literal STRING)",
 ]

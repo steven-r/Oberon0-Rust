@@ -6,6 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Features
+
+- route qualified internal function statement and expression calls through the shared catalog resolver with structured context, arity, parameter-mode, and argument-type diagnostics (#75)
+
+### Fixes
+
+- preserve rejection of string literals passed to variadic `IO.WriteInt` while moving semantic validation to the generic catalog matcher (#75)
+- retain scalar type facts for declared constants so internal function signatures resolve constant arguments correctly (#75)
+
+### Tests
+
+- align semantic corpus expectations with catalog-provided accepted signatures and dedicated internal-call diagnostic codes (#75)
+- cover internal function descriptor validation, signature formatting, predicate matching, derived results, and mixed call contexts (#75)
+
 ## v0.12.0 - 2026-08-05
 
 ### Features

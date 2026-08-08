@@ -7,7 +7,8 @@ BEGIN
     x := IO.ReadInt(1)
 END Main.
 """
-result.code = "E006"
+result.code = "E019"
 result.messages = [
-  "Procedure 'IO.ReadInt' called with wrong arity",
+  "Internal function 'IO.ReadInt' does not accept argument types (INTEGER)",
+  "ReadInt() -> INTEGER",
 ]

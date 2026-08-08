@@ -6,8 +6,8 @@ BEGIN
     IO.ReadInt()
 END Main.
 """
-result.code = "E007"
+result.code = "E018"
 result.messages = [
-  "Builtin 'IO.ReadInt' received an invalid argument",
-  "must be used as a call expression",
+  "Internal function 'IO.ReadInt' cannot be used as a statement call",
+  "ReadInt() -> INTEGER",
 ]
