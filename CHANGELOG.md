@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 ### Tests
 
 - align semantic corpus expectations with catalog-provided accepted signatures and dedicated internal-call diagnostic codes (#75)
+- cover internal function descriptor validation, signature formatting, predicate matching, derived results, and mixed call contexts (#75)
 
 ## v0.12.0 - 2026-08-05
 

@@ -710,9 +710,13 @@ fn call_error(
 }
 
 pub fn validate_catalog() -> Result<(), String> {
+    validate_descriptors(DESCRIPTORS)
+}
+
+fn validate_descriptors(descriptors: &[InternalFunctionDescriptor]) -> Result<(), String> {
     let mut ids = HashSet::new();
     let mut names = HashSet::new();
-    for descriptor in DESCRIPTORS {
+    for descriptor in descriptors {
         if !ids.insert(descriptor.id) {
             return Err(format!(
                 "duplicate internal function id: {:?}",
@@ -740,32 +744,23 @@ fn validate_signature(
     signature: &InternalSignature,
 ) -> Result<(), String> {
     let mut optional_seen = false;
-    let mut variadic_seen = false;
     for (index, parameter) in signature.parameters.iter().enumerate() {
         match parameter.cardinality {
-            ParameterCardinality::Required if optional_seen || variadic_seen => {
+            ParameterCardinality::Required if optional_seen => {
                 return Err(format!(
                     "{} has a required parameter after a non-required parameter",
                     descriptor.qualified_name()
                 ));
             }
             ParameterCardinality::Required => {}
-            ParameterCardinality::Optional if variadic_seen => {
-                return Err(format!(
-                    "{} has an optional parameter after a variadic parameter",
-                    descriptor.qualified_name()
-                ));
-            }
             ParameterCardinality::Optional => optional_seen = true,
-            ParameterCardinality::Variadic
-                if variadic_seen || index + 1 != signature.parameters.len() =>
-            {
+            ParameterCardinality::Variadic if index + 1 != signature.parameters.len() => {
                 return Err(format!(
                     "{} has an invalid variadic parameter",
                     descriptor.qualified_name()
                 ));
             }
-            ParameterCardinality::Variadic => variadic_seen = true,
+            ParameterCardinality::Variadic => {}
         }
     }
 
@@ -793,6 +788,7 @@ fn validate_signature(
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
 
@@ -851,6 +847,28 @@ mod tests {
         assert_eq!(
             format_signature(write_int, &write_int.signatures[0]),
             "WriteInt(any expression type...)"
+        );
+
+        const T3_SCALAR: TypeConstraint = TypeConstraint::TypeVariable(
+            TypeVariableId(3),
+            &TypeConstraint::Predicate(TypePredicate::Scalar),
+        );
+        const PARAMETERS: &[ParameterSpec] = &[ParameterSpec {
+            cardinality: ParameterCardinality::Optional,
+            mode: ParameterMode::Var,
+            type_constraint: T3_SCALAR,
+        }];
+        const SIGNATURE: InternalSignature = InternalSignature {
+            parameters: PARAMETERS,
+            result: ResultSpec::FromArgument {
+                index: 0,
+                transform: TypeTransform::Identity,
+            },
+        };
+        let synthetic = descriptor(CallContext::StatementOrExpression, &[SIGNATURE]);
+        assert_eq!(
+            format_signature(&synthetic, &SIGNATURE),
+            "Call(VAR T3: scalar?) -> argument 1 via Identity"
         );
     }
 
@@ -916,17 +934,33 @@ mod tests {
 
     #[test]
     fn malformed_result_specification_returns_a_structured_internal_error() {
-        const SIGNATURES: &[InternalSignature] = &[InternalSignature {
+        const UNBOUND_SIGNATURES: &[InternalSignature] = &[InternalSignature {
             parameters: &[],
             result: ResultSpec::TypeVariable(TypeVariableId(7)),
         }];
-        let entry = descriptor(CallContext::ExpressionOnly, SIGNATURES);
+        let entry = descriptor(CallContext::ExpressionOnly, UNBOUND_SIGNATURES);
         let error = resolve_call(&entry, &call(Vec::new()))
             .expect_err("an unbound result variable is an invalid descriptor");
         assert!(matches!(
             error.kind,
             InternalCallErrorKind::InvalidDescriptor { ref detail }
                 if detail == "result type variable T7 is unbound"
+        ));
+
+        const MISSING_ARGUMENT_SIGNATURES: &[InternalSignature] = &[InternalSignature {
+            parameters: &[],
+            result: ResultSpec::FromArgument {
+                index: 0,
+                transform: TypeTransform::Identity,
+            },
+        }];
+        let entry = descriptor(CallContext::ExpressionOnly, MISSING_ARGUMENT_SIGNATURES);
+        let error = resolve_call(&entry, &call(Vec::new()))
+            .expect_err("a missing result argument is an invalid descriptor");
+        assert!(matches!(
+            error.kind,
+            InternalCallErrorKind::InvalidDescriptor { ref detail }
+                if detail == "result argument 1 does not exist"
         ));
     }
 
@@ -1047,6 +1081,215 @@ mod tests {
             error.kind,
             InternalCallErrorKind::ArgumentTypeMismatch { position: 1, .. }
         ));
+    }
+
+    #[test]
+    fn predicates_and_statement_or_expression_context_cover_rejections() {
+        const SCALAR_PARAMETERS: &[ParameterSpec] = &[ParameterSpec {
+            cardinality: ParameterCardinality::Required,
+            mode: ParameterMode::Value,
+            type_constraint: TypeConstraint::Predicate(TypePredicate::Scalar),
+        }];
+        const SCALAR_SIGNATURES: &[InternalSignature] = &[InternalSignature {
+            parameters: SCALAR_PARAMETERS,
+            result: ResultSpec::None,
+        }];
+        let scalar = descriptor(CallContext::StatementOrExpression, SCALAR_SIGNATURES);
+        assert!(resolve_call(&scalar, &call(vec![argument(CatalogTypeRef::Boolean)])).is_ok());
+        assert!(
+            resolve_call(
+                &scalar,
+                &InternalCallSite {
+                    context: CallContext::StatementOnly,
+                    arguments: vec![argument(CatalogTypeRef::Integer)],
+                }
+            )
+            .is_ok()
+        );
+        assert!(matches!(
+            resolve_call(
+                &scalar,
+                &call(vec![InternalArgument {
+                    ty: ResolvedType::StringLiteral,
+                    is_literal: true,
+                    is_assignable: false,
+                }])
+            )
+            .expect_err("string literals are not scalar values")
+            .kind,
+            InternalCallErrorKind::ArgumentTypeMismatch { .. }
+        ));
+
+        const NUMERIC_PARAMETERS: &[ParameterSpec] = &[ParameterSpec {
+            cardinality: ParameterCardinality::Required,
+            mode: ParameterMode::Value,
+            type_constraint: T0_NUMERIC,
+        }];
+        const NUMERIC_SIGNATURES: &[InternalSignature] = &[InternalSignature {
+            parameters: NUMERIC_PARAMETERS,
+            result: ResultSpec::None,
+        }];
+        let numeric = descriptor(CallContext::ExpressionOnly, NUMERIC_SIGNATURES);
+        assert!(matches!(
+            resolve_call(&numeric, &call(vec![argument(CatalogTypeRef::Boolean)]))
+                .expect_err("BOOLEAN cannot bind a numeric type variable")
+                .kind,
+            InternalCallErrorKind::ArgumentTypeMismatch { .. }
+        ));
+
+        let write_int = lookup("IO", "WriteInt").expect("WriteInt descriptor");
+        assert!(matches!(
+            resolve_call(
+                write_int,
+                &InternalCallSite {
+                    context: CallContext::StatementOnly,
+                    arguments: vec![InternalArgument {
+                        ty: ResolvedType::StringLiteral,
+                        is_literal: true,
+                        is_assignable: false,
+                    }],
+                }
+            )
+            .expect_err("WriteInt does not accept string literals")
+            .kind,
+            InternalCallErrorKind::ArgumentTypeMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn catalog_validation_rejects_duplicate_and_empty_descriptors() {
+        const VALID_SIGNATURES: &[InternalSignature] = &[InternalSignature {
+            parameters: &[],
+            result: ResultSpec::None,
+        }];
+        let first = descriptor(CallContext::ExpressionOnly, VALID_SIGNATURES);
+        let duplicate_id = InternalFunctionDescriptor {
+            module_name: "OTHER",
+            member_name: "Other",
+            ..first
+        };
+        assert!(
+            validate_descriptors(&[first, duplicate_id])
+                .expect_err("duplicate ids must fail")
+                .contains("duplicate internal function id")
+        );
+
+        let duplicate_name = InternalFunctionDescriptor {
+            id: InternalFunctionId::MathFloor,
+            ..first
+        };
+        assert!(
+            validate_descriptors(&[first, duplicate_name])
+                .expect_err("duplicate names must fail")
+                .contains("duplicate internal function name")
+        );
+
+        let empty = InternalFunctionDescriptor {
+            signatures: &[],
+            ..first
+        };
+        assert!(
+            validate_descriptors(&[empty])
+                .expect_err("descriptors need signatures")
+                .contains("has no signatures")
+        );
+    }
+
+    #[test]
+    fn catalog_validation_rejects_malformed_signatures() {
+        const OPTIONAL_THEN_REQUIRED: &[ParameterSpec] = &[
+            ParameterSpec {
+                cardinality: ParameterCardinality::Optional,
+                mode: ParameterMode::Value,
+                type_constraint: INTEGER,
+            },
+            ParameterSpec {
+                cardinality: ParameterCardinality::Required,
+                mode: ParameterMode::Value,
+                type_constraint: INTEGER,
+            },
+        ];
+        const VARIADIC_THEN_REQUIRED: &[ParameterSpec] = &[
+            ParameterSpec {
+                cardinality: ParameterCardinality::Variadic,
+                mode: ParameterMode::Value,
+                type_constraint: INTEGER,
+            },
+            ParameterSpec {
+                cardinality: ParameterCardinality::Required,
+                mode: ParameterMode::Value,
+                type_constraint: INTEGER,
+            },
+        ];
+        const T0_PARAMETER: &[ParameterSpec] = &[ParameterSpec {
+            cardinality: ParameterCardinality::Required,
+            mode: ParameterMode::Value,
+            type_constraint: T0_NUMERIC,
+        }];
+        const CASES: &[(&[ParameterSpec], ResultSpec, &str)] = &[
+            (
+                OPTIONAL_THEN_REQUIRED,
+                ResultSpec::None,
+                "required parameter after a non-required parameter",
+            ),
+            (
+                VARIADIC_THEN_REQUIRED,
+                ResultSpec::None,
+                "invalid variadic parameter",
+            ),
+            (
+                &[],
+                ResultSpec::TypeVariable(TypeVariableId(9)),
+                "unbound result type variable T9",
+            ),
+            (
+                T0_PARAMETER,
+                ResultSpec::TypeVariable(TypeVariableId(9)),
+                "unbound result type variable T9",
+            ),
+            (
+                &[],
+                ResultSpec::FromArgument {
+                    index: 0,
+                    transform: TypeTransform::Identity,
+                },
+                "derives its result from a missing parameter",
+            ),
+        ];
+
+        for (parameters, result, expected) in CASES {
+            let signature = InternalSignature {
+                parameters,
+                result: *result,
+            };
+            let entry = descriptor(CallContext::ExpressionOnly, &[]);
+            assert!(
+                validate_signature(&entry, &signature)
+                    .expect_err("malformed signature must fail")
+                    .contains(expected)
+            );
+        }
+
+        let valid_type_variable = InternalSignature {
+            parameters: T0_PARAMETER,
+            result: ResultSpec::TypeVariable(TypeVariableId(0)),
+        };
+        let entry = descriptor(CallContext::ExpressionOnly, &[]);
+        validate_signature(&entry, &valid_type_variable)
+            .expect("a result variable bound by a parameter is valid");
+
+        let malformed = InternalFunctionDescriptor {
+            signatures: &[InternalSignature {
+                parameters: OPTIONAL_THEN_REQUIRED,
+                result: ResultSpec::None,
+            }],
+            ..entry
+        };
+        assert!(
+            validate_descriptors(&[malformed])
+                .expect_err("descriptor validation should propagate signature failures")
+                .contains("required parameter after a non-required parameter")
+        );
     }
 
     #[test]
